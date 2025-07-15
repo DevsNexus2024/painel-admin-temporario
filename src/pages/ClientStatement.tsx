@@ -1,9 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { otcService } from '@/services/otc';
 import { OTCBalanceHistory, OTCTransaction } from '@/types/otc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CalendarDays, User, FileText, ArrowUpRight, ArrowDownRight, AlertCircle, LogOut, Settings, Shield } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { CalendarDays, User, FileText, ArrowUpRight, ArrowDownRight, AlertCircle, LogOut, Settings, Shield, Filter, RefreshCw } from 'lucide-react';
 import { formatCurrency, formatTimestamp } from '@/utils/date';
 
 interface ClientStatementData {
@@ -24,6 +28,63 @@ const ClientStatement: React.FC = () => {
   const [data, setData] = useState<ClientStatementData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Estados para filtros de busca
+  const [searchName, setSearchName] = useState("");
+  const [searchValue, setSearchValue] = useState("");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("none");
+  const [sortBy, setSortBy] = useState<"value" | "date" | "none">("none");
+
+  // Filtrar e ordenar transações
+  const filteredAndSortedTransactions = useMemo(() => {
+    if (!data?.transacoes) return [];
+    
+    let filtered = data.transacoes;
+    
+    // Filtrar por nome do pagador
+    if (searchName.trim()) {
+      const searchTerm = searchName.toLowerCase();
+      filtered = filtered.filter(transaction => 
+        transaction.payer_name?.toLowerCase().includes(searchTerm) ||
+        transaction.payer_document?.toLowerCase().includes(searchTerm)
+      );
+    }
+    
+    // Filtrar por valor específico
+    if (searchValue.trim()) {
+      const searchAmount = parseFloat(searchValue.replace(/[^\d,.-]/g, '').replace(',', '.'));
+      if (!isNaN(searchAmount)) {
+        filtered = filtered.filter(transaction => 
+          Math.abs(transaction.amount - searchAmount) < 0.01
+        );
+      }
+    }
+    
+    // Ordenar
+    if (sortBy !== "none" && sortOrder !== "none") {
+      filtered = [...filtered].sort((a, b) => {
+        let comparison = 0;
+        
+        if (sortBy === "value") {
+          comparison = a.amount - b.amount;
+        } else if (sortBy === "date") {
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+        }
+        
+        return sortOrder === "asc" ? comparison : -comparison;
+      });
+    }
+    
+    return filtered;
+  }, [data?.transacoes, searchName, searchValue, sortBy, sortOrder]);
+
+  // Limpar todos os filtros
+  const clearAllFilters = () => {
+    setSearchName("");
+    setSearchValue("");
+    setSortBy("none");
+    setSortOrder("none");
+  };
 
   useEffect(() => {
     if (user?.id) {
@@ -90,18 +151,29 @@ const ClientStatement: React.FC = () => {
         throw new Error('Erro de segurança: dados inconsistentes');
       }
 
-      // Calcular saldos das transações para exibição
-      let saldoAcumulado = statementResponse.data.cliente.current_balance;
-      const transacoesComSaldo = statementResponse.data.transacoes.map((transacao, index) => {
-        const saldoAnterior = saldoAcumulado;
-        const valorTransacao = transacao.type === 'deposit' ? transacao.amount : -transacao.amount;
-        saldoAcumulado = saldoAnterior - valorTransacao; // Calcular o saldo antes desta transação
+      // Usar os saldos corretos que vêm do histórico de saldo do backend
+      const historicoSaldo = statementResponse.data.historico_saldo || [];
+      
+      const transacoesComSaldo = statementResponse.data.transacoes.map((transacao) => {
+        // Encontrar o histórico de saldo correspondente a esta transação
+        const historico = historicoSaldo.find(h => h.transaction_id === transacao.id);
         
-        return {
-          ...transacao,
-          saldo_anterior: saldoAcumulado,
-          saldo_posterior: saldoAnterior
-        };
+        if (historico) {
+          // Usar os saldos corretos que vêm do banco de dados
+          return {
+            ...transacao,
+            saldo_anterior: historico.balance_before,
+            saldo_posterior: historico.balance_after
+          };
+        } else {
+          // Fallback caso não encontre o histórico (não deveria acontecer)
+          console.warn(`Histórico de saldo não encontrado para transação ${transacao.id}`);
+          return {
+            ...transacao,
+            saldo_anterior: 0,
+            saldo_posterior: 0
+          };
+        }
       });
 
       setData({
@@ -141,10 +213,10 @@ const ClientStatement: React.FC = () => {
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground mb-4">Sua sessão expirou. Faça login novamente para acessar seu extrato.</p>
-                          <button
-                onClick={() => window.location.href = '/login-cliente'}
-                className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-md hover:bg-primary/90 transition-colors"
-              >
+            <button
+              onClick={() => window.location.href = '/login-cliente'}
+              className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-md hover:bg-primary/90 transition-colors"
+            >
               Fazer Login
             </button>
           </CardContent>
@@ -303,18 +375,103 @@ const ClientStatement: React.FC = () => {
           </CardContent>
         </Card>
 
+        {/* Card de Filtros */}
+        <Card className="mb-6 banking-shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-muted to-muted/80 text-foreground rounded-t-lg py-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Filter className="h-4 w-4" />
+              Filtros de Busca
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <Label htmlFor="searchName">Buscar por nome</Label>
+                <Input
+                  id="searchName"
+                  placeholder="Nome ou documento do pagador"
+                  value={searchName}
+                  onChange={(e) => setSearchName(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="searchValue">Buscar por valor</Label>
+                <Input
+                  id="searchValue"
+                  placeholder="Ex: 100.50"
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="sortBy">Ordenar por</Label>
+                <Select value={sortBy} onValueChange={(value: "value" | "date" | "none") => setSortBy(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Padrão</SelectItem>
+                    <SelectItem value="value">Valor</SelectItem>
+                    <SelectItem value="date">Data</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="sortOrder">Ordem</Label>
+                <Select value={sortOrder} onValueChange={(value: "asc" | "desc" | "none") => setSortOrder(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Padrão</SelectItem>
+                    <SelectItem value="asc">Crescente</SelectItem>
+                    <SelectItem value="desc">Decrescente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-end gap-2 mt-4">
+              <Button
+                variant="outline"
+                onClick={clearAllFilters}
+                disabled={loading}
+              >
+                Limpar Filtros
+              </Button>
+              <Button
+                variant="outline"
+                onClick={fetchClientStatement}
+                disabled={loading}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Atualizar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Histórico de Transações - Layout Otimizado */}
         <Card className="banking-shadow-lg">
           <CardHeader className="bg-gradient-to-r from-muted to-muted/80 text-foreground rounded-t-lg py-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               <CalendarDays className="h-4 w-4" />
-              Suas Transações ({data.transacoes?.length || 0} registros)
+              Suas Transações 
+              {filteredAndSortedTransactions.length !== data.transacoes?.length && (
+                <span className="text-sm text-muted-foreground ml-2">
+                  ({filteredAndSortedTransactions.length} de {data.transacoes?.length || 0} registros)
+                </span>
+              )}
+              {filteredAndSortedTransactions.length === data.transacoes?.length && (
+                <span className="text-sm text-muted-foreground ml-2">
+                  ({data.transacoes?.length || 0} registros)
+                </span>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            {data.transacoes && data.transacoes.length > 0 ? (
+            {filteredAndSortedTransactions && filteredAndSortedTransactions.length > 0 ? (
               <div className="divide-y divide-border">
-                {data.transacoes.map((item, index) => (
+                {filteredAndSortedTransactions.map((item, index) => (
                   <div key={item.id} className="px-4 py-3 hover:bg-muted/30 transition-colors banking-transition">
                     <div className="grid grid-cols-12 gap-4 items-center">
                       {/* Ícone e Data */}
@@ -386,8 +543,12 @@ const ClientStatement: React.FC = () => {
             ) : (
               <div className="text-center py-12">
                 <FileText className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-                <p className="text-muted-foreground">Você ainda não possui transações</p>
-                <p className="text-muted-foreground/70 text-sm mt-2">Suas transações aparecerão aqui quando disponíveis</p>
+                <p className="text-muted-foreground">
+                  {searchName || searchValue ? 'Nenhuma transação encontrada com os filtros aplicados' : 'Você ainda não possui transações'}
+                </p>
+                <p className="text-muted-foreground/70 text-sm mt-2">
+                  {searchName || searchValue ? 'Tente ajustar os filtros de busca' : 'Suas transações aparecerão aqui quando disponíveis'}
+                </p>
               </div>
             )}
           </CardContent>
@@ -398,13 +559,10 @@ const ClientStatement: React.FC = () => {
           <p className="text-xs text-muted-foreground/70">
             Última atualização: {formatTimestamp(data.cliente.last_updated, 'dd/MM/yyyy HH:mm')}
           </p>
-          <p className="text-xs text-muted-foreground/50 mt-1">
-            Extrato pessoal de {user.name} • ID: {user.id}
-          </p>
         </div>
       </div>
     </div>
   );
 };
 
-export default ClientStatement; 
+export default ClientStatement;

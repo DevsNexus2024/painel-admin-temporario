@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -22,6 +24,12 @@ export default function ExtractTable() {
   const [filtrosAtivos, setFiltrosAtivos] = useState({ cursor: 0 });
   const [allTransactions, setAllTransactions] = useState<MovimentoExtrato[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  
+  // Novos estados para filtros de busca
+  const [searchName, setSearchName] = useState("");
+  const [searchValue, setSearchValue] = useState("");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("none");
+  const [sortBy, setSortBy] = useState<"value" | "date" | "none">("none");
 
   // Usar hook de cache para extrato
   const { 
@@ -56,8 +64,51 @@ export default function ExtractTable() {
     }
   }, [transactions, filtrosAtivos.cursor]);
 
-  // Usar allTransactions em vez de transactions
-  const displayTransactions = allTransactions;
+  // Função para filtrar e ordenar transações
+  const filteredAndSortedTransactions = useMemo(() => {
+    let filtered = [...allTransactions];
+
+    // Filtro por nome do cliente
+    if (searchName.trim()) {
+      const searchTerm = searchName.toLowerCase().trim();
+      filtered = filtered.filter(transaction => 
+        transaction.client?.toLowerCase().includes(searchTerm) ||
+        transaction.document?.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    // Filtro por valor específico
+    if (searchValue.trim()) {
+      const searchValueNum = parseFloat(searchValue.replace(/[^\d.,]/g, '').replace(',', '.'));
+      if (!isNaN(searchValueNum)) {
+        filtered = filtered.filter(transaction => 
+          Math.abs(transaction.value - searchValueNum) < 0.01
+        );
+      }
+    }
+
+    // Ordenação
+    if (sortBy !== "none" && sortOrder !== "none") {
+      filtered.sort((a, b) => {
+        let comparison = 0;
+        
+        if (sortBy === "value") {
+          comparison = a.value - b.value;
+        } else if (sortBy === "date") {
+          const dateA = new Date(a.dateTime).getTime();
+          const dateB = new Date(b.dateTime).getTime();
+          comparison = dateA - dateB;
+        }
+        
+        return sortOrder === "asc" ? comparison : -comparison;
+      });
+    }
+
+    return filtered;
+  }, [allTransactions, searchName, searchValue, sortBy, sortOrder]);
+
+  // Usar transações filtradas em vez de displayTransactions
+  const displayTransactions = filteredAndSortedTransactions;
 
   const handleRowClick = (transaction: MovimentoExtrato) => {
     setSelectedTransaction(transaction);
@@ -98,6 +149,10 @@ export default function ExtractTable() {
   const handleLimparFiltros = async () => {
     setDateFrom(undefined);
     setDateTo(undefined);
+    setSearchName("");
+    setSearchValue("");
+    setSortBy("none");
+    setSortOrder("none");
     setAllTransactions([]);
     setFiltrosAtivos({ cursor: 0 });
     toast.success("Filtros limpos!");
@@ -168,7 +223,7 @@ export default function ExtractTable() {
 
   return (
     <div className="space-y-6">
-      {/* Filtro redesenhado */}
+      {/* Filtro redesenhado com novos campos */}
       <Card className="bg-card border border-border shadow-2xl rounded-3xl overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-muted/20 to-muted/30 border-b border-border pb-6">
           <div className="flex items-center justify-between">
@@ -189,7 +244,8 @@ export default function ExtractTable() {
         </CardHeader>
         
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Primeira linha - Filtros de data */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <div className="space-y-2">
               <label className="text-sm font-semibold text-card-foreground">Data inicial</label>
               <Popover>
@@ -273,6 +329,77 @@ export default function ExtractTable() {
               </Button>
             </div>
           </div>
+
+          {/* Segunda linha - Filtros de busca por nome e valor */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-card-foreground">Buscar por nome</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Nome do cliente ou documento"
+                  value={searchName}
+                  onChange={(e) => setSearchName(e.target.value)}
+                  className="pl-10 h-12 rounded-xl border-border hover:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-card-foreground">Buscar por valor</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">R$</span>
+                <Input
+                  placeholder="Ex: 100,50"
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                  className="pl-10 h-12 rounded-xl border-border hover:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-card-foreground">Ordenar por</label>
+              <Select value={sortBy} onValueChange={(value: "value" | "date" | "none") => setSortBy(value)}>
+                <SelectTrigger className="h-12 rounded-xl border-border hover:border-blue-500 transition-colors">
+                  <SelectValue placeholder="Selecionar ordenação" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem ordenação</SelectItem>
+                  <SelectItem value="value">Valor</SelectItem>
+                  <SelectItem value="date">Data</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-card-foreground">Ordem</label>
+              <Select 
+                value={sortOrder} 
+                onValueChange={(value: "asc" | "desc" | "none") => setSortOrder(value)}
+                disabled={sortBy === "none"}
+              >
+                <SelectTrigger className="h-12 rounded-xl border-border hover:border-blue-500 transition-colors">
+                  <SelectValue placeholder="Selecionar ordem" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Padrão</SelectItem>
+                  <SelectItem value="asc">
+                    <div className="flex items-center gap-2">
+                      <ArrowUp className="h-4 w-4" />
+                      Crescente
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="desc">
+                    <div className="flex items-center gap-2">
+                      <ArrowDown className="h-4 w-4" />
+                      Decrescente
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -311,8 +438,11 @@ export default function ExtractTable() {
                   Extrato de Transações
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {displayTransactions.length} registros • {debitCount} débitos • {creditCount} créditos
+                  {displayTransactions.length} registros filtrados • {displayTransactions.filter(t => t.type === 'DÉBITO').length} débitos • {displayTransactions.filter(t => t.type === 'CRÉDITO').length} créditos
                   {hasMore && <span className="text-blue-500"> • Mais registros disponíveis</span>}
+                  {(searchName || searchValue || sortBy !== "none") && (
+                    <span className="text-amber-500"> • Filtros ativos</span>
+                  )}
                 </p>
               </div>
             </div>
@@ -668,4 +798,4 @@ export default function ExtractTable() {
       </Dialog>
     </div>
   );
-} 
+}

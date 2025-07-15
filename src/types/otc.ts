@@ -7,7 +7,7 @@ export type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
 export type OperationType = 'credit' | 'debit' | 'lock' | 'unlock' | 'note';
 
 // Tipos de transações
-export type TransactionType = 'deposit' | 'withdrawal' | 'manual_credit' | 'manual_debit';
+export type TransactionType = 'deposit' | 'withdrawal' | 'manual_credit' | 'manual_debit' | 'manual_adjustment';
 
 // Status de transação
 export type TransactionStatus = 'pending' | 'processed' | 'failed' | 'cancelled';
@@ -196,4 +196,4 @@ export interface OTCChartData {
   deposits: number;
   withdrawals: number;
   balance: number;
-} 
+}

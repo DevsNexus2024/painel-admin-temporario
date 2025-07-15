@@ -108,6 +108,8 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
           return <DollarSign className="w-4 h-4 text-blue-600" />;
         case 'manual_debit':
           return <DollarSign className="w-4 h-4 text-orange-600" />;
+        case 'manual_adjustment':
+          return <DollarSign className="w-4 h-4 text-purple-600" />;
         default:
           return <FileText className="w-4 h-4 text-gray-600" />;
       }
@@ -123,6 +125,8 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
           return 'Crédito Manual';
         case 'manual_debit':
           return 'Débito Manual';
+        case 'manual_adjustment':
+          return transaction.amount >= 0 ? 'Crédito Manual' : 'Débito Manual';
         default:
           return type;
       }
@@ -143,6 +147,19 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
       }
     };
 
+    // Determinar se é crédito ou débito
+    const isCredit = transaction.type === 'deposit' || 
+                     transaction.type === 'manual_credit' || 
+                     (transaction.type === 'manual_adjustment' && transaction.amount >= 0);
+
+    const isDebit = transaction.type === 'withdrawal' || 
+                    transaction.type === 'manual_debit' || 
+                    (transaction.type === 'manual_adjustment' && transaction.amount < 0);
+
+    // REMOVER estas linhas desnecessárias:
+    // const shouldShowAsCredit = isCredit && !isDebit;
+    // const shouldShowAsPositive = isCredit;
+
     return (
       <TableRow key={transaction.id}>
         <TableCell>
@@ -161,12 +178,10 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
         
         <TableCell className="text-right">
           <div className={`font-semibold ${
-            transaction.type === 'deposit' || transaction.type === 'manual_credit'
-              ? 'text-green-600'
-              : 'text-red-600'
+            isCredit ? 'text-green-600' : 'text-red-600'
           }`}>
-            {transaction.type === 'deposit' || transaction.type === 'manual_credit' ? '+' : '-'}
-            {otcService.formatCurrency(transaction.amount)}
+            {isCredit ? '+' : '-'}
+            {otcService.formatCurrency(Math.abs(transaction.amount))}
           </div>
         </TableCell>
         
@@ -523,4 +538,4 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
   );
 };
 
-export default OTCStatementModal; 
+export default OTCStatementModal;
