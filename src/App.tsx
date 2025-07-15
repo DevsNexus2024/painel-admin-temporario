@@ -15,6 +15,9 @@ import Cotacoes from "./pages/Cotacoes";
 import Login from "./pages/Login";
 import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIAMENTE
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
+import OTCClients from "./pages/otc/OTCClients";
+import ClientStatement from "./pages/ClientStatement";
+import ClientLogin from "./pages/ClientLogin";
 
 // Página para informar que registro está bloqueado
 const RegisterBlocked = () => (
@@ -51,7 +54,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000, // 5 minutos - dados ficam frescos
-      cacheTime: 10 * 60 * 1000, // 10 minutos - cache persiste
+      gcTime: 10 * 60 * 1000, // 10 minutos - cache persiste
       refetchOnWindowFocus: false, // Não refetch ao focar
       refetchOnReconnect: true, // Refetch quando reconectar
       retry: 2, // Tentar 2 vezes em caso de erro
@@ -70,12 +73,20 @@ const App = () => (
           <Routes>
             {/* Rotas públicas de autenticação */}
             <Route path="/login" element={<Login />} />
+            <Route path="/login-cliente" element={<ClientLogin />} />
             {/* REGISTRO DESBLOQUEADO TEMPORARIAMENTE */}
             <Route path="/register" element={<Register />} />
             
-            {/* Rotas protegidas */}
+            {/* Rota específica para extrato do cliente (sem sidebar) */}
+            <Route path="/client-statement" element={
+              <ProtectedRoute redirectTo="/login-cliente">
+                <ClientStatement />
+              </ProtectedRoute>
+            } />
+            
+            {/* Rotas protegidas - ADMIN APENAS */}
             <Route element={
-              <ProtectedRoute>
+              <ProtectedRoute requireAdmin={true}>
                 <MainLayout />
               </ProtectedRoute>
             }>
@@ -85,6 +96,7 @@ const App = () => (
               <Route path="/pagamentos" element={<PaymentsPage />} />
               <Route path="/cotacoes" element={<Cotacoes />} />
               <Route path="/bot-cotacao" element={<BotCotacao />} />
+              <Route path="/otc" element={<OTCClients />} />
             </Route>
             
             {/* Página 404 */}

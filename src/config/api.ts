@@ -203,4 +203,95 @@ export const apiInterceptor = {
       throw error;
     }
   }
+};
+
+// Instância da API configurada com fetch
+export const api = {
+  get: async <T>(url: string): Promise<{ data: T }> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return { data };
+  },
+
+  post: async <T>(url: string, body?: any): Promise<{ data: T }> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return { data };
+  },
+
+  put: async <T>(url: string, body?: any): Promise<{ data: T }> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return { data };
+  },
+
+  patch: async <T>(url: string, body?: any): Promise<{ data: T }> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return { data };
+  },
+
+  delete: async <T>(url: string): Promise<{ data: T }> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return { data };
+  }
 }; 

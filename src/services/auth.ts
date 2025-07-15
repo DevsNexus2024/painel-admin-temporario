@@ -64,22 +64,34 @@ class AuthService {
    */
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     try {
+      console.log('🔐 AuthService: Fazendo login para:', credentials.email);
+      
       const response = await createApiRequest(API_CONFIG.ENDPOINTS.AUTH.LOGIN, {
         method: 'POST',
         body: JSON.stringify(credentials)
       });
 
       const result: AuthResponse = await response.json();
+      
+      console.log('🔐 AuthService: Resposta da API:', result);
 
       if (result.sucesso && result.data) {
+        console.log('✅ AuthService: Salvando token e usuário no storage');
+        console.log('🪙 Token:', result.data.token);
+        console.log('👤 Usuário:', result.data.user);
+        
         // Salvar token e usuário
         TOKEN_STORAGE.set(result.data.token);
         USER_STORAGE.set(result.data.user);
+        
+        console.log('✅ AuthService: Token e usuário salvos com sucesso');
+      } else {
+        console.log('❌ AuthService: Login falhou:', result.mensagem);
       }
 
       return result;
     } catch (error) {
-      console.error('Erro no login:', error);
+      console.error('❌ AuthService: Erro no login:', error);
       return {
         sucesso: false,
         mensagem: 'Erro de conexão. Tente novamente.'
@@ -127,21 +139,33 @@ class AuthService {
   isAuthenticated(): boolean {
     const token = TOKEN_STORAGE.get();
     const user = USER_STORAGE.get();
-    return !!(token && user);
+    const isAuth = !!(token && user);
+    
+    console.log('🔍 AuthService: Verificando autenticação:', {
+      hasToken: !!token,
+      hasUser: !!user,
+      isAuthenticated: isAuth
+    });
+    
+    return isAuth;
   }
 
   /**
    * Obter usuário atual do storage
    */
   getCurrentUser(): User | null {
-    return USER_STORAGE.get();
+    const user = USER_STORAGE.get();
+    console.log('👤 AuthService: getCurrentUser:', user);
+    return user;
   }
 
   /**
    * Obter token atual
    */
   getCurrentToken(): string | null {
-    return TOKEN_STORAGE.get();
+    const token = TOKEN_STORAGE.get();
+    console.log('🪙 AuthService: getCurrentToken:', token ? 'presente' : 'ausente');
+    return token;
   }
 
   /**

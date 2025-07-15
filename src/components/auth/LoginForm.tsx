@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
+import { userTypeService } from '@/services/userType';
+import { authService } from '@/services/auth';
 import { useState } from 'react';
 
 // Schema de validação
@@ -47,11 +49,37 @@ const LoginForm: React.FC = () => {
 
   // Handler do submit
   const onSubmit = async (data: LoginFormData) => {
-    const success = await login(data);
+    const success = await login({
+      email: data.email,
+      password: data.password
+    });
     
     if (success) {
-      // Redirecionar para página original ou dashboard
-      navigate(from, { replace: true });
+      // Aguardar um pouco para o estado atualizar e então verificar tipo de usuário
+      setTimeout(async () => {
+        try {
+          // Buscar usuário atualizado do storage
+          const storedUser = authService.getCurrentUser();
+          if (storedUser) {
+            const isOTC = await userTypeService.isOTCUser(storedUser);
+            
+            if (isOTC) {
+              // Se é usuário OTC, redirecionar para extrato OTC
+              console.log('🔄 LoginForm: Usuário OTC logado via admin, redirecionando para /client-statement');
+              navigate('/client-statement', { replace: true });
+            } else {
+              // Se é admin, redirecionar normalmente
+              navigate(from, { replace: true });
+            }
+          } else {
+            navigate(from, { replace: true });
+          }
+        } catch (error) {
+          console.error('❌ LoginForm: Erro ao verificar tipo de usuário:', error);
+          // Em caso de erro, redirecionar normalmente
+          navigate(from, { replace: true });
+        }
+      }, 200);
     }
   };
 
@@ -136,7 +164,7 @@ const LoginForm: React.FC = () => {
             </Button>
 
             {/* Link para registro - DESBLOQUEADO TEMPORARIAMENTE */}
-            <div className="text-center">
+            <div className="text-center space-y-2">
               <p className="text-sm text-muted-foreground">
                 Não tem uma conta?{' '}
                 <Link
@@ -146,6 +174,18 @@ const LoginForm: React.FC = () => {
                   Registre-se aqui
                 </Link>
               </p>
+              
+              <div className="border-t pt-2">
+                <p className="text-sm text-muted-foreground">
+                  Você é cliente OTC?{' '}
+                  <Link
+                    to="/login-cliente"
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    Acesse seu extrato
+                  </Link>
+                </p>
+              </div>
             </div>
           </form>
         </CardContent>

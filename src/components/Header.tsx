@@ -12,7 +12,7 @@ const Header: React.FC = () => {
       
       <div className="flex items-center">
         <img 
-          src="/lovable-uploads/ecc0d6af-434b-4a82-bde4-2c3bbad1abd9.png" 
+          src="" 
           alt="TCR Logo" 
           className="h-10"
         />

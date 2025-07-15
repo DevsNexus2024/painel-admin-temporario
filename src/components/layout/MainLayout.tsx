@@ -12,7 +12,8 @@ import {
     LogOut,
     Settings,
     BarChart3,
-    Bot
+    Bot,
+    Users
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -206,6 +207,20 @@ export default function MainLayout() {
                                         icon={<Bot className="h-4 w-4" />}
                                         label="Bot de Cotação"
                                         badge="BETA"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="pb-2">
+                                <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                    OTC
+                                </h3>
+                                <div className="space-y-1">
+                                    <SidebarLink
+                                        to="/otc"
+                                        icon={<Users className="h-4 w-4" />}
+                                        label="Clientes OTC"
+                                        badge="NOVO"
                                     />
                                 </div>
                             </div>

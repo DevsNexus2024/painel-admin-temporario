@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +20,8 @@ export default function ExtractTable() {
   const [dateFrom, setDateFrom] = useState<Date>();
   const [dateTo, setDateTo] = useState<Date>();
   const [filtrosAtivos, setFiltrosAtivos] = useState({ cursor: 0 });
+  const [allTransactions, setAllTransactions] = useState<MovimentoExtrato[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Usar hook de cache para extrato
   const { 
@@ -34,6 +36,28 @@ export default function ExtractTable() {
 
   const transactions = (extratoData as ExtratoResponse)?.items || [];
   const hasMore = (extratoData as ExtratoResponse)?.hasMore || false;
+  const currentCursor = (extratoData as ExtratoResponse)?.cursor || 0;
+
+  // Acumular transações quando novos dados chegarem
+  useEffect(() => {
+    if (transactions.length > 0) {
+      if (filtrosAtivos.cursor === 0) {
+        // Nova busca - substitui todos os dados
+        setAllTransactions(transactions);
+      } else {
+        // Carregando mais - adiciona aos existentes
+        setAllTransactions(prev => {
+          const existingIds = new Set(prev.map(t => t.id));
+          const newTransactions = transactions.filter(t => !existingIds.has(t.id));
+          return [...prev, ...newTransactions];
+        });
+      }
+      setIsLoadingMore(false);
+    }
+  }, [transactions, filtrosAtivos.cursor]);
+
+  // Usar allTransactions em vez de transactions
+  const displayTransactions = allTransactions;
 
   const handleRowClick = (transaction: MovimentoExtrato) => {
     setSelectedTransaction(transaction);
@@ -58,13 +82,15 @@ export default function ExtractTable() {
     }
 
     const novosFiltros = {
-      cursor: 0,
+      cursor: 0, // Reset cursor para nova busca
       ...(dateFrom && dateTo && {
         de: formatarDataParaAPI(dateFrom),
         ate: formatarDataParaAPI(dateTo)
       })
     };
 
+    // Limpar transações acumuladas para nova busca
+    setAllTransactions([]);
     setFiltrosAtivos(novosFiltros);
     toast.success("Filtros aplicados com sucesso!");
   };
@@ -72,8 +98,17 @@ export default function ExtractTable() {
   const handleLimparFiltros = async () => {
     setDateFrom(undefined);
     setDateTo(undefined);
+    setAllTransactions([]);
     setFiltrosAtivos({ cursor: 0 });
     toast.success("Filtros limpos!");
+  };
+
+  const handleCarregarMais = () => {
+    setIsLoadingMore(true);
+    setFiltrosAtivos(prev => ({
+      ...prev,
+      cursor: currentCursor
+    }));
   };
 
   const handleRefresh = () => {
@@ -128,8 +163,8 @@ export default function ExtractTable() {
     }
   };
 
-  const debitCount = transactions.filter(t => t.type === 'DÉBITO').length;
-  const creditCount = transactions.filter(t => t.type === 'CRÉDITO').length;
+  const debitCount = displayTransactions.filter(t => t.type === 'DÉBITO').length;
+  const creditCount = displayTransactions.filter(t => t.type === 'CRÉDITO').length;
 
   return (
     <div className="space-y-6">
@@ -263,8 +298,8 @@ export default function ExtractTable() {
         </Card>
       )}
 
-      {/* Tabela redesenhada - versão responsiva melhorada */}
-      <Card className="bg-card border border-border shadow-2xl rounded-3xl overflow-hidden">
+      {/* Tabela redesenhada - largura completa */}
+      <Card className="bg-card border border-border shadow-2xl rounded-3xl overflow-hidden w-full">
         <CardHeader className="bg-gradient-to-r from-muted/20 to-muted/30 border-b border-border pb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -276,7 +311,8 @@ export default function ExtractTable() {
                   Extrato de Transações
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {transactions.length} registros • {debitCount} débitos • {creditCount} créditos
+                  {displayTransactions.length} registros • {debitCount} débitos • {creditCount} créditos
+                  {hasMore && <span className="text-blue-500"> • Mais registros disponíveis</span>}
                 </p>
               </div>
             </div>
@@ -292,7 +328,7 @@ export default function ExtractTable() {
                 <p className="text-muted-foreground">Carregando extrato...</p>
               </div>
             </div>
-          ) : transactions.length === 0 ? (
+          ) : displayTransactions.length === 0 ? (
             <div className="flex items-center justify-center p-12">
               <div className="text-center">
                 <FileText className="h-8 w-8 mx-auto mb-4 text-muted-foreground" />
@@ -304,23 +340,23 @@ export default function ExtractTable() {
             </div>
           ) : (
             <>
-              {/* Versão Desktop - tabela compacta */}
-              <div className="hidden xl:block">
-                <div className="max-h-[65vh] overflow-y-auto scrollbar-thin">
+              {/* Versão Desktop - tabela completa */}
+              <div className="hidden lg:block">
+                <div className="max-h-[75vh] overflow-y-auto scrollbar-thin">
                   <Table>
                     <TableHeader className="sticky top-0 bg-muted/40 backdrop-blur-sm z-10">
                       <TableRow className="border-b border-border hover:bg-transparent">
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[110px]">Data/Hora</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[120px]">Valor</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[80px]">Tipo</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Documento</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Cliente</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[90px]">Status</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Código</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Data/Hora</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Valor</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Tipo</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 min-w-[200px]">Documento</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Cliente</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Status</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Código</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {transactions.map((transaction) => {
+                      {displayTransactions.map((transaction) => {
                         const typeConfig = getTypeConfig(transaction.type);
                         
                         return (
@@ -342,10 +378,10 @@ export default function ExtractTable() {
                                 {transaction.type}
                               </Badge>
                             </TableCell>
-                            <TableCell className="py-3 text-xs text-muted-foreground truncate max-w-[140px]">
+                            <TableCell className="py-3 text-xs text-muted-foreground break-words">
                               {transaction.document}
                             </TableCell>
-                            <TableCell className="py-3 text-xs text-muted-foreground truncate max-w-[100px]">
+                            <TableCell className="py-3 text-xs text-muted-foreground truncate max-w-[160px]">
                               {transaction.client || "—"}
                             </TableCell>
                             <TableCell className="py-3">
@@ -360,8 +396,8 @@ export default function ExtractTable() {
                               )}
                             </TableCell>
                             <TableCell className="py-3">
-                              <div className="flex items-center gap-1">
-                                <span className="font-mono text-xs text-muted-foreground truncate max-w-[70px]">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs text-muted-foreground truncate max-w-[100px]">
                                   {transaction.code}
                                 </span>
                                 <Button
@@ -382,9 +418,9 @@ export default function ExtractTable() {
                 </div>
               </div>
 
-              {/* Versão Tablet - Cards em lista */}
-              <div className="xl:hidden space-y-3 p-4">
-                {transactions.map((transaction) => {
+              {/* Versão Mobile/Tablet - Cards em lista */}
+              <div className="lg:hidden space-y-3 p-4">
+                {displayTransactions.map((transaction) => {
                   const typeConfig = getTypeConfig(transaction.type);
                   
                   return (
@@ -434,6 +470,30 @@ export default function ExtractTable() {
                   );
                 })}
               </div>
+
+              {/* Botão Carregar Mais */}
+              {hasMore && (
+                <div className="p-4 border-t border-border bg-muted/10">
+                  <Button
+                    onClick={handleCarregarMais}
+                    disabled={isLoadingMore}
+                    variant="outline"
+                    className="w-full h-12 rounded-xl border-border hover:border-blue-500 transition-colors bg-background hover:bg-muted/20"
+                  >
+                    {isLoadingMore ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Carregando mais registros...
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="h-4 w-4 mr-2" />
+                        Carregar mais registros
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </CardContent>
