@@ -1,4 +1,4 @@
-import { format, fromUnixTime, startOfDay, endOfDay, getUnixTime, parseISO } from 'date-fns';
+import { format, fromUnixTime, startOfDay, endOfDay, getUnixTime, parseISO, addHours } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 export const formatTimestamp = (timestamp: number | string, formatStr: string = 'dd/MM/yyyy HH:mm'): string => {
@@ -7,6 +7,21 @@ export const formatTimestamp = (timestamp: number | string, formatStr: string = 
     if (typeof timestamp === 'string') {
         // Se for string, assume que é ISO date
         date = parseISO(timestamp);
+    } else {
+        // Se for número, assume que é Unix timestamp
+        date = fromUnixTime(timestamp);
+    }
+    
+    return format(date, formatStr, { locale: ptBR });
+};
+
+export const formatOTCTimestamp = (timestamp: number | string, formatStr: string = 'dd/MM/yyyy HH:mm'): string => {
+    let date: Date;
+    
+    if (typeof timestamp === 'string') {
+        // Se for string ISO, parseISO trata como UTC
+        // Vamos adicionar 5 horas para corrigir o fuso horário
+        date = addHours(parseISO(timestamp), 5);
     } else {
         // Se for número, assume que é Unix timestamp
         date = fromUnixTime(timestamp);

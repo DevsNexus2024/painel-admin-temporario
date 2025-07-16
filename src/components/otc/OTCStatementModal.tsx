@@ -286,7 +286,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div>
                   <Label className="text-sm font-medium text-muted-foreground">
                     Nome
@@ -311,13 +311,26 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-muted-foreground">
-                    Saldo Atual
+                    Saldo BRL
                   </Label>
                   <p className={`text-sm font-semibold ${
                     statement.cliente.current_balance >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}>
                     {otcService.formatCurrency(statement.cliente.current_balance)}
                   </p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">
+                    Saldo USD
+                  </Label>
+                  <p className="text-sm font-semibold text-blue-600">
+                    $ {parseFloat((statement.cliente as any).usd_balance || 0).toFixed(4)}
+                  </p>
+                  {(statement.cliente as any).last_conversion_rate && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Taxa: {parseFloat((statement.cliente as any).last_conversion_rate || 0).toFixed(4)}
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>

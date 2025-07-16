@@ -4,6 +4,8 @@ import {
   OTCStatement, 
   OTCStats, 
   OTCOperation,
+  OTCConversion,
+  OTCConversionsResponse,
   CreateOTCClientRequest,
   CreateOTCOperationRequest,
   OTCClientsResponse,
@@ -149,6 +151,61 @@ export class OTCService {
     );
     
     return response.data;
+  }
+
+  /**
+   * Obtém histórico de conversões do cliente
+   */
+  async getConversionHistory(clientId: number, params: OTCStatementParams = {}): Promise<OTCConversionsResponse> {
+    const searchParams = new URLSearchParams();
+    
+    if (params.page) {
+      searchParams.append('page', String(params.page));
+    }
+    if (params.limit) {
+      searchParams.append('limit', String(params.limit));
+    }
+    if (params.dateFrom) {
+      searchParams.append('dateFrom', params.dateFrom);
+    }
+    if (params.dateTo) {
+      searchParams.append('dateTo', params.dateTo);
+    }
+
+    const response = await api.get<OTCConversionsResponse>(
+      `${OTC_BASE_URL}/clients/${clientId}/conversions${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
+    );
+    
+    return response.data;
+  }
+
+  /**
+   * Valida dados de conversão
+   */
+  validateConversionData(brlAmount: number, usdAmount: number, rate: number): boolean {
+    // Validar se todos os valores são números positivos
+    if (isNaN(brlAmount) || isNaN(usdAmount) || isNaN(rate)) {
+      return false;
+    }
+
+    if (brlAmount <= 0 || usdAmount <= 0 || rate <= 0) {
+      return false;
+    }
+
+    // Validar se a taxa está dentro de um range razoável (0.1 a 10 BRL/USD)
+    if (rate < 0.1 || rate > 10) {
+      return false;
+    }
+
+    // Validar se o cálculo da conversão está aproximadamente correto (tolerância de 1%)
+    const expectedUsd = brlAmount / rate;
+    const tolerance = expectedUsd * 0.01; // 1% de tolerância
+    
+    if (Math.abs(usdAmount - expectedUsd) > tolerance) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -314,6 +371,18 @@ export class OTCService {
       default:
         return false;
     }
+  }
+
+  /**
+   * Atualiza status de conferência de um registro do histórico
+   */
+  async updateHistoryCheckStatus(clientId: number, historyId: number, checked: boolean): Promise<OTCApiResponse<{ id: number; checked_by_client: boolean }>> {
+    const response = await api.put<OTCApiResponse<{ id: number; checked_by_client: boolean }>>(
+      `${OTC_BASE_URL}/clients/${clientId}/history/${historyId}/check`,
+      { checked }
+    );
+    
+    return response.data;
   }
 
   /**

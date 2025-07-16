@@ -3,9 +3,8 @@ import {
   CreditCard, 
   Plus, 
   Minus, 
-  Lock, 
-  Unlock, 
-  FileText, 
+  ArrowRightLeft, 
+  FileText,
   AlertTriangle,
   User,
   DollarSign
@@ -45,7 +44,11 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
   const [formData, setFormData] = useState({
     operation_type: 'credit' as OperationType,
     amount: '',
-    description: ''
+    description: '',
+    // Campos específicos para conversão
+    brl_amount: '',
+    usd_amount: '',
+    conversion_rate: ''
   });
 
   // Estados de validação
@@ -58,20 +61,56 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
       setFormData({
         operation_type: 'credit',
         amount: '',
-        description: ''
+        description: '',
+        brl_amount: '',
+        usd_amount: '',
+        conversion_rate: ''
       });
       setErrors({});
       setShowConfirmation(false);
     }
   }, [isOpen]);
 
-  // Atualizar campo do formulário
-  const updateField = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  // Função para formatar valor em USD
+  const formatUSD = (value: number): string => {
+    return `$ ${value.toLocaleString('pt-BR', {
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 4
+    })}`;
+  };
+
+  // Função para calcular taxa automaticamente
+  const calculateConversionRate = (brlAmount: string, usdAmount: string): string => {
+    const brl = parseFloat(brlAmount);
+    const usd = parseFloat(usdAmount);
+    
+    if (brl > 0 && usd > 0) {
+      return (brl / usd).toFixed(4);
+    }
+    
+    return '';
+  };
+
+  // Atualizar campo com cálculo automático de taxa
+  const updateField = (field: keyof CreateOTCOperationRequest, value: string) => {
+    const newFormData = { ...formData, [field]: value };
+    
+    // Se alterou BRL ou USD, calcular taxa automaticamente
+    if (field === 'brl_amount' || field === 'usd_amount') {
+      const brlValue = field === 'brl_amount' ? value : formData.brl_amount;
+      const usdValue = field === 'usd_amount' ? value : formData.usd_amount;
+      
+      const autoRate = calculateConversionRate(brlValue, usdValue);
+      if (autoRate) {
+        newFormData.conversion_rate = autoRate;
+      }
+    }
+    
+    setFormData(newFormData);
     
     // Limpar erro do campo quando o usuário começa a digitar
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+    if (errors[field as string]) {
+      setErrors(prev => ({ ...prev, [field as string]: '' }));
     }
   };
 
@@ -82,51 +121,34 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
         return {
           icon: <Plus className="w-4 h-4" />,
           label: 'Crédito',
-          description: 'Adicionar valor ao saldo do cliente',
+          description: 'Adicionar valor ao saldo em reais do cliente',
           color: 'text-green-600',
           bgColor: 'bg-green-50',
           borderColor: 'border-green-200',
-          requiresAmount: true
+          requiresAmount: true,
+          requiresConversion: false
         };
       case 'debit':
         return {
           icon: <Minus className="w-4 h-4" />,
           label: 'Débito',
-          description: 'Remover valor do saldo do cliente',
+          description: 'Remover valor do saldo em reais do cliente',
           color: 'text-red-600',
           bgColor: 'bg-red-50',
           borderColor: 'border-red-200',
-          requiresAmount: true
+          requiresAmount: true,
+          requiresConversion: false
         };
-      case 'lock':
+      case 'convert':
         return {
-          icon: <Lock className="w-4 h-4" />,
-          label: 'Bloqueio',
-          description: 'Bloquear conta do cliente',
-          color: 'text-yellow-600',
-          bgColor: 'bg-yellow-50',
-          borderColor: 'border-yellow-200',
-          requiresAmount: false
-        };
-      case 'unlock':
-        return {
-          icon: <Unlock className="w-4 h-4" />,
-          label: 'Desbloqueio',
-          description: 'Desbloquear conta do cliente',
+          icon: <ArrowRightLeft className="w-4 h-4" />,
+          label: 'Inserir Trava',
+          description: 'Converter reais para dólares automaticamente',
           color: 'text-blue-600',
           bgColor: 'bg-blue-50',
           borderColor: 'border-blue-200',
-          requiresAmount: false
-        };
-      case 'note':
-        return {
-          icon: <FileText className="w-4 h-4" />,
-          label: 'Anotação',
-          description: 'Adicionar anotação ao histórico',
-          color: 'text-gray-600',
-          bgColor: 'bg-gray-50',
-          borderColor: 'border-gray-200',
-          requiresAmount: false
+          requiresAmount: false,
+          requiresConversion: true
         };
       default:
         return {
@@ -136,7 +158,8 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
           color: 'text-gray-600',
           bgColor: 'bg-gray-50',
           borderColor: 'border-gray-200',
-          requiresAmount: false
+          requiresAmount: false,
+          requiresConversion: false
         };
     }
   };
@@ -163,6 +186,58 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
           newErrors.amount = 'Valor deve ser um número positivo';
         } else if (amount > 1000000) {
           newErrors.amount = 'Valor máximo é R$ 1.000.000,00';
+        }
+      }
+    }
+
+    // Validar campos de conversão (apenas para inserir trava)
+    if (operationInfo.requiresConversion) {
+      // Validar valor em reais
+      if (!formData.brl_amount.trim()) {
+        newErrors.brl_amount = 'Valor em reais é obrigatório';
+      } else {
+        const brlAmount = parseFloat(formData.brl_amount);
+        if (isNaN(brlAmount) || brlAmount <= 0) {
+          newErrors.brl_amount = 'Valor deve ser um número positivo';
+        } else if (brlAmount > 1000000) {
+          newErrors.brl_amount = 'Valor máximo é R$ 1.000.000,00';
+        }
+      }
+
+      // Validar valor em dólares
+      if (!formData.usd_amount.trim()) {
+        newErrors.usd_amount = 'Valor em dólares é obrigatório';
+      } else {
+        const usdAmount = parseFloat(formData.usd_amount);
+        if (isNaN(usdAmount) || usdAmount <= 0) {
+          newErrors.usd_amount = 'Valor deve ser um número positivo';
+        } else if (usdAmount > 1000000) {
+          newErrors.usd_amount = 'Valor máximo é $ 1.000.000,0000';
+        }
+      }
+
+      // Validar taxa de conversão
+      if (!formData.conversion_rate.trim()) {
+        newErrors.conversion_rate = 'Taxa de conversão é obrigatória';
+      } else {
+        const rate = parseFloat(formData.conversion_rate);
+        if (isNaN(rate) || rate <= 0) {
+          newErrors.conversion_rate = 'Taxa deve ser um número positivo';
+        } else if (rate < 0.1 || rate > 10) {
+          newErrors.conversion_rate = 'Taxa deve estar entre 0.1 e 10.0';
+        }
+      }
+
+      // Validar cálculo da conversão (se todos os campos estão preenchidos)
+      if (formData.brl_amount && formData.usd_amount && formData.conversion_rate) {
+        const brlAmount = parseFloat(formData.brl_amount);
+        const usdAmount = parseFloat(formData.usd_amount);
+        const rate = parseFloat(formData.conversion_rate);
+
+        if (!isNaN(brlAmount) && !isNaN(usdAmount) && !isNaN(rate)) {
+          if (!otcService.validateConversionData(brlAmount, usdAmount, rate)) {
+            newErrors.conversion_rate = 'Cálculo de conversão incorreto. Verifique os valores.';
+          }
         }
       }
     }
@@ -197,13 +272,31 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
         description: formData.description.trim()
       };
 
-      // Adicionar valor apenas se necessário
       const operationInfo = getOperationInfo(formData.operation_type);
+
+      // Adicionar valor apenas se necessário (crédito/débito)
       if (operationInfo.requiresAmount) {
         operationData.amount = parseFloat(formData.amount);
       }
 
+      // Adicionar dados de conversão apenas se necessário (inserir trava)
+      if (operationInfo.requiresConversion) {
+        operationData.brl_amount = parseFloat(formData.brl_amount);
+        operationData.usd_amount = parseFloat(formData.usd_amount);
+        operationData.conversion_rate = parseFloat(formData.conversion_rate);
+      }
+
       await createOperation(operationData);
+      
+      // Mostrar mensagem de sucesso específica para cada tipo
+      if (operationInfo.requiresConversion) {
+        toast.success('Conversão realizada com sucesso!', {
+          description: `R$ ${parseFloat(formData.brl_amount).toFixed(2)} convertidos para $ ${parseFloat(formData.usd_amount).toFixed(4)}`
+        });
+      } else {
+        toast.success('Operação realizada com sucesso!');
+      }
+      
       onClose();
     } catch (error) {
       console.error('Erro ao criar operação:', error);
@@ -298,7 +391,7 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                   onValueChange={(value) => updateField('operation_type', value)}
                   className="space-y-3"
                 >
-                  {(['credit', 'debit', 'lock', 'unlock', 'note'] as OperationType[]).map((type) => {
+                  {(['credit', 'debit', 'convert'] as OperationType[]).map((type) => {
                     const info = getOperationInfo(type);
                     return (
                       <div key={type} className="flex items-center space-x-2">
@@ -364,6 +457,136 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                       </p>
                     )}
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Campos para Conversão (apenas para inserir trava) */}
+            {currentOperationInfo.requiresConversion && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <ArrowRightLeft className="w-4 h-4" />
+                    Dados da Conversão
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Informe os valores para conversão de reais para dólares
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Valor em Reais */}
+                    <div className="space-y-2">
+                      <Label htmlFor="brl_amount">
+                        Valor em Reais (BRL) *
+                      </Label>
+                      <Input
+                        id="brl_amount"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max="1000000"
+                        value={formData.brl_amount}
+                        onChange={(e) => updateField('brl_amount', e.target.value)}
+                        placeholder="0,00"
+                        className={errors.brl_amount ? 'border-red-500' : ''}
+                      />
+                      {errors.brl_amount && (
+                        <p className="text-sm text-red-500">{errors.brl_amount}</p>
+                      )}
+                      {formData.brl_amount && !errors.brl_amount && (
+                        <p className="text-sm text-blue-600">
+                          Débito: {otcService.formatCurrency(parseFloat(formData.brl_amount) || 0)}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Valor em Dólares */}
+                    <div className="space-y-2">
+                      <Label htmlFor="usd_amount">
+                        Valor em Dólares (USD) *
+                      </Label>
+                      <Input
+                        id="usd_amount"
+                        type="number"
+                        step="0.0001"
+                        min="0.0001"
+                        max="1000000"
+                        value={formData.usd_amount}
+                        onChange={(e) => updateField('usd_amount', e.target.value)}
+                        placeholder="0,0000"
+                        className={errors.usd_amount ? 'border-red-500' : ''}
+                      />
+                      {errors.usd_amount && (
+                        <p className="text-sm text-red-500">{errors.usd_amount}</p>
+                      )}
+                      {formData.usd_amount && !errors.usd_amount && (
+                        <p className="text-sm text-green-600">
+                          Crédito: {formatUSD(parseFloat(formData.usd_amount || '0'))}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Taxa de Conversão */}
+                  <div className="space-y-2 mt-4">
+                    <Label htmlFor="conversion_rate">
+                      Taxa de Conversão (BRL/USD) *
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      📊 A taxa é calculada automaticamente com base nos valores informados
+                    </p>
+                    <Input
+                      id="conversion_rate"
+                      type="number"
+                      step="0.0001"
+                      min="0.1"
+                      max="10"
+                      value={formData.conversion_rate}
+                      onChange={(e) => updateField('conversion_rate', e.target.value)}
+                      placeholder="Calculado automaticamente..."
+                      className={`${errors.conversion_rate ? 'border-red-500' : ''} ${formData.conversion_rate ? 'bg-green-50 border-green-300' : ''}`}
+                    />
+                    {errors.conversion_rate && (
+                      <p className="text-sm text-red-500">{errors.conversion_rate}</p>
+                    )}
+                    {formData.conversion_rate && !errors.conversion_rate && (
+                      <p className="text-sm text-green-600">
+                        ✓ Taxa: {parseFloat(formData.conversion_rate || '0').toFixed(4)} BRL/USD
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Validação do Cálculo */}
+                  {formData.brl_amount && formData.usd_amount && formData.conversion_rate && (
+                    <div className="mt-4 p-4 bg-gray-800 border border-gray-700 rounded-lg">
+                      <div className="text-sm space-y-2">
+                        <div className="font-medium text-white flex items-center gap-2">
+                          🧮 Verificação do Cálculo:
+                        </div>
+                        <div className="text-blue-100 bg-blue-900/50 p-3 rounded border-l-4 border-blue-400 font-medium">
+                          R$ {parseFloat(formData.brl_amount).toFixed(2)} ÷ {parseFloat(formData.conversion_rate).toFixed(4)} = 
+                          $ {(parseFloat(formData.brl_amount) / parseFloat(formData.conversion_rate)).toLocaleString('pt-BR', { minimumFractionDigits: 4 })}
+                        </div>
+                        <div className="text-orange-100 bg-orange-900/50 p-3 rounded border-l-4 border-orange-400 font-medium">
+                          Valor informado: $ {parseFloat(formData.usd_amount).toLocaleString('pt-BR', { minimumFractionDigits: 4 })}
+                        </div>
+                        {otcService.validateConversionData(
+                          parseFloat(formData.brl_amount),
+                          parseFloat(formData.usd_amount),
+                          parseFloat(formData.conversion_rate)
+                        ) ? (
+                          <div className="text-green-100 font-semibold bg-green-900/50 p-3 rounded border-l-4 border-green-400">
+                            ✅ Cálculo correto
+                          </div>
+                        ) : (
+                          <div className="text-red-100 font-semibold bg-red-900/50 p-3 rounded border-l-4 border-red-400">
+                            ⚠️ Verifique os valores
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}

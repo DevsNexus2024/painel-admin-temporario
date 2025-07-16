@@ -1,7 +1,7 @@
 import { User } from '@/services/auth';
 
 // 🔧 CONFIGURAÇÃO DE AMBIENTE - Altere para 'development' ou 'production'
-const FORCE_ENVIRONMENT: 'development' | 'production' = 'production';
+const FORCE_ENVIRONMENT: 'development' | 'production' = 'development';
 
 // URLs para cada ambiente
 const API_URLS = {

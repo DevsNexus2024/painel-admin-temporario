@@ -4,7 +4,7 @@
 export type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
 
 // Tipos de operações
-export type OperationType = 'credit' | 'debit' | 'lock' | 'unlock' | 'note';
+export type OperationType = 'credit' | 'debit' | 'convert';
 
 // Tipos de transações
 export type TransactionType = 'deposit' | 'withdrawal' | 'manual_credit' | 'manual_debit' | 'manual_adjustment';
@@ -27,7 +27,9 @@ export interface OTCClient {
   pix_key: string;
   pix_key_type: PixKeyType;
   is_active: boolean;
-  current_balance: number;
+  current_balance: number;      // BRL
+  usd_balance: number;          // USD - NOVO
+  last_conversion_rate?: number; // NOVO
   total_transactions: number;
   user: User;
   created_at: string;
@@ -38,9 +40,12 @@ export interface OTCClient {
 export interface OTCBalance {
   client_id: number;
   client_name: string;
-  current_balance: number;
+  current_balance: number;      // BRL
+  usd_balance: number;          // USD - NOVO
   last_updated: string;
   last_transaction_id?: number;
+  last_usd_transaction_id?: number; // NOVO
+  last_conversion_rate?: number; // NOVO
 }
 
 // Interface para transação
@@ -54,6 +59,22 @@ export interface OTCTransaction {
   payer_document?: string;
   bmp_identifier?: string;
   notes?: string;
+  is_conversion?: boolean;
+  description?: string;
+  processed_by?: string;
+  // Campos adicionados do histórico de saldo
+  history_id?: number;
+  checked_by_client?: boolean;
+  operation_type?: string;
+  operation_description?: string;
+  amount_change?: number;
+  usd_amount_change?: number;
+  usd_balance_before?: number;
+  usd_balance_after?: number;
+  conversion_rate?: number;
+  saldo_anterior?: number;
+  saldo_posterior?: number;
+  sort_date?: string;
 }
 
 // Interface para histórico de saldo
@@ -62,8 +83,13 @@ export interface OTCBalanceHistory {
   balance_before: number;
   balance_after: number;
   amount_change: number;
+  usd_balance_before: number;
+  usd_balance_after: number;
+  usd_amount_change: number;
+  conversion_rate?: number;
   operation_type: string;
   description: string;
+  checked_by_client?: boolean;
   created_at: string;
   transaction_id?: number;
   created_by: string;
@@ -76,7 +102,9 @@ export interface OTCStatement {
     name: string;
     document: string;
     pix_key: string;
-    current_balance: number;
+    current_balance: number;      // BRL
+    usd_balance: number;          // USD - NOVO
+    last_conversion_rate?: number; // NOVO
     last_updated: string;
   };
   transacoes: OTCTransaction[];
@@ -118,6 +146,42 @@ export interface OTCOperation {
   created_by: string;
 }
 
+// Interface para conversão BRL → USD
+export interface OTCConversion {
+  id: number;
+  otc_client_id: number;
+  admin_user_id: number;
+  brl_amount: number;
+  usd_amount: number;
+  conversion_rate: number;
+  brl_balance_before: number;
+  brl_balance_after: number;
+  usd_balance_before: number;
+  usd_balance_after: number;
+  description: string;
+  created_at: string;
+  admin: User;
+  client: {
+    id: number;
+    name: string;
+    document: string;
+  };
+}
+
+// Interface para resposta de conversões
+export interface OTCConversionsResponse {
+  success: boolean;
+  data: {
+    conversions: OTCConversion[];
+    pagination: {
+      current_page: number;
+      total_pages: number;
+      total_items: number;
+      items_per_page: number;
+    };
+  };
+}
+
 // Interface para criar cliente
 export interface CreateOTCClientRequest {
   user_id: number;
@@ -133,6 +197,10 @@ export interface CreateOTCOperationRequest {
   operation_type: OperationType;
   amount?: number;
   description: string;
+  // Campos específicos para conversão
+  brl_amount?: number;
+  usd_amount?: number;
+  conversion_rate?: number;
 }
 
 // Interface para resposta da API de clientes

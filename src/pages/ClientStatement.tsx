@@ -7,8 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CalendarDays, User, FileText, ArrowUpRight, ArrowDownRight, AlertCircle, LogOut, Settings, Shield, Filter, RefreshCw } from 'lucide-react';
-import { formatCurrency, formatTimestamp } from '@/utils/date';
+import { formatCurrency, formatTimestamp, formatOTCTimestamp } from '@/utils/date';
+import { Checkbox } from '@/components/ui/checkbox';
+import { toast } from 'sonner';
 
 interface ClientStatementData {
   cliente: {
@@ -32,8 +36,43 @@ const ClientStatement: React.FC = () => {
   // Estados para filtros de busca
   const [searchName, setSearchName] = useState("");
   const [searchValue, setSearchValue] = useState("");
+  const [searchDate, setSearchDate] = useState("");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("none");
   const [sortBy, setSortBy] = useState<"value" | "date" | "none">("none");
+  const [checkedItems, setCheckedItems] = useState<{[key: number]: boolean}>({});
+  const [updatingCheck, setUpdatingCheck] = useState<number | null>(null);
+
+  // Calcular total de depósitos (todos os depósitos: automáticos + manuais de crédito)
+  // Se tem filtro de data, mostra apenas os depósitos daquela data
+  const totalDepositado = useMemo(() => {
+    if (!data?.transacoes) return 0;
+    
+    let depositos = data.transacoes.filter(transacao => {
+      const operationType = (transacao as any).operation_type || transacao.type;
+      return operationType === 'deposit' || operationType === 'manual_credit';
+    });
+
+    // Se tem filtro de data, aplicar o filtro
+    if (searchDate.trim()) {
+      depositos = depositos.filter(transacao => {
+        // Usar sort_date para operações manuais, date para outras
+        const dataTransacao = (transacao as any).sort_date || transacao.date;
+        const operationType = (transacao as any).operation_type;
+        
+        // Aplicar correção de timezone apenas para operações não manuais
+        const dataFormatada = (operationType === 'manual_credit' || operationType === 'manual_debit') 
+          ? formatTimestamp(dataTransacao, 'dd/MM/yy')
+          : formatOTCTimestamp(dataTransacao, 'dd/MM/yy');
+        
+        return dataFormatada === searchDate;
+      });
+    }
+    
+    return depositos.reduce((total, transacao) => total + transacao.amount, 0);
+  }, [data?.transacoes, searchDate]);
+
+
 
   // Filtrar e ordenar transações
   const filteredAndSortedTransactions = useMemo(() => {
@@ -60,7 +99,31 @@ const ClientStatement: React.FC = () => {
       }
     }
     
-    // Ordenar
+    // Filtrar por data específica
+    if (searchDate.trim()) {
+      filtered = filtered.filter(transaction => {
+        // Usar sort_date para operações manuais, date para outras
+        const dataTransacao = (transaction as any).sort_date || transaction.date;
+        const operationType = (transaction as any).operation_type;
+        
+        // Aplicar correção de timezone apenas para operações não manuais
+        const dataFormatada = (operationType === 'manual_credit' || operationType === 'manual_debit') 
+          ? formatTimestamp(dataTransacao, 'dd/MM/yy')
+          : formatOTCTimestamp(dataTransacao, 'dd/MM/yy');
+        
+        return dataFormatada === searchDate;
+      });
+    }
+    
+    // SEMPRE ordenar por data (mais recente primeiro) como padrão
+    // Usar sort_date se disponível (operações manuais), senão usar date
+    filtered = [...filtered].sort((a, b) => {
+      const dateA = (a as any).sort_date || a.date;
+      const dateB = (b as any).sort_date || b.date;
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
+    });
+    
+    // Aplicar ordenação personalizada se solicitada
     if (sortBy !== "none" && sortOrder !== "none") {
       filtered = [...filtered].sort((a, b) => {
         let comparison = 0;
@@ -68,7 +131,9 @@ const ClientStatement: React.FC = () => {
         if (sortBy === "value") {
           comparison = a.amount - b.amount;
         } else if (sortBy === "date") {
-          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          const dateA = (a as any).sort_date || a.date;
+          const dateB = (b as any).sort_date || b.date;
+          comparison = new Date(dateA).getTime() - new Date(dateB).getTime();
         }
         
         return sortOrder === "asc" ? comparison : -comparison;
@@ -76,14 +141,74 @@ const ClientStatement: React.FC = () => {
     }
     
     return filtered;
-  }, [data?.transacoes, searchName, searchValue, sortBy, sortOrder]);
+  }, [data?.transacoes, searchName, searchValue, searchDate, sortBy, sortOrder]);
 
   // Limpar todos os filtros
   const clearAllFilters = () => {
     setSearchName("");
     setSearchValue("");
+    setSearchDate("");
+    setSelectedDate(undefined);
     setSortBy("none");
     setSortOrder("none");
+  };
+
+  // Função para lidar com seleção de data no calendário
+  const handleDateSelect = (date: Date | undefined) => {
+    setSelectedDate(date);
+    if (date) {
+      const formattedDate = formatTimestamp(date.getTime() / 1000, 'dd/MM/yy');
+      setSearchDate(formattedDate);
+    } else {
+      setSearchDate("");
+    }
+  };
+
+  // Função para formatar USD no padrão brasileiro
+  const formatUSD = (value: number): string => {
+    return new Intl.NumberFormat('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(value);
+  };
+
+  // Função para lidar com o checkbox de conferência
+  const handleCheckToggle = async (historyId: number, checked: boolean) => {
+    if (!data?.cliente?.id) {
+      toast.error('Erro: cliente não identificado');
+      return;
+    }
+
+    setUpdatingCheck(historyId);
+
+    try {
+      // Fazer a chamada ao backend
+      await otcService.updateHistoryCheckStatus(
+        data.cliente.id,
+        historyId,
+        checked
+      );
+
+      // Atualizar estado local apenas se o backend foi bem-sucedido
+      setCheckedItems(prev => ({
+        ...prev,
+        [historyId]: checked
+      }));
+
+      toast.success(checked ? 'Registro marcado como conferido' : 'Registro desmarcado');
+
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+      toast.error('Erro ao salvar. Tente novamente.');
+      
+      // Reverter o estado do checkbox em caso de erro
+      setCheckedItems(prev => ({
+        ...prev,
+        [historyId]: !checked
+      }));
+    } finally {
+      setUpdatingCheck(null);
+    }
   };
 
   useEffect(() => {
@@ -151,35 +276,53 @@ const ClientStatement: React.FC = () => {
         throw new Error('Erro de segurança: dados inconsistentes');
       }
 
-      // Usar os saldos corretos que vêm do histórico de saldo do backend
+      // Usar o histórico de saldo como base para garantir ordenação correta
       const historicoSaldo = statementResponse.data.historico_saldo || [];
+      const transacoes = statementResponse.data.transacoes || [];
       
-      const transacoesComSaldo = statementResponse.data.transacoes.map((transacao) => {
-        // Encontrar o histórico de saldo correspondente a esta transação
-        const historico = historicoSaldo.find(h => h.transaction_id === transacao.id);
+      const transacoesComSaldo = historicoSaldo.map((historico) => {
+        // Encontrar a transação correspondente a este histórico
+        const transacao = transacoes.find(t => t.id === historico.transaction_id);
         
-        if (historico) {
-          // Usar os saldos corretos que vêm do banco de dados
+        if (transacao) {
+          // Usar os dados da transação complementados com o histórico
           return {
             ...transacao,
             saldo_anterior: historico.balance_before,
-            saldo_posterior: historico.balance_after
+            saldo_posterior: historico.balance_after,
+            operation_type: historico.operation_type,
+            operation_description: historico.description,
+            // Campos específicos do histórico para conversões
+            amount_change: historico.amount_change,
+            usd_amount_change: historico.usd_amount_change,
+            usd_balance_before: historico.usd_balance_before,
+            usd_balance_after: historico.usd_balance_after,
+            conversion_rate: historico.conversion_rate,
+            checked_by_client: historico.checked_by_client || false,
+            history_id: historico.id,
+            // Para ordenação, usar created_at do histórico (quando foi efetivamente processada)
+            sort_date: historico.created_at
           };
         } else {
-          // Fallback caso não encontre o histórico (não deveria acontecer)
-          console.warn(`Histórico de saldo não encontrado para transação ${transacao.id}`);
-          return {
-            ...transacao,
-            saldo_anterior: 0,
-            saldo_posterior: 0
-          };
+          // Caso não encontre a transação (não deveria acontecer normalmente)
+          console.warn(`Transação não encontrada para histórico ${historico.id}`);
+          return null;
         }
-      });
+      }).filter(Boolean); // Remove itens null
 
       setData({
         ...statementResponse.data,
         transacoes: transacoesComSaldo
       });
+
+      // Inicializar checkboxes com dados do servidor
+      const initialChecked: {[key: number]: boolean} = {};
+      transacoesComSaldo.forEach(transacao => {
+        if (transacao.history_id) {
+          initialChecked[transacao.history_id] = transacao.checked_by_client || false;
+        }
+      });
+      setCheckedItems(initialChecked);
       
     } catch (err) {
       console.error('Erro ao buscar extrato:', err);
@@ -352,7 +495,7 @@ const ClientStatement: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-center">
               <div className="text-center md:text-left">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">Nome</p>
                 <p className="text-sm font-semibold text-foreground">{data.cliente.name}</p>
@@ -365,11 +508,35 @@ const ClientStatement: React.FC = () => {
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">Chave PIX</p>
                 <p className="text-sm font-semibold text-foreground">{data.cliente.pix_key}</p>
               </div>
-              <div className="text-center md:text-right">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Seu Saldo</p>
-                <p className="text-xl font-bold text-green-500">
+              <div className="text-center md:text-left">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Depositado Hoje</p>
+                <p className="text-lg font-bold text-blue-500">
+                  {formatCurrency(totalDepositado)}
+                </p>
+                <p className="text-xs text-muted-foreground/70 mt-1">
+                  {searchDate ? `Data: ${searchDate}` : ''}
+                </p>
+              </div>
+              
+              {/* Saldo BRL */}
+              <div className="text-center md:text-left">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Saldo Total (BRL)</p>
+                <p className="text-lg font-bold text-green-500">
                   {formatCurrency(data.cliente.current_balance)}
                 </p>
+              </div>
+              
+              {/* Saldo USD - NOVO */}
+              <div className="text-center md:text-right">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Saldo USD</p>
+                <p className="text-lg font-bold text-blue-500">
+                  $ {formatUSD(parseFloat((data.cliente as any).usd_balance || 0))}
+                </p>
+                {(data.cliente as any).last_conversion_rate && (
+                  <p className="text-xs text-muted-foreground/70 mt-1">
+                    Taxa: {parseFloat((data.cliente as any).last_conversion_rate || 0).toFixed(4)}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -384,7 +551,7 @@ const ClientStatement: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <div>
                 <Label htmlFor="searchName">Buscar por nome</Label>
                 <Input
@@ -402,6 +569,33 @@ const ClientStatement: React.FC = () => {
                   value={searchValue}
                   onChange={(e) => setSearchValue(e.target.value)}
                 />
+              </div>
+              <div>
+                <Label htmlFor="searchDate">Buscar por data</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="searchDate"
+                    placeholder="Ex: 16/07/25"
+                    value={searchDate}
+                    onChange={(e) => setSearchDate(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="px-3">
+                        <CalendarDays className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={selectedDate}
+                        onSelect={handleDateSelect}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
               </div>
               <div>
                 <Label htmlFor="sortBy">Ordenar por</Label>
@@ -472,14 +666,14 @@ const ClientStatement: React.FC = () => {
             {filteredAndSortedTransactions && filteredAndSortedTransactions.length > 0 ? (
               <div className="divide-y divide-border">
                 {filteredAndSortedTransactions.map((item, index) => (
-                  <div key={item.id} className="px-4 py-3 hover:bg-muted/30 transition-colors banking-transition">
+                  <div key={item.id} className="relative px-4 py-3 hover:bg-muted/30 transition-colors banking-transition">
                     <div className="grid grid-cols-12 gap-4 items-center">
                       {/* Ícone e Data */}
                       <div className="col-span-2 flex items-center gap-2">
                         <div className={`p-2 rounded-full ${
-                          item.type === 'deposit' ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'
+                          (item as any).operation_type === 'deposit' || (item as any).operation_type === 'manual_credit' ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'
                         }`}>
-                          {item.type === 'deposit' ? (
+                          {(item as any).operation_type === 'deposit' || (item as any).operation_type === 'manual_credit' ? (
                             <ArrowUpRight className="h-3 w-3 text-green-500" />
                           ) : (
                             <ArrowDownRight className="h-3 w-3 text-red-500" />
@@ -487,10 +681,16 @@ const ClientStatement: React.FC = () => {
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">
-                            {formatTimestamp(item.date, 'dd/MM/yy')}
+                            {((item as any).operation_type === 'manual_credit' || (item as any).operation_type === 'manual_debit') 
+                              ? formatTimestamp(item.date, 'dd/MM/yy')
+                              : formatOTCTimestamp(item.date, 'dd/MM/yy')
+                            }
                           </p>
                           <p className="text-xs text-muted-foreground/70">
-                            {formatTimestamp(item.date, 'HH:mm')}
+                            {((item as any).operation_type === 'manual_credit' || (item as any).operation_type === 'manual_debit') 
+                              ? formatTimestamp(item.date, 'HH:mm')
+                              : formatOTCTimestamp(item.date, 'HH:mm')
+                            }
                           </p>
                         </div>
                       </div>
@@ -498,7 +698,23 @@ const ClientStatement: React.FC = () => {
                       {/* Dados do Depositante */}
                       <div className="col-span-4">
                         <p className="text-sm font-medium text-foreground">
-                          {item.type === 'deposit' ? 'Depósito recebido' : 'Saque realizado'}
+                          {(() => {
+                            const operationType = (item as any).operation_type;
+                            const description = (item as any).operation_description;
+                            
+                            switch (operationType) {
+                              case 'deposit':
+                                return 'Depósito recebido';
+                              case 'withdrawal':
+                                return 'Saque realizado';
+                              case 'manual_credit':
+                                return description || 'Crédito manual';
+                              case 'manual_debit':
+                                return description || 'Débito manual';
+                              default:
+                                return item.type === 'deposit' ? 'Depósito recebido' : 'Saque realizado';
+                            }
+                          })()}
                         </p>
                         {item.payer_name && (
                           <p className="text-xs text-muted-foreground">De: {item.payer_name}</p>
@@ -513,12 +729,31 @@ const ClientStatement: React.FC = () => {
 
                       {/* Valor da Transação */}
                       <div className="col-span-2 text-right">
-                        <p className={`text-lg font-bold ${
-                          item.type === 'deposit' ? 'text-green-500' : 'text-red-500'
-                        }`}>
-                          {item.type === 'deposit' ? '+' : '-'}{formatCurrency(item.amount)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{item.status}</p>
+                        {/* Detectar conversão: manual_debit com amount = 0 */}
+                        {(item as any).operation_type === 'manual_debit' && Math.abs(item.amount) < 0.01 ? (
+                          // CONVERSÃO BRL → USD
+                          <>
+                            <p className="text-lg font-bold text-blue-500">
+                              ⇄ {formatCurrency(Math.abs((item as any).amount_change || 0))}
+                            </p>
+                            <p className="text-xs text-blue-400 font-medium">Conversão BRL→USD</p>
+                            {(item as any).conversion_rate && (
+                              <p className="text-xs text-muted-foreground">
+                                Taxa: {parseFloat((item as any).conversion_rate || 0).toFixed(4)}
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          // TRANSAÇÃO NORMAL
+                          <>
+                            <p className={`text-lg font-bold ${
+                              (item as any).operation_type === 'deposit' || (item as any).operation_type === 'manual_credit' ? 'text-green-500' : 'text-red-500'
+                            }`}>
+                              {(item as any).operation_type === 'deposit' || (item as any).operation_type === 'manual_credit' ? '+' : '-'}{formatCurrency(item.amount)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{item.status}</p>
+                          </>
+                        )}
                       </div>
 
                       {/* Saldo Anterior */}
@@ -536,6 +771,19 @@ const ClientStatement: React.FC = () => {
                           {formatCurrency((item as any).saldo_posterior || 0)}
                         </p>
                       </div>
+                    </div>
+                    
+                    {/* Checkbox de Conferência - Fora do grid */}
+                    <div className="absolute right-4 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
+                      <Checkbox
+                        checked={checkedItems[(item as any).history_id] || false}
+                        onCheckedChange={(checked) => handleCheckToggle((item as any).history_id, !!checked)}
+                        disabled={updatingCheck === (item as any).history_id}
+                        className="h-4 w-4"
+                      />
+                      {updatingCheck === (item as any).history_id && (
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary"></div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -563,6 +811,6 @@ const ClientStatement: React.FC = () => {
       </div>
     </div>
   );
-};
+  };
 
 export default ClientStatement;

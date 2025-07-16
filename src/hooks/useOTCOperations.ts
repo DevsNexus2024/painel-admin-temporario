@@ -41,24 +41,43 @@ export function useOTCOperations(params: OTCOperationsParams = {}) {
   const createOperationMutation = useMutation({
     mutationFn: (operationData: CreateOTCOperationRequest) => otcService.createOperation(operationData),
     onSuccess: (data) => {
-      // Invalidar cache das operações e clientes
+      console.log('[OTC-OPERATIONS] Operação criada:', data.data?.operation_type);
+      
+      // Invalidar cache das operações, clientes, statement e balances
       queryClient.invalidateQueries({ queryKey: [OTC_OPERATIONS_QUERY_KEY] });
       queryClient.invalidateQueries({ queryKey: [OTC_CLIENTS_QUERY_KEY] });
+      queryClient.invalidateQueries({ queryKey: ['otc-statement'] });
+      queryClient.invalidateQueries({ queryKey: ['otc-balance'] });
+      
+      // Forçar reload da página após conversão para garantir atualização
+      if (data.data?.operation_type === 'convert') {
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      }
       
       const operationType = data.data?.operation_type || 'desconhecida';
       const operationLabels = {
         credit: 'Crédito',
         debit: 'Débito',
+        convert: 'Conversão',
         lock: 'Bloqueio',
         unlock: 'Desbloqueio',
         note: 'Anotação'
       };
+      
+
       
       toast.success('Operação realizada com sucesso', {
         description: `${operationLabels[operationType as keyof typeof operationLabels] || 'Operação'} executada no cliente ${data.data?.client_name || 'desconhecido'}`
       });
     },
     onError: (error: any) => {
+      console.error('[OTC-OPERATIONS] ===== ERRO NA OPERAÇÃO =====');
+      console.error('[OTC-OPERATIONS] Erro completo:', error);
+      console.error('[OTC-OPERATIONS] Response data:', error.response?.data);
+      console.error('[OTC-OPERATIONS] Status:', error.response?.status);
+      
       toast.error('Erro ao executar operação OTC', {
         description: error.response?.data?.message || error.message || 'Falha na operação'
       });
