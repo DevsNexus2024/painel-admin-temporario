@@ -6,6 +6,9 @@ export type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
 // Tipos de operações
 export type OperationType = 'credit' | 'debit' | 'convert';
 
+// Tipos de moeda para operações
+export type CurrencyType = 'BRL' | 'USD';
+
 // Tipos de transações
 export type TransactionType = 'deposit' | 'withdrawal' | 'manual_credit' | 'manual_debit' | 'manual_adjustment';
 
@@ -182,7 +185,7 @@ export interface OTCConversionsResponse {
   };
 }
 
-// Interface para criar cliente
+// Interface para criar cliente OTC (método antigo - com user_id)
 export interface CreateOTCClientRequest {
   user_id: number;
   client_name: string;
@@ -191,10 +194,24 @@ export interface CreateOTCClientRequest {
   pix_key_type: PixKeyType;
 }
 
+// Interface para criar cliente OTC completo (novo método simplificado)
+export interface CreateCompleteOTCClientRequest {
+  user_name: string;
+  user_email: string;
+  user_password: string;
+  user_document?: string;
+  user_phone?: string;
+  client_name: string;
+  client_document?: string;
+  pix_key: string;
+  pix_key_type: PixKeyType;
+}
+
 // Interface para criar operação
 export interface CreateOTCOperationRequest {
   otc_client_id: number;
   operation_type: OperationType;
+  currency?: CurrencyType; // Nova: moeda para operações de crédito/débito
   amount?: number;
   description: string;
   // Campos específicos para conversão

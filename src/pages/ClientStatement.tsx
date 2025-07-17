@@ -32,6 +32,14 @@ const ClientStatement: React.FC = () => {
   const [data, setData] = useState<ClientStatementData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Helper para detectar operação USD pura (não conversão)
+  const isUSDOnlyOperation = (item: any): boolean => {
+    return item.usd_amount_change && 
+           Math.abs(item.usd_amount_change) > 0 && 
+           !item.amount_change && 
+           !item.conversion_rate; // Excluir conversões
+  };
   
   // Estados para filtros de busca
   const [searchName, setSearchName] = useState("");
@@ -42,9 +50,10 @@ const ClientStatement: React.FC = () => {
   const [sortBy, setSortBy] = useState<"value" | "date" | "none">("none");
   const [checkedItems, setCheckedItems] = useState<{[key: number]: boolean}>({});
   const [updatingCheck, setUpdatingCheck] = useState<number | null>(null);
+  const [showOnlyToday, setShowOnlyToday] = useState(true); // Novo estado para controlar filtro do dia
 
   // Calcular total de depósitos (todos os depósitos: automáticos + manuais de crédito)
-  // Se tem filtro de data, mostra apenas os depósitos daquela data
+  // Considera filtros de data
   const totalDepositado = useMemo(() => {
     if (!data?.transacoes) return 0;
     
@@ -53,7 +62,30 @@ const ClientStatement: React.FC = () => {
       return operationType === 'deposit' || operationType === 'manual_credit';
     });
 
-    // Se tem filtro de data, aplicar o filtro
+    // Aplicar filtro do dia atual se estiver ativo e não houver filtro de data específica
+    if (showOnlyToday && !searchDate.trim()) {
+      const hoje = new Date();
+      const hojeFormatado = hoje.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit'
+      });
+      
+      depositos = depositos.filter(transacao => {
+        // Usar sort_date para operações manuais, date para outras
+        const dataTransacao = (transacao as any).sort_date || transacao.date;
+        const operationType = (transacao as any).operation_type;
+        
+        // Aplicar correção de timezone apenas para operações não manuais
+        const dataFormatada = (operationType === 'manual_credit' || operationType === 'manual_debit') 
+          ? formatTimestamp(dataTransacao, 'dd/MM/yy')
+          : formatOTCTimestamp(dataTransacao, 'dd/MM/yy');
+        
+        return dataFormatada === hojeFormatado;
+      });
+    }
+
+    // Se tem filtro de data específica, aplicar o filtro
     if (searchDate.trim()) {
       depositos = depositos.filter(transacao => {
         // Usar sort_date para operações manuais, date para outras
@@ -70,7 +102,7 @@ const ClientStatement: React.FC = () => {
     }
     
     return depositos.reduce((total, transacao) => total + transacao.amount, 0);
-  }, [data?.transacoes, searchDate]);
+  }, [data?.transacoes, searchDate, showOnlyToday]);
 
 
 
@@ -79,6 +111,29 @@ const ClientStatement: React.FC = () => {
     if (!data?.transacoes) return [];
     
     let filtered = data.transacoes;
+    
+    // Aplicar filtro do dia atual se estiver ativo
+    if (showOnlyToday && !searchDate.trim()) {
+      const hoje = new Date();
+      const hojeFormatado = hoje.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit'
+      });
+      
+      filtered = filtered.filter(transaction => {
+        // Usar sort_date para operações manuais, date para outras
+        const dataTransacao = (transaction as any).sort_date || transaction.date;
+        const operationType = (transaction as any).operation_type;
+        
+        // Aplicar correção de timezone apenas para operações não manuais
+        const dataFormatada = (operationType === 'manual_credit' || operationType === 'manual_debit') 
+          ? formatTimestamp(dataTransacao, 'dd/MM/yy')
+          : formatOTCTimestamp(dataTransacao, 'dd/MM/yy');
+        
+        return dataFormatada === hojeFormatado;
+      });
+    }
     
     // Filtrar por nome do pagador
     if (searchName.trim()) {
@@ -141,7 +196,7 @@ const ClientStatement: React.FC = () => {
     }
     
     return filtered;
-  }, [data?.transacoes, searchName, searchValue, searchDate, sortBy, sortOrder]);
+  }, [data?.transacoes, searchName, searchValue, searchDate, sortBy, sortOrder, showOnlyToday]);
 
   // Limpar todos os filtros
   const clearAllFilters = () => {
@@ -151,6 +206,7 @@ const ClientStatement: React.FC = () => {
     setSelectedDate(undefined);
     setSortBy("none");
     setSortOrder("none");
+    setShowOnlyToday(true); // Voltar ao padrão (mostrar apenas hoje)
   };
 
   // Função para lidar com seleção de data no calendário
@@ -230,7 +286,7 @@ const ClientStatement: React.FC = () => {
       
       // Buscar cliente OTC vinculado ao usuário logado
       const clientsResponse = await otcService.getClients({ 
-        limit: 200 // Buscar todos os clientes para encontrar o correto
+        limit: 200 // Já está correto - buscar todos os clientes
       });
       
       if (!clientsResponse.data?.clientes || clientsResponse.data.clientes.length === 0) {
@@ -262,9 +318,10 @@ const ClientStatement: React.FC = () => {
         throw new Error('Acesso negado. Você não tem permissão para visualizar este extrato.');
       }
 
-      // Buscar extrato específico do cliente
+      // Buscar extrato específico do cliente 
+      // Por padrão, sem filtro de data (mostrar todos os registros)
       const statementResponse = await otcService.getClientStatement(client.id, {
-        limit: 200
+        limit: 200 // Aumentado para 200 registros por página
       });
       
       if (!statementResponse.success || !statementResponse.data) {
@@ -534,7 +591,7 @@ const ClientStatement: React.FC = () => {
                 </p>
                 {(data.cliente as any).last_conversion_rate && (
                   <p className="text-xs text-muted-foreground/70 mt-1">
-                    Taxa: {parseFloat((data.cliente as any).last_conversion_rate || 0).toFixed(4)}
+                    Taxa Media Dia: {parseFloat((data.cliente as any).last_conversion_rate || 0).toFixed(4)}
                   </p>
                 )}
               </div>
@@ -551,6 +608,30 @@ const ClientStatement: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
+            {/* Toggle para mostrar apenas hoje */}
+            <div className="mb-4 p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="showOnlyToday"
+                  checked={showOnlyToday}
+                  onCheckedChange={(checked) => setShowOnlyToday(checked as boolean)}
+                />
+                <Label htmlFor="showOnlyToday" className="text-sm font-medium cursor-pointer">
+                  📅 Mostrar apenas transações de hoje
+                </Label>
+                {showOnlyToday && (
+                  <span className="text-xs text-muted-foreground ml-2">
+                    ({new Date().toLocaleDateString('pt-BR')})
+                  </span>
+                )}
+              </div>
+              {showOnlyToday && (
+                <p className="text-xs text-muted-foreground mt-1 ml-6">
+                  Para ver outras datas, desmarque esta opção ou use o filtro de data abaixo
+                </p>
+              )}
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <div>
                 <Label htmlFor="searchName">Buscar por nome</Label>
@@ -729,22 +810,35 @@ const ClientStatement: React.FC = () => {
 
                       {/* Valor da Transação */}
                       <div className="col-span-2 text-right">
-                        {/* Detectar conversão: manual_debit com amount = 0 */}
-                        {(item as any).operation_type === 'manual_debit' && Math.abs(item.amount) < 0.01 ? (
-                          // CONVERSÃO BRL → USD
+                        {/* Detectar primeiro se é conversão (tem conversion_rate) */}
+                        {(item as any).operation_type === 'manual_debit' && Math.abs(item.amount) < 0.01 && (item as any).conversion_rate ? (
+                          // CONVERSÃO BRL → USD (tem conversion_rate)
                           <>
-                            <p className="text-lg font-bold text-blue-500">
-                              ⇄ {formatCurrency(Math.abs((item as any).amount_change || 0))}
-                            </p>
-                            <p className="text-xs text-blue-400 font-medium">Conversão BRL→USD</p>
-                            {(item as any).conversion_rate && (
-                              <p className="text-xs text-muted-foreground">
-                                Taxa: {parseFloat((item as any).conversion_rate || 0).toFixed(4)}
+                            <div className="space-y-1">
+                              <p className="text-lg font-bold text-blue-500">
+                                ⇄ {formatCurrency(Math.abs((item as any).amount_change || 0))}
                               </p>
-                            )}
+                              <p className="text-lg font-bold text-green-500">
+                                → $ {Math.abs((item as any).usd_amount_change || 0).toFixed(4)}
+                              </p>
+                            </div>
+                            <p className="text-xs text-blue-400 font-medium">Conversão BRL→USD</p>
+                            <p className="text-xs text-muted-foreground">
+                              Taxa: {parseFloat((item as any).conversion_rate || 0).toFixed(4)}
+                            </p>
+                          </>
+                        ) : isUSDOnlyOperation(item) ? (
+                          // OPERAÇÃO USD PURA
+                          <>
+                            <p className={`text-lg font-bold ${
+                              (item as any).usd_amount_change > 0 ? 'text-green-500' : 'text-red-500'
+                            }`}>
+                              {(item as any).usd_amount_change > 0 ? '+' : ''}$ {Math.abs((item as any).usd_amount_change).toFixed(4)}
+                            </p>
+                            <p className="text-xs text-blue-400 font-medium">Operação USD</p>
                           </>
                         ) : (
-                          // TRANSAÇÃO NORMAL
+                          // TRANSAÇÃO NORMAL BRL
                           <>
                             <p className={`text-lg font-bold ${
                               (item as any).operation_type === 'deposit' || (item as any).operation_type === 'manual_credit' ? 'text-green-500' : 'text-red-500'
@@ -758,17 +852,27 @@ const ClientStatement: React.FC = () => {
 
                       {/* Saldo Anterior */}
                       <div className="col-span-2 text-center">
-                        <p className="text-xs text-muted-foreground">Saldo Anterior</p>
+                        <p className="text-xs text-muted-foreground">
+                          Saldo Anterior{(item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change ? ' USD' : ''}
+                        </p>
                         <p className="text-sm font-medium text-foreground">
-                          {formatCurrency((item as any).saldo_anterior || 0)}
+                          {(item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change 
+                            ? `$ ${((item as any).usd_balance_before || 0).toFixed(4)}`
+                            : formatCurrency((item as any).saldo_anterior || 0)
+                          }
                         </p>
                       </div>
 
                       {/* Saldo Posterior */}
                       <div className="col-span-2 text-center">
-                        <p className="text-xs text-muted-foreground">Saldo Posterior</p>
+                        <p className="text-xs text-muted-foreground">
+                          Saldo Posterior{(item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change ? ' USD' : ''}
+                        </p>
                         <p className="text-sm font-medium text-foreground">
-                          {formatCurrency((item as any).saldo_posterior || 0)}
+                          {(item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change 
+                            ? `$ ${((item as any).usd_balance_after || 0).toFixed(4)}`
+                            : formatCurrency((item as any).saldo_posterior || 0)
+                          }
                         </p>
                       </div>
                     </div>

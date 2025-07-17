@@ -21,8 +21,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { useOTCOperations } from '@/hooks/useOTCOperations';
+import { useCurrentAverageRate } from '@/hooks/useDailyAverageRate';
 import { otcService } from '@/services/otc';
-import { OTCClient, OperationType, CreateOTCOperationRequest } from '@/types/otc';
+import { OTCClient, OperationType, CurrencyType, CreateOTCOperationRequest } from '@/types/otc';
 
 interface OTCOperationModalProps {
   isOpen: boolean;
@@ -39,10 +40,12 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
   client
 }) => {
   const { createOperation, isCreating } = useOTCOperations();
+  const { rate: dailyAverageRate, formattedRate, isLoading: isLoadingRate, refresh: refreshRate } = useCurrentAverageRate();
 
   // Estado do formulário
   const [formData, setFormData] = useState({
     operation_type: 'credit' as OperationType,
+    currency: 'BRL' as CurrencyType, // Nova: moeda padrão
     amount: '',
     description: '',
     // Campos específicos para conversão
@@ -54,12 +57,14 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
   // Estados de validação
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [useDailyAverage, setUseDailyAverage] = useState(false);
 
   // Resetar formulário quando modal abrir/fechar
   useEffect(() => {
     if (isOpen) {
       setFormData({
         operation_type: 'credit',
+        currency: 'BRL',
         amount: '',
         description: '',
         brl_amount: '',
@@ -68,6 +73,7 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
       });
       setErrors({});
       setShowConfirmation(false);
+      setUseDailyAverage(false);
     }
   }, [isOpen]);
 
@@ -100,9 +106,15 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
       const brlValue = field === 'brl_amount' ? value : formData.brl_amount;
       const usdValue = field === 'usd_amount' ? value : formData.usd_amount;
       
-      const autoRate = calculateConversionRate(brlValue, usdValue);
-      if (autoRate) {
-        newFormData.conversion_rate = autoRate;
+      if (useDailyAverage && dailyAverageRate > 0) {
+        // Se estiver usando média do dia, usar a taxa obtida da API
+        newFormData.conversion_rate = dailyAverageRate.toFixed(4);
+      } else {
+        // Se for manual, calcular automaticamente com base nos valores
+        const autoRate = calculateConversionRate(brlValue, usdValue);
+        if (autoRate) {
+          newFormData.conversion_rate = autoRate;
+        }
       }
     }
     
@@ -115,29 +127,31 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
   };
 
   // Informações sobre tipos de operação
-  const getOperationInfo = (type: OperationType) => {
+  const getOperationInfo = (type: OperationType, currency?: CurrencyType) => {
     switch (type) {
       case 'credit':
         return {
           icon: <Plus className="w-4 h-4" />,
           label: 'Crédito',
-          description: 'Adicionar valor ao saldo em reais do cliente',
+          description: `Adicionar valor ao saldo ${currency === 'USD' ? 'em dólares' : 'em reais'} do cliente`,
           color: 'text-green-600',
           bgColor: 'bg-green-50',
           borderColor: 'border-green-200',
           requiresAmount: true,
-          requiresConversion: false
+          requiresConversion: false,
+          requiresCurrency: true
         };
       case 'debit':
         return {
           icon: <Minus className="w-4 h-4" />,
           label: 'Débito',
-          description: 'Remover valor do saldo em reais do cliente',
+          description: `Remover valor do saldo ${currency === 'USD' ? 'em dólares' : 'em reais'} do cliente`,
           color: 'text-red-600',
           bgColor: 'bg-red-50',
           borderColor: 'border-red-200',
           requiresAmount: true,
-          requiresConversion: false
+          requiresConversion: false,
+          requiresCurrency: true
         };
       case 'convert':
         return {
@@ -148,7 +162,8 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
           bgColor: 'bg-blue-50',
           borderColor: 'border-blue-200',
           requiresAmount: false,
-          requiresConversion: true
+          requiresConversion: true,
+          requiresCurrency: false
         };
       default:
         return {
@@ -159,7 +174,8 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
           bgColor: 'bg-gray-50',
           borderColor: 'border-gray-200',
           requiresAmount: false,
-          requiresConversion: false
+          requiresConversion: false,
+          requiresCurrency: false
         };
     }
   };
@@ -167,7 +183,7 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
   // Validar formulário
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
-    const operationInfo = getOperationInfo(formData.operation_type);
+    const operationInfo = getOperationInfo(formData.operation_type, formData.currency);
 
     // Validar descrição (sempre obrigatória)
     if (!formData.description.trim()) {
@@ -269,10 +285,11 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
       const operationData: CreateOTCOperationRequest = {
         otc_client_id: client.id,
         operation_type: formData.operation_type,
+        currency: formData.currency,
         description: formData.description.trim()
       };
 
-      const operationInfo = getOperationInfo(formData.operation_type);
+      const operationInfo = getOperationInfo(formData.operation_type, formData.currency);
 
       // Adicionar valor apenas se necessário (crédito/débito)
       if (operationInfo.requiresAmount) {
@@ -313,7 +330,9 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
     return null;
   }
 
-  const currentOperationInfo = getOperationInfo(formData.operation_type);
+
+
+  const currentOperationInfo = getOperationInfo(formData.operation_type, formData.currency);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -392,7 +411,7 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                   className="space-y-3"
                 >
                   {(['credit', 'debit', 'convert'] as OperationType[]).map((type) => {
-                    const info = getOperationInfo(type);
+                    const info = getOperationInfo(type, formData.currency);
                     return (
                       <div key={type} className="flex items-center space-x-2">
                         <RadioGroupItem value={type} id={type} />
@@ -423,6 +442,49 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
               </CardContent>
             </Card>
 
+            {/* Seleção de Moeda (apenas para crédito e débito) */}
+            {currentOperationInfo.requiresCurrency && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" />
+                    Moeda
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">
+                      Selecione a moeda da operação
+                    </Label>
+                    <RadioGroup
+                      value={formData.currency}
+                      onValueChange={(value) => updateField('currency', value)}
+                      className="flex gap-6"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="BRL" id="brl" />
+                        <Label htmlFor="brl" className="cursor-pointer">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-green-600">BRL</span>
+                            <span className="text-sm text-muted-foreground">Real Brasileiro</span>
+                          </div>
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="USD" id="usd" />
+                        <Label htmlFor="usd" className="cursor-pointer">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-blue-600">USD</span>
+                            <span className="text-sm text-muted-foreground">Dólar Americano</span>
+                          </div>
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Valor (apenas para crédito e débito) */}
             {currentOperationInfo.requiresAmount && (
               <Card>
@@ -435,7 +497,7 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                 <CardContent>
                   <div className="space-y-2">
                     <Label htmlFor="amount">
-                      Valor da Operação (R$) *
+                      Valor da Operação ({formData.currency === 'USD' ? '$' : 'R$'}) *
                     </Label>
                     <Input
                       id="amount"
@@ -528,31 +590,101 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                     </div>
                   </div>
 
+                  {/* Opção de Taxa: Manual vs Média do Dia */}
+                  <div className="space-y-3 mt-4">
+                    <Label>Método de Taxa</Label>
+                    <RadioGroup 
+                      value={useDailyAverage ? 'daily' : 'manual'} 
+                      onValueChange={(value) => {
+                        const useDaily = value === 'daily';
+                        setUseDailyAverage(useDaily);
+                        
+                        if (useDaily && dailyAverageRate > 0) {
+                          setFormData(prev => ({
+                            ...prev,
+                            conversion_rate: dailyAverageRate.toFixed(4)
+                          }));
+                        }
+                      }}
+                      className="flex flex-col space-y-2"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="manual" id="manual" />
+                        <Label htmlFor="manual" className="cursor-pointer">
+                          📝 Manual - Definir taxa personalizada
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="daily" id="daily" />
+                        <Label htmlFor="daily" className="cursor-pointer">
+                          📊 Média do Dia - Usar cotação automática
+                        </Label>
+                        {isLoadingRate && (
+                          <span className="text-xs text-muted-foreground">(Carregando...)</span>
+                        )}
+                        {!isLoadingRate && dailyAverageRate > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {formattedRate}
+                          </Badge>
+                        )}
+                      </div>
+                    </RadioGroup>
+                  </div>
+
                   {/* Taxa de Conversão */}
                   <div className="space-y-2 mt-4">
                     <Label htmlFor="conversion_rate">
                       Taxa de Conversão (BRL/USD) *
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      📊 A taxa é calculada automaticamente com base nos valores informados
+                      {useDailyAverage 
+                        ? "📊 Taxa baseada na média das exchanges do momento"
+                        : "📝 A taxa é calculada automaticamente com base nos valores informados"
+                      }
                     </p>
-                    <Input
-                      id="conversion_rate"
-                      type="number"
-                      step="0.0001"
-                      min="0.1"
-                      max="10"
-                      value={formData.conversion_rate}
-                      onChange={(e) => updateField('conversion_rate', e.target.value)}
-                      placeholder="Calculado automaticamente..."
-                      className={`${errors.conversion_rate ? 'border-red-500' : ''} ${formData.conversion_rate ? 'bg-green-50 border-green-300' : ''}`}
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        id="conversion_rate"
+                        type="number"
+                        step="0.0001"
+                        min="0.1"
+                        max="10"
+                        value={formData.conversion_rate}
+                        onChange={(e) => updateField('conversion_rate', e.target.value)}
+                        placeholder={useDailyAverage ? "Taxa automática..." : "Calculado automaticamente..."}
+                        readOnly={useDailyAverage}
+                        className={`${errors.conversion_rate ? 'border-red-500' : ''} ${formData.conversion_rate ? 'bg-green-50 border-green-300' : ''} ${useDailyAverage ? 'bg-blue-50 border-blue-300' : ''}`}
+                      />
+                      {useDailyAverage && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            refreshRate();
+                            if (dailyAverageRate > 0) {
+                              setFormData(prev => ({
+                                ...prev,
+                                conversion_rate: dailyAverageRate.toFixed(4)
+                              }));
+                            }
+                          }}
+                          disabled={isLoadingRate}
+                          className="px-3"
+                        >
+                          🔄
+                        </Button>
+                      )}
+                    </div>
                     {errors.conversion_rate && (
                       <p className="text-sm text-red-500">{errors.conversion_rate}</p>
                     )}
                     {formData.conversion_rate && !errors.conversion_rate && (
                       <p className="text-sm text-green-600">
                         ✓ Taxa: {parseFloat(formData.conversion_rate || '0').toFixed(4)} BRL/USD
+                        {useDailyAverage && (
+                          <span className="ml-2 text-xs text-blue-600">(Média do Dia)</span>
+                        )}
                       </p>
                     )}
                   </div>
@@ -686,7 +818,10 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                           Valor
                         </Label>
                         <p className={`text-sm font-semibold ${currentOperationInfo.color}`}>
-                          {otcService.formatCurrency(parseFloat(formData.amount))}
+                          {formData.currency === 'USD' 
+                            ? `$ ${parseFloat(formData.amount).toFixed(4)}` 
+                            : otcService.formatCurrency(parseFloat(formData.amount))
+                          }
                         </p>
                       </div>
                       <div>
@@ -698,11 +833,18 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                             ? 'text-green-600' 
                             : 'text-red-600'
                         }`}>
-                          {otcService.formatCurrency(
-                            client.current_balance + 
-                            (formData.operation_type === 'credit' ? 1 : -1) * 
-                            parseFloat(formData.amount)
-                          )}
+                          {formData.currency === 'USD' 
+                            ? `$ ${(
+                                (client.usd_balance || 0) + 
+                                (formData.operation_type === 'credit' ? 1 : -1) * 
+                                (parseFloat(formData.amount) || 0)
+                              ).toFixed(4)}`
+                            : otcService.formatCurrency(
+                                (client.current_balance || 0) + 
+                                (formData.operation_type === 'credit' ? 1 : -1) * 
+                                (parseFloat(formData.amount) || 0)
+                              )
+                          }
                         </p>
                       </div>
                     </>

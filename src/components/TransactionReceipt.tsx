@@ -66,7 +66,7 @@ export const TransactionReceipt = ({ transaction, receiptRef }: TransactionRecei
                         <tr>
                             <td style={tdLabelStyle}>Tipo:</td>
                             <td style={{ ...tdValueStyle, textTransform: 'capitalize' }}>{transaction.type.toLowerCase()}</td>
-                            <td style={tdLabelStyle}>Taxa:</td>
+                            <td style={tdLabelStyle}>MediaTaxa:</td>
                             <td style={tdValueRightStyle}>{formatCurrency(parseFloat(transaction.fee))}</td>
                         </tr>
                         <tr>

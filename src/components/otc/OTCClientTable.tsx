@@ -8,7 +8,8 @@ import {
   MoreHorizontal,
   Search,
   Filter,
-  RefreshCw
+  RefreshCw,
+  Plus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -303,71 +304,79 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
                         </TableCell>
                         
                         <TableCell className="text-center">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                disabled={isToggling}
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              
-                              <DropdownMenuItem
-                                onClick={() => onViewStatement?.(client)}
-                              >
-                                <Eye className="mr-2 h-4 w-4" />
-                                Ver Extrato
-                              </DropdownMenuItem>
-                              
-                              <DropdownMenuItem
-                                onClick={() => onViewBalance?.(client)}
-                              >
-                                <DollarSign className="mr-2 h-4 w-4" />
-                                Ver Saldo
-                              </DropdownMenuItem>
-                              
-                              <DropdownMenuItem
-                                onClick={() => onCreateOperation?.(client)}
-                              >
-                                <Edit className="mr-2 h-4 w-4" />
-                                Nova Operação
-                              </DropdownMenuItem>
-                              
-                              <DropdownMenuSeparator />
-                              
-                              <DropdownMenuItem
-                                onClick={() => onEditClient?.(client)}
-                              >
-                                <Edit className="mr-2 h-4 w-4" />
-                                Editar Cliente
-                              </DropdownMenuItem>
-                              
-                              <DropdownMenuItem
-                                onClick={() => toggleStatus({ 
-                                  id: client.id, 
-                                  isActive: !client.is_active 
-                                })}
-                                disabled={isToggling}
-                              >
-                                {client.is_active ? (
-                                  <>
-                                    <UserX className="mr-2 h-4 w-4" />
-                                    Desativar
-                                  </>
-                                ) : (
-                                  <>
-                                    <UserCheck className="mr-2 h-4 w-4" />
-                                    Ativar
-                                  </>
-                                )}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <div className="flex items-center justify-center gap-2">
+                            {/* Botão de Nova Operação destacado */}
+                            <Button
+                              size="sm"
+                              onClick={() => onCreateOperation?.(client)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white h-8 px-3"
+                              title="Nova Operação"
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Nova Operação
+                            </Button>
+                            
+                            {/* Menu dropdown com outras ações */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  disabled={isToggling}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                
+                                <DropdownMenuItem
+                                  onClick={() => onViewStatement?.(client)}
+                                >
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Ver Extrato
+                                </DropdownMenuItem>
+                                
+                                <DropdownMenuItem
+                                  onClick={() => onViewBalance?.(client)}
+                                >
+                                  <DollarSign className="mr-2 h-4 w-4" />
+                                  Ver Saldo
+                                </DropdownMenuItem>
+                                
+                                <DropdownMenuSeparator />
+                                
+                                <DropdownMenuItem
+                                  onClick={() => onEditClient?.(client)}
+                                >
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Editar Cliente
+                                </DropdownMenuItem>
+                                
+                                <DropdownMenuItem
+                                  onClick={() => toggleStatus({ 
+                                    id: client.id, 
+                                    isActive: !client.is_active 
+                                  })}
+                                  disabled={isToggling}
+                                >
+                                  {client.is_active ? (
+                                    <>
+                                      <UserX className="mr-2 h-4 w-4" />
+                                      Desativar
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserCheck className="mr-2 h-4 w-4" />
+                                      Ativar
+                                    </>
+                                  )}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))

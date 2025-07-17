@@ -180,8 +180,17 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
           <div className={`font-semibold ${
             isCredit ? 'text-green-600' : 'text-red-600'
           }`}>
-            {isCredit ? '+' : '-'}
-            {otcService.formatCurrency(Math.abs(transaction.amount))}
+            {/* Verificar se é operação USD através das notas */}
+            {transaction.notes?.includes('USD') ? (
+              <span className="text-blue-600">
+                Operação USD - Ver Histórico de Saldo
+              </span>
+            ) : (
+              <>
+                {isCredit ? '+' : '-'}
+                {otcService.formatCurrency(Math.abs(transaction.amount))} BRL
+              </>
+            )}
           </div>
         </TableCell>
         
@@ -213,51 +222,116 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
   };
 
   // Componente para histórico de saldo
-  const BalanceHistoryRow = ({ history }: { history: OTCBalanceHistory }) => (
-    <TableRow key={history.id}>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4 text-gray-600" />
-          <div>
-            <div className="font-medium">{history.operation_type}</div>
-            <div className="text-sm text-muted-foreground">
-              {otcService.formatDate(history.created_at)}
+  const BalanceHistoryRow = ({ history }: { history: OTCBalanceHistory }) => {
+    // Verificar se tem movimentação USD
+    const hasUsdChange = history.usd_amount_change && history.usd_amount_change !== 0;
+    const hasBrlChange = history.amount_change && history.amount_change !== 0;
+    
+    // Determinar se é operação exclusivamente USD (sem mudança BRL)
+    const isUsdOnlyOperation = hasUsdChange && !hasBrlChange;
+    
+    return (
+      <TableRow key={history.id}>
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-gray-600" />
+            <div>
+              <div className="font-medium">
+                {history.operation_type}
+                {isUsdOnlyOperation && <span className="text-blue-600 text-xs ml-2">USD</span>}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {otcService.formatDate(history.created_at)}
+              </div>
             </div>
           </div>
-        </div>
-      </TableCell>
-      
-      <TableCell className="text-right">
-        <div className="text-sm text-muted-foreground">
-          {otcService.formatCurrency(history.balance_before)}
-        </div>
-      </TableCell>
-      
-      <TableCell className="text-right">
-        <div className={`font-semibold ${
-          history.amount_change >= 0 ? 'text-green-600' : 'text-red-600'
-        }`}>
-          {history.amount_change >= 0 ? '+' : ''}
-          {otcService.formatCurrency(history.amount_change)}
-        </div>
-      </TableCell>
-      
-      <TableCell className="text-right">
-        <div className="font-semibold">
-          {otcService.formatCurrency(history.balance_after)}
-        </div>
-      </TableCell>
-      
-      <TableCell>
-        <div className="text-sm">
-          <div>{history.description}</div>
-          <div className="text-muted-foreground">
-            por {history.created_by}
+        </TableCell>
+        
+        <TableCell className="text-right">
+          {isUsdOnlyOperation ? (
+            // Para operações USD puras, mostrar apenas USD
+            <div className="text-sm text-blue-500">
+              $ {history.usd_balance_before?.toFixed(4) || '0.0000'}
+            </div>
+          ) : (
+            // Para operações BRL ou conversões, mostrar ambos
+            <div className="space-y-1">
+              <div className="text-sm text-muted-foreground">
+                BRL: {otcService.formatCurrency(history.balance_before)}
+              </div>
+              {hasUsdChange && (
+                <div className="text-sm text-blue-500">
+                  USD: $ {history.usd_balance_before?.toFixed(4) || '0.0000'}
+                </div>
+              )}
+            </div>
+          )}
+        </TableCell>
+        
+        <TableCell className="text-right">
+          {isUsdOnlyOperation ? (
+            // Para operações USD puras, mostrar apenas alteração USD
+            <div className={`font-semibold text-sm ${
+              history.usd_amount_change >= 0 ? 'text-green-600' : 'text-red-600'
+            }`}>
+              {history.usd_amount_change >= 0 ? '+' : ''}
+              $ {Math.abs(history.usd_amount_change).toFixed(4)}
+            </div>
+          ) : (
+            // Para outras operações, mostrar as alterações aplicáveis
+            <div className="space-y-1">
+              {hasBrlChange && (
+                <div className={`font-semibold text-sm ${
+                  history.amount_change >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {history.amount_change >= 0 ? '+' : ''}
+                  {otcService.formatCurrency(history.amount_change)} BRL
+                </div>
+              )}
+              {hasUsdChange && (
+                <div className={`font-semibold text-sm ${
+                  history.usd_amount_change >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {history.usd_amount_change >= 0 ? '+' : ''}
+                  $ {Math.abs(history.usd_amount_change).toFixed(4)} USD
+                </div>
+              )}
+            </div>
+          )}
+        </TableCell>
+        
+        <TableCell className="text-right">
+          {isUsdOnlyOperation ? (
+            // Para operações USD puras, mostrar apenas saldo USD
+            <div className="font-semibold text-sm text-blue-600">
+              $ {history.usd_balance_after?.toFixed(4) || '0.0000'}
+            </div>
+          ) : (
+            // Para outras operações, mostrar ambos os saldos
+            <div className="space-y-1">
+              <div className="font-semibold text-sm">
+                BRL: {otcService.formatCurrency(history.balance_after)}
+              </div>
+              {hasUsdChange && (
+                <div className="font-semibold text-sm text-blue-600">
+                  USD: $ {history.usd_balance_after?.toFixed(4) || '0.0000'}
+                </div>
+              )}
+            </div>
+          )}
+        </TableCell>
+        
+        <TableCell>
+          <div className="text-sm">
+            <div>{history.description}</div>
+            <div className="text-muted-foreground">
+              por {history.created_by}
+            </div>
           </div>
-        </div>
-      </TableCell>
-    </TableRow>
-  );
+        </TableCell>
+      </TableRow>
+    );
+  };
 
   if (!client) {
     return null;

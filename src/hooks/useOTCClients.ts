@@ -4,6 +4,7 @@ import {
   OTCClient, 
   OTCClientsParams, 
   CreateOTCClientRequest,
+  CreateCompleteOTCClientRequest,
   OTCClientsResponse 
 } from '@/types/otc';
 import { otcService } from '@/services/otc';
@@ -39,7 +40,16 @@ export function useOTCClients(params: OTCClientsParams = {}) {
 
   // Mutation para criar cliente
   const createClientMutation = useMutation({
-    mutationFn: (clientData: CreateOTCClientRequest) => otcService.createClient(clientData),
+    mutationFn: ({ clientData, isComplete = false }: { 
+      clientData: CreateOTCClientRequest | CreateCompleteOTCClientRequest; 
+      isComplete?: boolean 
+    }) => {
+      if (isComplete) {
+        return otcService.createCompleteClient(clientData as CreateCompleteOTCClientRequest);
+      } else {
+        return otcService.createClient(clientData as CreateOTCClientRequest);
+      }
+    },
     onSuccess: (data) => {
       // Invalidar cache para atualizar a lista
       queryClient.invalidateQueries({ queryKey: [OTC_CLIENTS_QUERY_KEY] });
@@ -115,7 +125,8 @@ export function useOTCClients(params: OTCClientsParams = {}) {
     error,
     
     // Mutations
-    createClient: createClientMutation.mutate,
+    createClient: (clientData: CreateOTCClientRequest | CreateCompleteOTCClientRequest, isComplete?: boolean) => 
+      createClientMutation.mutate({ clientData, isComplete }),
     updateClient: updateClientMutation.mutate,
     toggleStatus: toggleStatusMutation.mutate,
     

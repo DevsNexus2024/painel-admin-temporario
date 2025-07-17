@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, CreditCard, Key, Mail, Phone, Hash, IdCard } from 'lucide-react';
+import { X, User, CreditCard, Key, Mail, Phone, Hash, IdCard, Lock, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,7 +11,12 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { useOTCClients } from '@/hooks/useOTCClients';
 import { otcService } from '@/services/otc';
-import { OTCClient, PixKeyType, CreateOTCClientRequest } from '@/types/otc';
+import { 
+  OTCClient, 
+  PixKeyType, 
+  CreateOTCClientRequest, 
+  CreateCompleteOTCClientRequest 
+} from '@/types/otc';
 
 interface OTCClientModalProps {
   isOpen: boolean;
@@ -33,11 +38,16 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
 
   // Estado do formulário
   const [formData, setFormData] = useState({
+    // Dados simplificados
+    name: '', // Nome reaproveitado para usuário e cliente
+    email: '',
+    password: '',
+    pix_key: '',
+    pix_key_type: 'email' as PixKeyType,
+    // Dados para edição (mantidos para compatibilidade)
     user_id: '',
     client_name: '',
-    client_document: '',
-    pix_key: '',
-    pix_key_type: 'email' as PixKeyType
+    client_document: ''
   });
 
   // Estados de validação
@@ -49,19 +59,25 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
     if (isOpen) {
       if (client) {
         setFormData({
+          name: '',
+          email: '',
+          password: '',
+          pix_key: client.pix_key,
+          pix_key_type: client.pix_key_type,
           user_id: client.user?.id.toString() || '',
           client_name: client.name,
-          client_document: client.document,
-          pix_key: client.pix_key,
-          pix_key_type: client.pix_key_type
+          client_document: client.document
         });
       } else {
         setFormData({
+          name: '',
+          email: '',
+          password: '',
+          pix_key: '',
+          pix_key_type: 'email',
           user_id: '',
           client_name: '',
-          client_document: '',
-          pix_key: '',
-          pix_key_type: 'email'
+          client_document: ''
         });
       }
       setErrors({});
@@ -82,30 +98,56 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // Validar nome
-    if (!formData.client_name.trim()) {
-      newErrors.client_name = 'Nome do cliente é obrigatório';
-    } else if (formData.client_name.length < 2) {
-      newErrors.client_name = 'Nome deve ter pelo menos 2 caracteres';
-    }
+    // Validações para novo usuário (apenas se não for edição)
+    if (!isEditing) {
+      // Validar nome
+      if (!formData.name.trim()) {
+        newErrors.name = 'Nome é obrigatório';
+      } else if (formData.name.length < 2) {
+        newErrors.name = 'Nome deve ter pelo menos 2 caracteres';
+      }
 
-    // Validar documento
-    if (!formData.client_document.trim()) {
-      newErrors.client_document = 'Documento é obrigatório';
-    } else if (!otcService.validateDocument(formData.client_document)) {
-      newErrors.client_document = 'CPF ou CNPJ inválido';
-    }
+      // Validar email
+      if (!formData.email.trim()) {
+        newErrors.email = 'Email é obrigatório';
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        newErrors.email = 'Email inválido';
+      }
 
-    // Validar chave PIX
-    if (!formData.pix_key.trim()) {
-      newErrors.pix_key = 'Chave PIX é obrigatória';
-    } else if (!otcService.validatePixKey(formData.pix_key, formData.pix_key_type)) {
-      newErrors.pix_key = 'Chave PIX inválida para o tipo selecionado';
-    }
+      // Validar senha
+      if (!formData.password.trim()) {
+        newErrors.password = 'Senha é obrigatória';
+      } else if (formData.password.length < 6) {
+        newErrors.password = 'Senha deve ter pelo menos 6 caracteres';
+      }
 
-    // Validar user_id (apenas para criação)
-    if (!isEditing && !formData.user_id) {
-      newErrors.user_id = 'Usuário é obrigatório';
+      // Validar chave PIX
+      if (!formData.pix_key.trim()) {
+        newErrors.pix_key = 'Chave PIX é obrigatória';
+      } else if (!otcService.validatePixKey(formData.pix_key, formData.pix_key_type)) {
+        newErrors.pix_key = 'Chave PIX inválida para o tipo selecionado';
+      }
+    } else {
+      // Para edição, validar apenas campos do cliente existente
+      if (!formData.client_name.trim()) {
+        newErrors.client_name = 'Nome do cliente é obrigatório';
+      }
+
+      if (!formData.client_document.trim()) {
+        newErrors.client_document = 'Documento é obrigatório';
+      } else if (!otcService.validateDocument(formData.client_document)) {
+        newErrors.client_document = 'CPF ou CNPJ inválido';
+      }
+
+      if (!formData.pix_key.trim()) {
+        newErrors.pix_key = 'Chave PIX é obrigatória';
+      } else if (!otcService.validatePixKey(formData.pix_key, formData.pix_key_type)) {
+        newErrors.pix_key = 'Chave PIX inválida para o tipo selecionado';
+      }
+
+      if (!formData.user_id) {
+        newErrors.user_id = 'Usuário é obrigatório';
+      }
     }
 
     setErrors(newErrors);
@@ -124,21 +166,35 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
     setIsValidating(true);
 
     try {
-      const clientData: CreateOTCClientRequest = {
-        user_id: parseInt(formData.user_id),
-        client_name: formData.client_name.trim(),
-        client_document: formData.client_document.replace(/[^\d]/g, ''),
-        pix_key: formData.pix_key.trim(),
-        pix_key_type: formData.pix_key_type
-      };
-
       if (isEditing) {
+        // Editar cliente existente
+        const clientData: CreateOTCClientRequest = {
+          user_id: parseInt(formData.user_id),
+          client_name: formData.client_name.trim(),
+          client_document: formData.client_document.replace(/[^\d]/g, ''),
+          pix_key: formData.pix_key.trim(),
+          pix_key_type: formData.pix_key_type
+        };
+
         await updateClient({ 
           id: client!.id, 
           clientData 
         });
       } else {
-        await createClient(clientData);
+        // Criar novo usuário + cliente (simplificado)
+        const completeData: CreateCompleteOTCClientRequest = {
+          user_name: formData.name.trim(),
+          user_email: formData.email.trim().toLowerCase(),
+          user_password: formData.password,
+          user_document: '', // Opcional
+          user_phone: '', // Opcional
+          client_name: formData.name.trim(), // Reaproveita o nome
+          client_document: '', // Opcional inicialmente
+          pix_key: formData.pix_key.trim(),
+          pix_key_type: formData.pix_key_type
+        };
+
+        await createClient(completeData, true);
       }
 
       onClose();
@@ -186,81 +242,159 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <User className="w-5 h-5" />
-            {isEditing ? 'Editar Cliente OTC' : 'Novo Cliente OTC'}
+            {isEditing ? (
+              <>
+                <User className="w-5 h-5" />
+                Editar Cliente OTC
+              </>
+            ) : (
+              <>
+                <UserPlus className="w-5 h-5" />
+                Novo Cliente OTC
+              </>
+            )}
           </DialogTitle>
           <DialogDescription>
             {isEditing 
               ? 'Edite as informações do cliente OTC'
-              : 'Preencha as informações para criar um novo cliente OTC'
+              : 'Cadastro simplificado: nome, email, senha e chave PIX'
             }
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Informações do Cliente */}
+          {/* Dados Básicos (sempre visível) */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
-                <User className="w-4 h-4" />
-                Informações do Cliente
+                {isEditing ? (
+                  <>
+                    <User className="w-4 h-4" />
+                    Editar Cliente OTC
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    Dados Básicos
+                  </>
+                )}
               </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {isEditing 
+                  ? 'Edite as informações do cliente OTC'
+                  : 'Informações para login e identificação'
+                }
+              </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Nome do Cliente */}
-              <div className="space-y-2">
-                <Label htmlFor="client_name">Nome do Cliente *</Label>
-                <Input
-                  id="client_name"
-                  value={formData.client_name}
-                  onChange={(e) => updateField('client_name', e.target.value)}
-                  placeholder="Ex: João Silva"
-                  className={errors.client_name ? 'border-red-500' : ''}
-                />
-                {errors.client_name && (
-                  <p className="text-sm text-red-500">{errors.client_name}</p>
-                )}
-              </div>
+              {!isEditing ? (
+                // Formulário simplificado para novo cliente
+                <>
+                  {/* Nome */}
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Nome Completo *</Label>
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => updateField('name', e.target.value)}
+                      placeholder="Ex: João Silva"
+                      className={errors.name ? 'border-red-500' : ''}
+                    />
+                    {errors.name && (
+                      <p className="text-sm text-red-500">{errors.name}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Este nome será usado tanto para login quanto para o cliente OTC
+                    </p>
+                  </div>
 
-              {/* Documento */}
-              <div className="space-y-2">
-                <Label htmlFor="client_document">CPF/CNPJ *</Label>
-                <Input
-                  id="client_document"
-                  value={formData.client_document}
-                  onChange={(e) => updateField('client_document', e.target.value)}
-                  placeholder="Ex: 123.456.789-00"
-                  className={errors.client_document ? 'border-red-500' : ''}
-                />
-                {errors.client_document && (
-                  <p className="text-sm text-red-500">{errors.client_document}</p>
-                )}
-                {formData.client_document && otcService.validateDocument(formData.client_document) && (
-                  <p className="text-sm text-green-600">
-                    ✓ {otcService.formatDocument(formData.client_document)}
-                  </p>
-                )}
-              </div>
+                  {/* Email e Senha */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email (Login) *</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => updateField('email', e.target.value)}
+                        placeholder="joao@exemplo.com"
+                        className={errors.email ? 'border-red-500' : ''}
+                      />
+                      {errors.email && (
+                        <p className="text-sm text-red-500">{errors.email}</p>
+                      )}
+                    </div>
 
-              {/* User ID (apenas para criação) */}
-              {!isEditing && (
-                <div className="space-y-2">
-                  <Label htmlFor="user_id">ID do Usuário *</Label>
-                  <Input
-                    id="user_id"
-                    type="number"
-                    value={formData.user_id}
-                    onChange={(e) => updateField('user_id', e.target.value)}
-                    placeholder="Ex: 123"
-                    className={errors.user_id ? 'border-red-500' : ''}
-                  />
-                  {errors.user_id && (
-                    <p className="text-sm text-red-500">{errors.user_id}</p>
-                  )}
-                </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Senha *</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={formData.password}
+                        onChange={(e) => updateField('password', e.target.value)}
+                        placeholder="Mínimo 6 caracteres"
+                        className={errors.password ? 'border-red-500' : ''}
+                      />
+                      {errors.password && (
+                        <p className="text-sm text-red-500">{errors.password}</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                // Formulário para edição (mantém campos existentes)
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="client_name">Nome do Cliente *</Label>
+                    <Input
+                      id="client_name"
+                      value={formData.client_name}
+                      onChange={(e) => updateField('client_name', e.target.value)}
+                      placeholder="Ex: João Silva"
+                      className={errors.client_name ? 'border-red-500' : ''}
+                    />
+                    {errors.client_name && (
+                      <p className="text-sm text-red-500">{errors.client_name}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="client_document">CPF/CNPJ *</Label>
+                    <Input
+                      id="client_document"
+                      value={formData.client_document}
+                      onChange={(e) => updateField('client_document', e.target.value)}
+                      placeholder="Ex: 123.456.789-00"
+                      className={errors.client_document ? 'border-red-500' : ''}
+                    />
+                    {errors.client_document && (
+                      <p className="text-sm text-red-500">{errors.client_document}</p>
+                    )}
+                    {formData.client_document && otcService.validateDocument(formData.client_document) && (
+                      <p className="text-sm text-green-600">
+                        ✓ {otcService.formatDocument(formData.client_document)}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="user_id">ID do Usuário *</Label>
+                    <Input
+                      id="user_id"
+                      type="number"
+                      value={formData.user_id}
+                      onChange={(e) => updateField('user_id', e.target.value)}
+                      placeholder="Ex: 123"
+                      className={errors.user_id ? 'border-red-500' : ''}
+                    />
+                    {errors.user_id && (
+                      <p className="text-sm text-red-500">{errors.user_id}</p>
+                    )}
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -270,8 +404,11 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Key className="w-4 h-4" />
-                Chave PIX
+                Chave PIX para Recebimentos
               </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Configurar chave PIX para receber depósitos automaticamente
+              </p>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Tipo de Chave PIX */}
@@ -332,7 +469,7 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
                   value={formData.pix_key}
                   onChange={(e) => updateField('pix_key', e.target.value)}
                   placeholder={
-                    formData.pix_key_type === 'email' ? 'Ex: joao@exemplo.com' :
+                    formData.pix_key_type === 'email' ? 'Ex: otc@tcr.finance' :
                     formData.pix_key_type === 'phone' ? 'Ex: +5511999999999' :
                     formData.pix_key_type === 'cpf' ? 'Ex: 123.456.789-00' :
                     formData.pix_key_type === 'cnpj' ? 'Ex: 12.345.678/0001-90' :

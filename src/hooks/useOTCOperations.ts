@@ -46,6 +46,7 @@ export function useOTCOperations(params: OTCOperationsParams = {}) {
       // Invalidar cache das operações, clientes, statement e balances
       queryClient.invalidateQueries({ queryKey: [OTC_OPERATIONS_QUERY_KEY] });
       queryClient.invalidateQueries({ queryKey: [OTC_CLIENTS_QUERY_KEY] });
+      queryClient.invalidateQueries({ queryKey: ['otc-client'] }); // Cliente individual
       queryClient.invalidateQueries({ queryKey: ['otc-statement'] });
       queryClient.invalidateQueries({ queryKey: ['otc-balance'] });
       

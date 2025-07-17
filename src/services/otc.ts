@@ -7,6 +7,7 @@ import {
   OTCConversion,
   OTCConversionsResponse,
   CreateOTCClientRequest,
+  CreateCompleteOTCClientRequest,
   CreateOTCOperationRequest,
   OTCClientsResponse,
   OTCClientsParams,
@@ -54,6 +55,18 @@ export class OTCService {
     const response = await api.post<OTCApiResponse<OTCClient>>(
       `${OTC_BASE_URL}/clients`,
       clientData
+    );
+    
+    return response.data;
+  }
+
+  /**
+   * Cria um novo usuário e cliente OTC completo
+   */
+  async createCompleteClient(completeData: CreateCompleteOTCClientRequest): Promise<OTCApiResponse<OTCClient>> {
+    const response = await api.post<OTCApiResponse<OTCClient>>(
+      `${OTC_BASE_URL}/clients/complete`,
+      completeData
     );
     
     return response.data;
@@ -393,6 +406,29 @@ export class OTCService {
       style: 'currency',
       currency: 'BRL'
     }).format(value);
+  }
+
+  /**
+   * Obter média diária das conversões
+   */
+  async getDailyAverageRate(): Promise<OTCApiResponse<{
+    average_rate: number | null;
+    conversions_count: number;
+    total_brl_converted?: number;
+    total_usd_received?: number;
+    calculated_at: string;
+  }>> {
+    const response = await api.get<OTCApiResponse<{
+      average_rate: number | null;
+      conversions_count: number;
+      total_brl_converted?: number;
+      total_usd_received?: number;
+      calculated_at: string;
+    }>>(
+      `${OTC_BASE_URL}/daily-average-rate`
+    );
+    
+    return response.data;
   }
 
   /**
