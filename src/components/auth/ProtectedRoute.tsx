@@ -42,11 +42,20 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
       console.log('🔍 ProtectedRoute: Verificando tipo de usuário para rota admin...');
       try {
-        const isOTC = await userTypeService.isOTCUser(user);
+        const userTypeResult = await userTypeService.checkUserType(user);
+        const isOTC = userTypeResult.isOTC;
+        
         setUserTypeCheck({ loading: false, isOTC });
         
+        console.log('🔍 ProtectedRoute: Resultado da verificação:', {
+          isOTC,
+          isAdmin: userTypeResult.isAdmin,
+          type: userTypeResult.type,
+          hasOTCClient: !!userTypeResult.otcClient
+        });
+        
         if (isOTC) {
-          console.log('⚠️ ProtectedRoute: Usuário OTC tentando acessar área admin');
+          console.log('⚠️ ProtectedRoute: Usuário OTC tentando acessar área admin - redirecionando');
         }
       } catch (error) {
         console.error('❌ ProtectedRoute: Erro ao verificar tipo de usuário:', error);

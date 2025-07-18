@@ -11,13 +11,17 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
-  Clock
+  Clock,
+  RotateCcw,
+  AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -26,6 +30,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useOTCStatement } from '@/hooks/useOTCStatement';
 import { otcService } from '@/services/otc';
 import { OTCClient, OTCTransaction, OTCBalanceHistory } from '@/types/otc';
+import { toast } from 'sonner';
 
 interface OTCStatementModalProps {
   isOpen: boolean;
@@ -46,8 +51,14 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
     page: 1,
     limit: 20,
     dateFrom: '',
-    dateTo: ''
+    dateTo: '',
+    hideReversals: false // Admins podem ver operações de reversão
   });
+
+  // Estados para reversão de operação
+  const [reversalModalOpen, setReversalModalOpen] = useState(false);
+  const [transactionToReverse, setTransactionToReverse] = useState<OTCTransaction | null>(null);
+  const [isReversing, setIsReversing] = useState(false);
 
   const {
     statement,
@@ -63,7 +74,8 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
         page: 1,
         limit: 20,
         dateFrom: '',
-        dateTo: ''
+        dateTo: '',
+        hideReversals: false // Admins podem ver operações de reversão
       });
       setActiveTab('transactions');
     }
@@ -74,8 +86,51 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
     setFilters(prev => ({
       ...prev,
       ...newFilters,
-      page: newFilters.page || 1
+      page: newFilters.page || 1,
+      hideReversals: newFilters.hideReversals !== undefined ? newFilters.hideReversals : prev.hideReversals
     }));
+  };
+
+  // Função para reverter operação
+  const handleReverseOperation = async () => {
+    if (!transactionToReverse) {
+      toast.error('Nenhuma transação selecionada');
+      return;
+    }
+
+    setIsReversing(true);
+    try {
+      // Usar um motivo padrão automático
+      const defaultReason = `Reversão automática da operação ${transactionToReverse.type} realizada em ${otcService.formatDate(transactionToReverse.date)}`;
+      
+      console.log('[FRONTEND] Enviando reversão:', {
+        transactionId: transactionToReverse.id,
+        reason: defaultReason
+      });
+      
+      await otcService.reverseOperation(transactionToReverse.id, defaultReason);
+      
+      toast.success('Operação revertida com sucesso!');
+      
+      // Fechar modal e limpar dados
+      setReversalModalOpen(false);
+      setTransactionToReverse(null);
+      
+      // Recarregar dados
+      refetch();
+      
+    } catch (error) {
+      console.error('Erro ao reverter operação:', error);
+      toast.error('Erro ao reverter operação. Verifique os logs.');
+    } finally {
+      setIsReversing(false);
+    }
+  };
+
+  // Função para abrir modal de confirmação de reversão
+  const openReversalModal = (transaction: OTCTransaction) => {
+    setTransactionToReverse(transaction);
+    setReversalModalOpen(true);
   };
 
   // Componente de loading
@@ -95,6 +150,17 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
       ))}
     </div>
   );
+
+  // Função para buscar valor USD da transação no histórico
+  const getUsdValueFromHistory = (transactionId: number): number | null => {
+    if (!statement?.historico_saldo) return null;
+    
+    const historyRecord = statement.historico_saldo.find(
+      h => h.transaction_id === transactionId && h.usd_amount_change !== 0
+    );
+    
+    return historyRecord?.usd_amount_change || null;
+  };
 
   // Componente para transação
   const TransactionRow = ({ transaction }: { transaction: OTCTransaction }) => {
@@ -180,17 +246,50 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
           <div className={`font-semibold ${
             isCredit ? 'text-green-600' : 'text-red-600'
           }`}>
-            {/* Verificar se é operação USD através das notas */}
-            {transaction.notes?.includes('USD') ? (
-              <span className="text-blue-600">
-                Operação USD - Ver Histórico de Saldo
-              </span>
-            ) : (
-              <>
-                {isCredit ? '+' : '-'}
-                {otcService.formatCurrency(Math.abs(transaction.amount))} BRL
-              </>
-            )}
+            {(() => {
+              const usdValue = getUsdValueFromHistory(transaction.id);
+              const isUsdOperation = transaction.notes?.toLowerCase().includes('usd');
+              
+              // Operação USD pura (amount = 0 e tem valor USD no histórico)
+              if (isUsdOperation && transaction.amount === 0 && usdValue !== null) {
+                return (
+                  <div className="text-blue-600">
+                    {usdValue >= 0 ? '+' : ''}$ {Math.abs(usdValue).toFixed(4)} USD
+                  </div>
+                );
+              }
+              
+              // Conversão (tem valor BRL e valor USD)
+              if (isUsdOperation && transaction.amount !== 0 && usdValue !== null) {
+                return (
+                  <div className="space-y-1">
+                    <div className={isCredit ? 'text-green-600' : 'text-red-600'}>
+                      {isCredit ? '+' : '-'}{otcService.formatCurrency(Math.abs(transaction.amount))} BRL
+                    </div>
+                    <div className="text-blue-600 text-xs">
+                      {usdValue >= 0 ? '+' : ''}$ {Math.abs(usdValue).toFixed(4)} USD
+                    </div>
+                  </div>
+                );
+              }
+              
+              // Operação USD que não foi encontrada no histórico
+              if (isUsdOperation && transaction.amount === 0) {
+                return (
+                  <div className="text-blue-600 text-sm">
+                    Operação USD - Ver Histórico
+                  </div>
+                );
+              }
+              
+              // Operação BRL normal
+              return (
+                <>
+                  {isCredit ? '+' : '-'}
+                  {otcService.formatCurrency(Math.abs(transaction.amount))} BRL
+                </>
+              );
+            })()}
           </div>
         </TableCell>
         
@@ -199,7 +298,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
         </TableCell>
         
         <TableCell>
-          <div className="text-sm">
+          <div className="text-sm space-y-2">
             {transaction.payer_name && (
               <div>
                 <strong>Pagador:</strong> {transaction.payer_name}
@@ -213,6 +312,22 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
             {transaction.notes && (
               <div className="text-muted-foreground">
                 {transaction.notes}
+              </div>
+            )}
+            
+            {/* Botão de reversão para operações manuais */}
+            {['manual_credit', 'manual_debit', 'manual_adjustment'].includes(transaction.type) && 
+             transaction.status === 'processed' && (
+              <div className="pt-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={() => openReversalModal(transaction)}
+                >
+                  <RotateCcw className="w-3 h-3 mr-1" />
+                  Reverter
+                </Button>
               </div>
             )}
           </div>
@@ -338,6 +453,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
   }
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -622,6 +738,84 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Modal de confirmação de reversão */}
+    <AlertDialog open={reversalModalOpen} onOpenChange={setReversalModalOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+            Confirmar Reversão da Operação
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            <div className="space-y-4">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-800 font-medium">
+                  ⚠️ Esta ação não pode ser desfeita!
+                </p>
+                <p className="text-red-700 text-sm mt-1">
+                  A operação será revertida e os saldos do cliente serão ajustados automaticamente.
+                </p>
+              </div>
+              
+              {transactionToReverse && (
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-2">Detalhes da Operação:</h4>
+                  <div className="text-sm space-y-1">
+                    <p><strong>Tipo:</strong> {transactionToReverse.type}</p>
+                    <p><strong>Valor:</strong> {(() => {
+                      const usdValue = getUsdValueFromHistory(transactionToReverse.id);
+                      const isUsdOperation = transactionToReverse.notes?.toLowerCase().includes('usd');
+                      
+                      if (isUsdOperation && transactionToReverse.amount === 0 && usdValue !== null) {
+                        return `$ ${Math.abs(usdValue).toFixed(4)} USD`;
+                      }
+                      
+                      if (isUsdOperation && transactionToReverse.amount !== 0 && usdValue !== null) {
+                        return `${otcService.formatCurrency(transactionToReverse.amount)} BRL + $ ${Math.abs(usdValue).toFixed(4)} USD`;
+                      }
+                      
+                      return `${otcService.formatCurrency(transactionToReverse.amount)} BRL`;
+                    })()}</p>
+                    <p><strong>Data:</strong> {otcService.formatDate(transactionToReverse.date)}</p>
+                    {transactionToReverse.notes && (
+                      <p><strong>Observações:</strong> {transactionToReverse.notes}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+                             <div className="text-center text-sm text-muted-foreground">
+                 A operação será revertida automaticamente com registro no sistema.
+               </div>
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isReversing}>
+            Cancelar
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleReverseOperation}
+            disabled={isReversing}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            {isReversing ? (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                Revertendo...
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Confirmar Reversão
+              </>
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 };
 

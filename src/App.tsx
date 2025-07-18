@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import MainLayout from "./components/layout/MainLayout";
@@ -17,7 +17,6 @@ import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIA
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
 import OTCClients from "./pages/otc/OTCClients";
 import ClientStatement from "./pages/ClientStatement";
-import ClientLogin from "./pages/ClientLogin";
 
 // Página para informar que registro está bloqueado
 const RegisterBlocked = () => (
@@ -71,15 +70,16 @@ const App = () => (
         <Sonner position="top-right" theme="dark" />
         <BrowserRouter>
           <Routes>
-            {/* Rotas públicas de autenticação */}
+            {/* Rota pública de autenticação UNIFICADA */}
             <Route path="/login" element={<Login />} />
-            <Route path="/login-cliente" element={<ClientLogin />} />
+            {/* Redirect da rota antiga para a nova (compatibilidade) */}
+            <Route path="/login-cliente" element={<Navigate to="/login" replace />} />
             {/* REGISTRO DESBLOQUEADO TEMPORARIAMENTE */}
             <Route path="/register" element={<Register />} />
             
             {/* Rota específica para extrato do cliente (sem sidebar) */}
             <Route path="/client-statement" element={
-              <ProtectedRoute redirectTo="/login-cliente">
+              <ProtectedRoute redirectTo="/login">
                 <ClientStatement />
               </ProtectedRoute>
             } />
@@ -99,7 +99,7 @@ const App = () => (
               <Route path="/otc" element={<OTCClients />} />
             </Route>
             
-            {/* Página 404 */}
+            {/* Rota 404 */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

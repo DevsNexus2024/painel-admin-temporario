@@ -162,60 +162,44 @@ export default function MainLayout() {
 
                             <div className="pb-2">
                                 <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Transações
+                                    Grupo TCR
                                 </h3>
                                 <div className="space-y-1">
                                     <SidebarLink
                                         to="/extrato_tcr"
                                         icon={<CreditCard className="h-4 w-4" />}
-                                        label="Extrato de Contas"
+                                        label="Extrato de Contas - TCR"
                                     />
                                     <SidebarLink
                                         to="/compensacao-depositos"
                                         icon={<ArrowDownToLine className="h-4 w-4" />}
-                                        label="Compensação de Depósitos"
-                                    />
-                                    <SidebarLink
-                                        to="/pagamentos"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="Pagamentos PIX"
+                                        label="Compensação de Depósitos - TCR"
                                     />
                                 </div>
                             </div>
 
                             <div className="pb-2">
                                 <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Mercado
+                                    Grupo OTC
                                 </h3>
                                 <div className="space-y-1">
+                                    <SidebarLink
+                                        to="/pagamentos"
+                                        icon={<CreditCard className="h-4 w-4" />}
+                                        label="Gerenciador de Contas"
+                                    />
                                     <SidebarLink
                                         to="/cotacoes"
                                         icon={<BarChart3 className="h-4 w-4" />}
                                         label="Cotações em Tempo Real"
                                         badge="LIVE"
                                     />
-                                </div>
-                            </div>
-
-                            <div className="pb-2">
-                                <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Bot Cotação
-                                </h3>
-                                <div className="space-y-1">
                                     <SidebarLink
                                         to="/bot-cotacao"
                                         icon={<Bot className="h-4 w-4" />}
                                         label="Bot de Cotação"
                                         badge="BETA"
                                     />
-                                </div>
-                            </div>
-
-                            <div className="pb-2">
-                                <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    OTC
-                                </h3>
-                                <div className="space-y-1">
                                     <SidebarLink
                                         to="/otc"
                                         icon={<Users className="h-4 w-4" />}

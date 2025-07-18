@@ -65,6 +65,8 @@ export interface OTCTransaction {
   is_conversion?: boolean;
   description?: string;
   processed_by?: string;
+  currency?: CurrencyType; // Adicionado para suporte a USD
+  usd_amount?: number; // Valor em USD se aplicável
   // Campos adicionados do histórico de saldo
   history_id?: number;
   checked_by_client?: boolean;
@@ -135,6 +137,7 @@ export interface OTCStats {
     total_depositos: number;
     total_saques: number;
     saldo_total: number;
+    total_saldo_usd: number; // NOVO
   };
 }
 
@@ -249,6 +252,7 @@ export interface OTCStatementParams {
   limit?: number;
   dateFrom?: string;
   dateTo?: string;
+  hideReversals?: boolean; // Ocultar operações de reversão (default: true)
 }
 
 // Interface para parâmetros de operações

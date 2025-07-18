@@ -79,7 +79,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           console.log('🔍 AuthProvider: Resultado do perfil:', profileResult);
           
           if (profileResult.sucesso && profileResult.data) {
-            console.log('✅ AuthProvider: Perfil atualizado com sucesso, definindo usuário:', profileResult.data);
+            console.log('✅ AuthProvider: Perfil atualizado com sucesso');
             setUser(profileResult.data);
             
             // Apenas verificar tipo de usuário (sem redirecionamento automático)
@@ -119,7 +119,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('🔐 AuthProvider: Resposta do serviço:', result);
       
       if (result.sucesso && result.data) {
-        console.log('✅ AuthProvider: Login bem-sucedido, definindo usuário:', result.data.user);
+        console.log('✅ AuthProvider: Login bem-sucedido');
         setUser(result.data.user);
         toast.success('Login realizado com sucesso!');
         
@@ -128,7 +128,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         // Aguardar um pouco para garantir que o estado foi atualizado
         setTimeout(() => {
-          console.log('🔄 AuthProvider: Estado do usuário após login:', result.data.user);
+          console.log('🔄 AuthProvider: Estado do usuário atualizado');
         }, 50);
         
         return true;

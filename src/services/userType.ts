@@ -1,18 +1,34 @@
-import { otcService } from './otc';
+import { authService } from './auth';
 
 /**
  * Tipos de usuário no sistema
  */
-export type UserType = 'otc' | 'admin';
+export type UserType = 'otc_client' | 'admin';
 
 /**
- * Interface para resultado da verificação de tipo de usuário
+ * Resultado da verificação de tipo de usuário
  */
 export interface UserTypeResult {
   type: UserType;
   isOTC: boolean;
   isAdmin: boolean;
   otcClient?: any;
+  hasOTCRole?: boolean;
+}
+
+/**
+ * Resposta da API de tipo de usuário
+ */
+interface UserTypeAPIResponse {
+  sucesso: boolean;
+  data: {
+    userId: number;
+    type: UserType;
+    isAdmin: boolean;
+    isOTCClient: boolean;
+    otcClient?: any;
+    hasOTCRole?: boolean;
+  };
 }
 
 /**
@@ -20,44 +36,34 @@ export interface UserTypeResult {
  */
 export class UserTypeService {
   /**
-   * Verifica se o usuário é do tipo OTC (tem cliente OTC vinculado)
+   * Verifica o tipo de usuário usando o endpoint do backend
    */
   async checkUserType(user: { id: string | number; email: string; name?: string }): Promise<UserTypeResult> {
     try {
-      console.log('🔍 UserTypeService: Verificando tipo para usuário:', user.id, user.email);
+      console.log('🔍 UserTypeService: Verificando tipo para usuário via API:', user.id, user.email);
       
-      // Buscar clientes OTC para verificar se o usuário tem vinculação
-      const clientsResponse = await otcService.getClients({ 
-        limit: 200 // Buscar todos os clientes para encontrar o correto
-      });
+      // Fazer chamada para a API do backend
+      const response = await authService.getUserType();
       
-      if (!clientsResponse.data?.clientes || clientsResponse.data.clientes.length === 0) {
-        console.log('ℹ️ UserTypeService: Nenhum cliente OTC encontrado - usuário é Admin');
+      if (response.sucesso && response.data) {
+        const { type, isAdmin, isOTCClient, otcClient, hasOTCRole } = response.data;
+        
+        console.log('✅ UserTypeService: Tipo obtido da API:', {
+          type,
+          isAdmin,
+          isOTCClient,
+          hasOTCClient: !!otcClient
+        });
+        
         return {
-          type: 'admin',
-          isOTC: false,
-          isAdmin: true
-        };
-      }
-
-      // Buscar cliente específico vinculado ao usuário logado
-      const otcClient = clientsResponse.data.clientes.find(c => {
-        // Verificar se o cliente está vinculado ao usuário logado
-        return String(c.user?.id) === String(user.id) || 
-               c.user?.email === user.email ||
-               c.user?.name === user.name;
-      });
-
-      if (otcClient) {
-        console.log('✅ UserTypeService: Usuário é OTC, cliente encontrado:', otcClient);
-        return {
-          type: 'otc',
-          isOTC: true,
-          isAdmin: false,
-          otcClient
+          type,
+          isOTC: isOTCClient,
+          isAdmin,
+          otcClient,
+          hasOTCRole
         };
       } else {
-        console.log('ℹ️ UserTypeService: Usuário não tem cliente OTC vinculado - é Admin');
+        console.warn('⚠️ UserTypeService: Resposta inválida da API, assumindo admin');
         return {
           type: 'admin',
           isOTC: false,
@@ -65,7 +71,7 @@ export class UserTypeService {
         };
       }
     } catch (error) {
-      console.error('❌ UserTypeService: Erro ao verificar tipo do usuário:', error);
+      console.error('❌ UserTypeService: Erro ao verificar tipo do usuário via API:', error);
       // Em caso de erro, assumir como admin para não bloquear acesso
       return {
         type: 'admin',

@@ -130,8 +130,7 @@ export const enviarPixPorChave = async (data: PixTransferRequest): Promise<PixTr
   try {
     const url = buildApiUrl(API_CONFIG.ENDPOINTS.PIX.ENVIAR);
     
-    console.log("Enviando requisição para:", url);
-    console.log("Dados:", data);
+    // Dados sensíveis removidos dos logs
     
     const response = await fetch(url, {
       method: 'POST',
@@ -140,21 +139,14 @@ export const enviarPixPorChave = async (data: PixTransferRequest): Promise<PixTr
       signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
     });
 
-    console.log("Status da resposta:", response.status);
-    console.log("Headers da resposta:", Object.fromEntries(response.headers.entries()));
-    
     // Sempre tentar extrair o JSON primeiro, independente do status
     let result;
     try {
       result = await response.json();
-      console.log("Resposta JSON da API:", JSON.stringify(result, null, 2));
     } catch (jsonError) {
-      console.error("Erro ao fazer parse do JSON:", jsonError);
-      
       // Tentar obter o texto da resposta para logs mais detalhados
       try {
         const textResponse = await response.text();
-        console.log("Resposta como texto:", textResponse);
       } catch (textError) {
         console.error("Erro ao obter resposta como texto:", textError);
       }
@@ -165,8 +157,6 @@ export const enviarPixPorChave = async (data: PixTransferRequest): Promise<PixTr
 
     // Se não ok, mas temos JSON válido, usar a mensagem do backend
     if (!response.ok) {
-      console.log("Resposta não OK. Extraindo mensagem de erro...");
-      
       // Tentar extrair a mensagem de erro de diferentes formatos possíveis
       let mensagemErro = '';
       
@@ -211,8 +201,6 @@ export const enviarPixPorChave = async (data: PixTransferRequest): Promise<PixTr
         mensagemErro = `Erro HTTP ${response.status}: ${response.statusText}`;
       }
       
-      console.log("Mensagem de erro extraída:", mensagemErro);
-      
       return {
         sucesso: false,
         mensagem: mensagemErro
@@ -220,7 +208,6 @@ export const enviarPixPorChave = async (data: PixTransferRequest): Promise<PixTr
     }
 
     // Se tudo ok, retornar resultado
-    console.log("Resposta de sucesso. Resultado:", result);
     return result;
   } catch (error) {
     console.error("Erro ao enviar PIX:", error);
@@ -236,8 +223,6 @@ export const enviarPixPorChave = async (data: PixTransferRequest): Promise<PixTr
         mensagemErro = error.message;
       }
     }
-    
-    console.log("Mensagem de erro final (catch):", mensagemErro);
     
     // Retorna resposta de erro padronizada
     return {
@@ -256,8 +241,7 @@ export const pagarComQRCode = async (data: PixQRCodeRequest): Promise<PixTransfe
   try {
     const url = buildApiUrl(API_CONFIG.ENDPOINTS.PIX.PAGAR_QR);
     
-    console.log("Enviando pagamento QR Code para:", url);
-    console.log("Dados:", data);
+    // Dados sensíveis removidos dos logs
     
     const response = await fetch(url, {
       method: 'POST',
@@ -266,21 +250,14 @@ export const pagarComQRCode = async (data: PixQRCodeRequest): Promise<PixTransfe
       signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
     });
 
-    console.log("Status da resposta:", response.status);
-    console.log("Headers da resposta:", Object.fromEntries(response.headers.entries()));
-    
     // Sempre tentar extrair o JSON primeiro, independente do status
     let result;
     try {
       result = await response.json();
-      console.log("Resposta JSON da API:", JSON.stringify(result, null, 2));
     } catch (jsonError) {
-      console.error("Erro ao fazer parse do JSON:", jsonError);
-      
       // Tentar obter o texto da resposta para logs mais detalhados
       try {
         const textResponse = await response.text();
-        console.log("Resposta como texto:", textResponse);
       } catch (textError) {
         console.error("Erro ao obter resposta como texto:", textError);
       }
@@ -291,8 +268,6 @@ export const pagarComQRCode = async (data: PixQRCodeRequest): Promise<PixTransfe
 
     // Se não ok, mas temos JSON válido, usar a mensagem do backend
     if (!response.ok) {
-      console.log("Resposta não OK. Extraindo mensagem de erro...");
-      
       // Tentar extrair a mensagem de erro de diferentes formatos possíveis
       let mensagemErro = '';
       
@@ -346,7 +321,6 @@ export const pagarComQRCode = async (data: PixQRCodeRequest): Promise<PixTransfe
     }
 
     // Se tudo ok, retornar resultado
-    console.log("Resposta de sucesso. Resultado:", result);
     return result;
   } catch (error) {
     console.error("Erro ao pagar via QR Code:", error);
@@ -519,8 +493,7 @@ export const criarChavePix = async (data: PixCreateKeyRequest): Promise<PixCreat
   try {
     const url = buildApiUrl(API_CONFIG.ENDPOINTS.PIX.CHAVES_CRIAR);
     
-    console.log("Criando chave PIX para:", url);
-    console.log("Dados:", data);
+    // Dados sensíveis removidos dos logs
     
     const response = await fetch(url, {
       method: 'POST',
@@ -824,10 +797,7 @@ export const consultarChavePix = async (chave: string): Promise<PixKeyConsultRes
       'chave': chaveLimpa
     };
     
-    console.log("Consultando chave PIX para:", url);
-    console.log("Chave original:", chave);
-    console.log("Chave limpa:", chaveLimpa);
-    console.log("Parâmetros:", queryParams);
+    // Dados sensíveis de chave PIX removidos dos logs
     
     // Construir query string
     const queryString = new URLSearchParams(queryParams).toString();

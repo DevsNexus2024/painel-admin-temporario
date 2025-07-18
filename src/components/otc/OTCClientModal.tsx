@@ -100,51 +100,40 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
 
     // Validações para novo usuário (apenas se não for edição)
     if (!isEditing) {
-      // Validar nome
-      if (!formData.name.trim()) {
-        newErrors.name = 'Nome é obrigatório';
-      } else if (formData.name.length < 2) {
+      // Validar nome (opcional, mas se preenchido deve ter pelo menos 2 caracteres)
+      if (formData.name.trim() && formData.name.length < 2) {
         newErrors.name = 'Nome deve ter pelo menos 2 caracteres';
       }
 
-      // Validar email
-      if (!formData.email.trim()) {
-        newErrors.email = 'Email é obrigatório';
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      // Validar email (opcional, mas se preenchido deve ter formato válido)
+      if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
         newErrors.email = 'Email inválido';
       }
 
-      // Validar senha
-      if (!formData.password.trim()) {
-        newErrors.password = 'Senha é obrigatória';
-      } else if (formData.password.length < 6) {
+      // Validar senha (opcional, mas se preenchida deve ter pelo menos 6 caracteres)
+      if (formData.password.trim() && formData.password.length < 6) {
         newErrors.password = 'Senha deve ter pelo menos 6 caracteres';
       }
 
-      // Validar chave PIX
-      if (!formData.pix_key.trim()) {
-        newErrors.pix_key = 'Chave PIX é obrigatória';
-      } else if (!otcService.validatePixKey(formData.pix_key, formData.pix_key_type)) {
+      // Validar chave PIX (opcional, mas se preenchida deve ser válida)
+      if (formData.pix_key.trim() && !otcService.validatePixKey(formData.pix_key, formData.pix_key_type)) {
         newErrors.pix_key = 'Chave PIX inválida para o tipo selecionado';
       }
     } else {
-      // Para edição, validar apenas campos do cliente existente
-      if (!formData.client_name.trim()) {
-        newErrors.client_name = 'Nome do cliente é obrigatório';
+      // Para edição, manter validações existentes mas tornar campos opcionais
+      if (formData.client_name.trim() && formData.client_name.length < 2) {
+        newErrors.client_name = 'Nome do cliente deve ter pelo menos 2 caracteres';
       }
 
-      if (!formData.client_document.trim()) {
-        newErrors.client_document = 'Documento é obrigatório';
-      } else if (!otcService.validateDocument(formData.client_document)) {
+      if (formData.client_document.trim() && !otcService.validateDocument(formData.client_document)) {
         newErrors.client_document = 'CPF ou CNPJ inválido';
       }
 
-      if (!formData.pix_key.trim()) {
-        newErrors.pix_key = 'Chave PIX é obrigatória';
-      } else if (!otcService.validatePixKey(formData.pix_key, formData.pix_key_type)) {
+      if (formData.pix_key.trim() && !otcService.validatePixKey(formData.pix_key, formData.pix_key_type)) {
         newErrors.pix_key = 'Chave PIX inválida para o tipo selecionado';
       }
 
+      // User ID ainda obrigatório para edição
       if (!formData.user_id) {
         newErrors.user_id = 'Usuário é obrigatório';
       }
@@ -259,8 +248,8 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
           </DialogTitle>
           <DialogDescription>
             {isEditing 
-              ? 'Edite as informações do cliente OTC'
-              : 'Cadastro simplificado: nome, email, senha e chave PIX'
+              ? 'Edite as informações do cliente OTC (todos os campos são opcionais)'
+              : 'Cadastro simplificado: todos os campos são opcionais'
             }
           </DialogDescription>
         </DialogHeader>
@@ -284,8 +273,8 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
               </CardTitle>
               <p className="text-sm text-muted-foreground">
                 {isEditing 
-                  ? 'Edite as informações do cliente OTC'
-                  : 'Informações para login e identificação'
+                  ? 'Edite as informações do cliente OTC (campos opcionais)'
+                  : 'Informações para login e identificação (campos opcionais)'
                 }
               </p>
             </CardHeader>
@@ -295,7 +284,7 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
                 <>
                   {/* Nome */}
                   <div className="space-y-2">
-                    <Label htmlFor="name">Nome Completo *</Label>
+                    <Label htmlFor="name">Nome Completo</Label>
                     <Input
                       id="name"
                       value={formData.name}
@@ -307,14 +296,14 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
                       <p className="text-sm text-red-500">{errors.name}</p>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      Este nome será usado tanto para login quanto para o cliente OTC
+                      Este nome será usado tanto para login quanto para o cliente OTC (opcional)
                     </p>
                   </div>
 
                   {/* Email e Senha */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="email">Email (Login) *</Label>
+                      <Label htmlFor="email">Email (Login)</Label>
                       <Input
                         id="email"
                         type="email"
@@ -329,7 +318,7 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="password">Senha *</Label>
+                      <Label htmlFor="password">Senha</Label>
                       <Input
                         id="password"
                         type="password"
@@ -348,7 +337,7 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
                 // Formulário para edição (mantém campos existentes)
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="client_name">Nome do Cliente *</Label>
+                    <Label htmlFor="client_name">Nome do Cliente</Label>
                     <Input
                       id="client_name"
                       value={formData.client_name}
@@ -362,7 +351,7 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="client_document">CPF/CNPJ *</Label>
+                    <Label htmlFor="client_document">CPF/CNPJ</Label>
                     <Input
                       id="client_document"
                       value={formData.client_document}
@@ -413,7 +402,7 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
             <CardContent className="space-y-4">
               {/* Tipo de Chave PIX */}
               <div className="space-y-2">
-                <Label htmlFor="pix_key_type">Tipo de Chave PIX *</Label>
+                <Label htmlFor="pix_key_type">Tipo de Chave PIX</Label>
                 <Select
                   value={formData.pix_key_type}
                   onValueChange={(value) => updateField('pix_key_type', value)}
@@ -461,7 +450,7 @@ const OTCClientModal: React.FC<OTCClientModalProps> = ({
                 <Label htmlFor="pix_key">
                   <div className="flex items-center gap-2">
                     {getPixKeyIcon(formData.pix_key_type)}
-                    {getPixKeyLabel(formData.pix_key_type)} *
+                    {getPixKeyLabel(formData.pix_key_type)}
                   </div>
                 </Label>
                 <Input

@@ -76,9 +76,7 @@ class AuthService {
       console.log('🔐 AuthService: Resposta da API:', result);
 
       if (result.sucesso && result.data) {
-        console.log('✅ AuthService: Salvando token e usuário no storage');
-        console.log('🪙 Token:', result.data.token);
-        console.log('👤 Usuário:', result.data.user);
+        // Dados sensíveis removidos dos logs por segurança
         
         // Salvar token e usuário
         TOKEN_STORAGE.set(result.data.token);
@@ -134,6 +132,31 @@ class AuthService {
   }
 
   /**
+   * Obter tipo do usuário (admin ou cliente OTC)
+   */
+  async getUserType(): Promise<{ sucesso: boolean; data?: any; mensagem?: string }> {
+    try {
+      console.log('🔍 AuthService: Buscando tipo do usuário via API');
+      
+      const response = await createApiRequest(API_CONFIG.ENDPOINTS.AUTH.USER_TYPE, {
+        method: 'GET'
+      });
+
+      const result = await response.json();
+      
+      console.log('🔍 AuthService: Resposta do getUserType:', result);
+
+      return result;
+    } catch (error) {
+      console.error('❌ AuthService: Erro ao buscar tipo do usuário:', error);
+      return {
+        sucesso: false,
+        mensagem: 'Erro de conexão. Tente novamente.'
+      };
+    }
+  }
+
+  /**
    * Verificar se usuário está logado
    */
   isAuthenticated(): boolean {
@@ -155,7 +178,6 @@ class AuthService {
    */
   getCurrentUser(): User | null {
     const user = USER_STORAGE.get();
-    console.log('👤 AuthService: getCurrentUser:', user);
     return user;
   }
 
@@ -164,7 +186,6 @@ class AuthService {
    */
   getCurrentToken(): string | null {
     const token = TOKEN_STORAGE.get();
-    console.log('🪙 AuthService: getCurrentToken:', token ? 'presente' : 'ausente');
     return token;
   }
 

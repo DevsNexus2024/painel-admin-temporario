@@ -112,6 +112,11 @@ export class OTCService {
     if (params.dateTo) {
       searchParams.append('dateTo', params.dateTo);
     }
+    
+    // Por padrão, ocultar operações de reversão para clientes
+    // Admins podem passar hideReversals: false se necessário
+    const hideReversals = params.hideReversals !== false;
+    searchParams.append('hideReversals', String(hideReversals));
 
     const response = await api.get<OTCApiResponse<OTCStatement>>(
       `${OTC_BASE_URL}/clients/${id}/statement${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
@@ -150,6 +155,18 @@ export class OTCService {
 
     const response = await api.get<OTCApiResponse<OTCOperation[]>>(
       `${OTC_BASE_URL}/operations${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
+    );
+    
+    return response.data;
+  }
+
+  /**
+   * Reverte uma operação manual
+   */
+  async reverseOperation(operationId: number, reason: string): Promise<OTCApiResponse<any>> {
+    const response = await api.post<OTCApiResponse<any>>(
+      `${OTC_BASE_URL}/operations/${operationId}/reverse`,
+      { reason }
     );
     
     return response.data;

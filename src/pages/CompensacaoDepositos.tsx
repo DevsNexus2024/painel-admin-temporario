@@ -240,9 +240,7 @@ async function buscarDepositosComErro(startDate?: string, endDate?: string): Pro
         const data: ApiResponse = await response.json();
 
         // Log dos dados brutos da API
-        console.log("--- Dados Brutos da API (/consultar-erros) ---");
-        console.log(JSON.stringify(data.resultado, null, 2));
-        console.log("---------------------------------------------");
+        // Debug removido por performance
 
         if (!data.sucesso) {
             console.error("API retornou erro:", data.mensagem);
@@ -331,9 +329,7 @@ async function buscarDepositosComErro(startDate?: string, endDate?: string): Pro
         todosRegistros.sort((a, b) => b.createdAt - a.createdAt);
 
         // Log dos dados mapeados antes de retornar
-        console.log("--- Dados Mapeados (antes de retornar) ---");
-        console.log(todosRegistros.map(d => ({ id: d.id, txId: d.txId, status: d.status, step: d.step, createdAt: d.createdAt, tipo: d.tipoRegistro, originalTimestamp: d.originalTimestamp })));
-        console.log("-----------------------------------------");
+              // Debug de mapeamento removido por performance
 
         return todosRegistros;
 
@@ -1349,28 +1345,13 @@ export default function CompensacaoDepositos() {
 
     // Efeito para aplicar filtros
     useEffect(() => {
-        console.log("--- useEffect: Iniciando Filtragem ---");
-        console.log("Dados base (state depositos):", depositos.length, "itens");
-        console.log("Filtros manuais:", { searchTerm, statusFilter, stepFilter });
-        console.log("Filtros de data:", { startDateFilter, endDateFilter });
-
         let dadosAposFiltroData: Deposito[];
-        const targetTxId = "E60701190202504262334DY536Q3X39P"; // ID que estamos procurando
 
         if (startDateFilter && endDateFilter) {
             const inicioDia = startOfDay(startDateFilter).getTime();
             const fimDia = endOfDay(endDateFilter).getTime();
-            console.log(`Aplicando filtro de data: ${format(startDateFilter, 'yyyy-MM-dd')} (${inicioDia}) a ${format(endDateFilter, 'yyyy-MM-dd')} (${fimDia})`);
             dadosAposFiltroData = depositos.filter(dep => {
                 const isInDateRange = dep.createdAt >= inicioDia && dep.createdAt <= fimDia;
-                // Log específico para o ID procurado DENTRO do filtro de data
-                if (dep.txId === targetTxId) {
-                    console.log(`*** Verificando ID ${targetTxId} contra o intervalo de datas ***`);
-                    console.log(`   Depósito createdAt: ${new Date(dep.createdAt).toISOString()} (${dep.createdAt})`);
-                    console.log(`   Intervalo: ${new Date(inicioDia).toISOString()} (${inicioDia}) - ${new Date(fimDia).toISOString()} (${fimDia})`);
-                    console.log(`   Está no intervalo? ${isInDateRange}`);
-                    console.log(`**************************************************************`);
-                }
                 return isInDateRange;
             });
             console.log(`Itens após filtro de data: ${dadosAposFiltroData.length}`);
@@ -1379,17 +1360,9 @@ export default function CompensacaoDepositos() {
             console.log("Nenhum filtro de data aplicado.");
         }
 
-        // Log para verificar se o ID alvo ainda está presente ANTES dos filtros manuais
-        const targetPresentAfterDateFilter = dadosAposFiltroData.some(dep => dep.txId === targetTxId);
-        console.log(`ID ${targetTxId} presente após filtro de data? ${targetPresentAfterDateFilter}`);
-
         // Aplicar filtros adicionais
         const dadosFiltradosFinal = filterDepositosByCriteria(dadosAposFiltroData);
         console.log(`Itens após filtros manuais (status, step, busca): ${dadosFiltradosFinal.length}`);
-
-        // Log para verificar se o ID alvo ainda está presente DEPOIS dos filtros manuais
-        const targetPresentAfterManualFilters = dadosFiltradosFinal.some(dep => dep.txId === targetTxId);
-        console.log(`ID ${targetTxId} presente nos resultados finais? ${targetPresentAfterManualFilters}`);
         console.log("--- useEffect: Filtragem Concluída ---");
 
         setFilteredDepositos(dadosFiltradosFinal);

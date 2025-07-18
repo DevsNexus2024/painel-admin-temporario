@@ -21,7 +21,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { useOTCOperations } from '@/hooks/useOTCOperations';
-import { useCurrentAverageRate } from '@/hooks/useDailyAverageRate';
+
 import { otcService } from '@/services/otc';
 import { OTCClient, OperationType, CurrencyType, CreateOTCOperationRequest } from '@/types/otc';
 
@@ -40,7 +40,6 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
   client
 }) => {
   const { createOperation, isCreating } = useOTCOperations();
-  const { rate: dailyAverageRate, formattedRate, isLoading: isLoadingRate, refresh: refreshRate } = useCurrentAverageRate();
 
   // Estado do formulário
   const [formData, setFormData] = useState({
@@ -54,10 +53,15 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
     conversion_rate: ''
   });
 
+  // Estado para rastrear quais campos foram preenchidos pelo usuário
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
+
+  // Estado para debounce do cálculo automático
+  const [calculationTimeout, setCalculationTimeout] = useState<NodeJS.Timeout | null>(null);
+
   // Estados de validação
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [useDailyAverage, setUseDailyAverage] = useState(false);
 
   // Resetar formulário quando modal abrir/fechar
   useEffect(() => {
@@ -71,11 +75,17 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
         usd_amount: '',
         conversion_rate: ''
       });
+      setTouchedFields(new Set()); // Resetar campos tocados
       setErrors({});
       setShowConfirmation(false);
-      setUseDailyAverage(false);
+    } else {
+      // Limpar timeout quando modal fechar para evitar vazamentos
+      if (calculationTimeout) {
+        clearTimeout(calculationTimeout);
+        setCalculationTimeout(null);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, calculationTimeout]);
 
   // Função para formatar valor em USD
   const formatUSD = (value: number): string => {
@@ -85,44 +95,99 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
     })}`;
   };
 
-  // Função para calcular taxa automaticamente
-  const calculateConversionRate = (brlAmount: string, usdAmount: string): string => {
-    const brl = parseFloat(brlAmount);
-    const usd = parseFloat(usdAmount);
-    
-    if (brl > 0 && usd > 0) {
-      return (brl / usd).toFixed(4);
-    }
-    
-    return '';
+  // Função para limpar campos de conversão
+  const clearConversionFields = () => {
+    setFormData(prev => ({
+      ...prev,
+      brl_amount: '',
+      usd_amount: '',
+      conversion_rate: ''
+    }));
+    setTouchedFields(new Set());
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors.brl_amount;
+      delete newErrors.usd_amount;
+      delete newErrors.conversion_rate;
+      return newErrors;
+    });
   };
 
-  // Atualizar campo com cálculo automático de taxa
-  const updateField = (field: keyof CreateOTCOperationRequest, value: string) => {
-    const newFormData = { ...formData, [field]: value };
+  // Função para calcular valores dinamicamente (nova lógica)
+  const calculateDynamicValues = (field: string, value: string, currentData: any) => {
+    const newData = { ...currentData, [field]: value };
     
-    // Se alterou BRL ou USD, calcular taxa automaticamente
-    if (field === 'brl_amount' || field === 'usd_amount') {
-      const brlValue = field === 'brl_amount' ? value : formData.brl_amount;
-      const usdValue = field === 'usd_amount' ? value : formData.usd_amount;
+    // Só aplicar cálculo automático para campos de conversão
+    if (field === 'brl_amount' || field === 'usd_amount' || field === 'conversion_rate') {
+      // Marcar o campo atual como tocado pelo usuário
+      const newTouchedFields = new Set(touchedFields);
+      newTouchedFields.add(field);
+      setTouchedFields(newTouchedFields);
       
-      if (useDailyAverage && dailyAverageRate > 0) {
-        // Se estiver usando média do dia, usar a taxa obtida da API
-        newFormData.conversion_rate = dailyAverageRate.toFixed(4);
-      } else {
-        // Se for manual, calcular automaticamente com base nos valores
-        const autoRate = calculateConversionRate(brlValue, usdValue);
-        if (autoRate) {
-          newFormData.conversion_rate = autoRate;
+      // Valores atuais dos três campos
+      const brlValue = parseFloat(newData.brl_amount) || 0;
+      const usdValue = parseFloat(newData.usd_amount) || 0; 
+      const rateValue = parseFloat(newData.conversion_rate) || 0;
+      
+      // Identificar quais campos estão preenchidos (valor > 0)
+      const hasBrl = brlValue > 0;
+      const hasUsd = usdValue > 0;
+      const hasRate = rateValue > 0;
+      
+      // Contar quantos campos estão preenchidos
+      const filledCount = (hasBrl ? 1 : 0) + (hasUsd ? 1 : 0) + (hasRate ? 1 : 0);
+      
+      // Lógica de cálculo automático - preencher apenas o campo vazio
+      if (filledCount === 2) {
+        // Caso 1: BRL e USD preenchidos → calcular Taxa (prioritário conforme solicitado)
+        if (hasBrl && hasUsd && !hasRate) {
+          const calculatedRate = brlValue / usdValue;
+          newData.conversion_rate = calculatedRate > 0 ? calculatedRate.toFixed(4) : '';
+          console.log(`[CONVERSÃO AUTO] BRL (${brlValue}) ÷ USD (${usdValue}) = Taxa (${calculatedRate.toFixed(4)})`);
+        }
+        // Caso 2: BRL e Taxa preenchidos → calcular USD
+        else if (hasBrl && hasRate && !hasUsd) {
+          const calculatedUsd = brlValue / rateValue;
+          newData.usd_amount = calculatedUsd > 0 ? calculatedUsd.toFixed(4) : '';
+          console.log(`[CONVERSÃO AUTO] BRL (${brlValue}) ÷ Taxa (${rateValue}) = USD (${calculatedUsd.toFixed(4)})`);
+        }
+        // Caso 3: USD e Taxa preenchidos → calcular BRL  
+        else if (hasUsd && hasRate && !hasBrl) {
+          const calculatedBrl = usdValue * rateValue;
+          newData.brl_amount = calculatedBrl > 0 ? calculatedBrl.toFixed(2) : '';
+          console.log(`[CONVERSÃO AUTO] USD (${usdValue}) × Taxa (${rateValue}) = BRL (${calculatedBrl.toFixed(2)})`);
         }
       }
     }
     
-    setFormData(newFormData);
+    return newData;
+  };
+
+  // Atualizar campo normalmente (sem cálculo automático)
+  const updateField = (field: keyof CreateOTCOperationRequest, value: string) => {
+    // Atualizar o valor imediatamente
+    setFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Se o valor foi limpo (vazio), remover da lista de campos tocados
+    if (!value.trim()) {
+      const newTouchedFields = new Set(touchedFields);
+      newTouchedFields.delete(field as string);
+      setTouchedFields(newTouchedFields);
+    }
     
     // Limpar erro do campo quando o usuário começa a digitar
     if (errors[field as string]) {
       setErrors(prev => ({ ...prev, [field as string]: '' }));
+    }
+  };
+
+  // Função para calcular quando campo perde foco
+  const handleFieldBlur = (field: string) => {
+    if (field === 'brl_amount' || field === 'usd_amount' || field === 'conversion_rate') {
+      setFormData(currentFormData => {
+        const newFormData = calculateDynamicValues(field, currentFormData[field as keyof typeof currentFormData], currentFormData);
+        return newFormData;
+      });
     }
   };
 
@@ -532,11 +597,11 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                     Dados da Conversão
                   </CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Informe os valores para conversão de reais para dólares
+                    Preencha qualquer dois campos que o terceiro será calculado automaticamente
                   </p>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Valor em Reais */}
                     <div className="space-y-2">
                       <Label htmlFor="brl_amount">
@@ -550,6 +615,7 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                         max="1000000"
                         value={formData.brl_amount}
                         onChange={(e) => updateField('brl_amount', e.target.value)}
+                        onBlur={() => handleFieldBlur('brl_amount')}
                         placeholder="0,00"
                         className={errors.brl_amount ? 'border-red-500' : ''}
                       />
@@ -576,6 +642,7 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                         max="1000000"
                         value={formData.usd_amount}
                         onChange={(e) => updateField('usd_amount', e.target.value)}
+                        onBlur={() => handleFieldBlur('usd_amount')}
                         placeholder="0,0000"
                         className={errors.usd_amount ? 'border-red-500' : ''}
                       />
@@ -588,61 +655,12 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                         </p>
                       )}
                     </div>
-                  </div>
 
-                  {/* Opção de Taxa: Manual vs Média do Dia */}
-                  <div className="space-y-3 mt-4">
-                    <Label>Método de Taxa</Label>
-                    <RadioGroup 
-                      value={useDailyAverage ? 'daily' : 'manual'} 
-                      onValueChange={(value) => {
-                        const useDaily = value === 'daily';
-                        setUseDailyAverage(useDaily);
-                        
-                        if (useDaily && dailyAverageRate > 0) {
-                          setFormData(prev => ({
-                            ...prev,
-                            conversion_rate: dailyAverageRate.toFixed(4)
-                          }));
-                        }
-                      }}
-                      className="flex flex-col space-y-2"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="manual" id="manual" />
-                        <Label htmlFor="manual" className="cursor-pointer">
-                          📝 Manual - Definir taxa personalizada
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="daily" id="daily" />
-                        <Label htmlFor="daily" className="cursor-pointer">
-                          📊 Média do Dia - Usar cotação automática
-                        </Label>
-                        {isLoadingRate && (
-                          <span className="text-xs text-muted-foreground">(Carregando...)</span>
-                        )}
-                        {!isLoadingRate && dailyAverageRate > 0 && (
-                          <Badge variant="secondary" className="text-xs">
-                            {formattedRate}
-                          </Badge>
-                        )}
-                      </div>
-                    </RadioGroup>
-                  </div>
-
-                  {/* Taxa de Conversão */}
-                  <div className="space-y-2 mt-4">
-                    <Label htmlFor="conversion_rate">
-                      Taxa de Conversão (BRL/USD) *
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      {useDailyAverage 
-                        ? "📊 Taxa baseada na média das exchanges do momento"
-                        : "📝 A taxa é calculada automaticamente com base nos valores informados"
-                      }
-                    </p>
-                    <div className="flex gap-2">
+                    {/* Taxa de Conversão */}
+                    <div className="space-y-2">
+                      <Label htmlFor="conversion_rate">
+                        Taxa de Conversão (BRL/USD) *
+                      </Label>
                       <Input
                         id="conversion_rate"
                         type="number"
@@ -651,74 +669,21 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                         max="10"
                         value={formData.conversion_rate}
                         onChange={(e) => updateField('conversion_rate', e.target.value)}
-                        placeholder={useDailyAverage ? "Taxa automática..." : "Calculado automaticamente..."}
-                        readOnly={useDailyAverage}
-                        className={`${errors.conversion_rate ? 'border-red-500' : ''} ${formData.conversion_rate ? 'bg-green-50 border-green-300' : ''} ${useDailyAverage ? 'bg-blue-50 border-blue-300' : ''}`}
+                        onBlur={() => handleFieldBlur('conversion_rate')}
+                        placeholder="0,0000"
+                        className={errors.conversion_rate ? 'border-red-500' : ''}
                       />
-                      {useDailyAverage && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            refreshRate();
-                            if (dailyAverageRate > 0) {
-                              setFormData(prev => ({
-                                ...prev,
-                                conversion_rate: dailyAverageRate.toFixed(4)
-                              }));
-                            }
-                          }}
-                          disabled={isLoadingRate}
-                          className="px-3"
-                        >
-                          🔄
-                        </Button>
+                      {errors.conversion_rate && (
+                        <p className="text-sm text-red-500">{errors.conversion_rate}</p>
+                      )}
+                      {formData.conversion_rate && !errors.conversion_rate && (
+                        <p className="text-sm text-green-600">
+                          ✓ Taxa: {parseFloat(formData.conversion_rate || '0').toFixed(4)} BRL/USD
+                        </p>
                       )}
                     </div>
-                    {errors.conversion_rate && (
-                      <p className="text-sm text-red-500">{errors.conversion_rate}</p>
-                    )}
-                    {formData.conversion_rate && !errors.conversion_rate && (
-                      <p className="text-sm text-green-600">
-                        ✓ Taxa: {parseFloat(formData.conversion_rate || '0').toFixed(4)} BRL/USD
-                        {useDailyAverage && (
-                          <span className="ml-2 text-xs text-blue-600">(Média do Dia)</span>
-                        )}
-                      </p>
-                    )}
                   </div>
 
-                  {/* Validação do Cálculo */}
-                  {formData.brl_amount && formData.usd_amount && formData.conversion_rate && (
-                    <div className="mt-4 p-4 bg-gray-800 border border-gray-700 rounded-lg">
-                      <div className="text-sm space-y-2">
-                        <div className="font-medium text-white flex items-center gap-2">
-                          🧮 Verificação do Cálculo:
-                        </div>
-                        <div className="text-blue-100 bg-blue-900/50 p-3 rounded border-l-4 border-blue-400 font-medium">
-                          R$ {parseFloat(formData.brl_amount).toFixed(2)} ÷ {parseFloat(formData.conversion_rate).toFixed(4)} = 
-                          $ {(parseFloat(formData.brl_amount) / parseFloat(formData.conversion_rate)).toLocaleString('pt-BR', { minimumFractionDigits: 4 })}
-                        </div>
-                        <div className="text-orange-100 bg-orange-900/50 p-3 rounded border-l-4 border-orange-400 font-medium">
-                          Valor informado: $ {parseFloat(formData.usd_amount).toLocaleString('pt-BR', { minimumFractionDigits: 4 })}
-                        </div>
-                        {otcService.validateConversionData(
-                          parseFloat(formData.brl_amount),
-                          parseFloat(formData.usd_amount),
-                          parseFloat(formData.conversion_rate)
-                        ) ? (
-                          <div className="text-green-100 font-semibold bg-green-900/50 p-3 rounded border-l-4 border-green-400">
-                            ✅ Cálculo correto
-                          </div>
-                        ) : (
-                          <div className="text-red-100 font-semibold bg-red-900/50 p-3 rounded border-l-4 border-red-400">
-                            ⚠️ Verifique os valores
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             )}

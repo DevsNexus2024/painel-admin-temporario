@@ -9,10 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarDays, User, FileText, ArrowUpRight, ArrowDownRight, AlertCircle, LogOut, Settings, Shield, Filter, RefreshCw } from 'lucide-react';
+import { CalendarDays, User, FileText, ArrowUpRight, ArrowDownRight, AlertCircle, LogOut, Settings, Shield, Filter, RefreshCw, Download } from 'lucide-react';
 import { formatCurrency, formatTimestamp, formatOTCTimestamp } from '@/utils/date';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface ClientStatementData {
   cliente: {
@@ -32,6 +34,7 @@ const ClientStatement: React.FC = () => {
   const [data, setData] = useState<ClientStatementData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportingPDF, setExportingPDF] = useState(false);
 
   // Helper para detectar operação USD pura (não conversão)
   const isUSDOnlyOperation = (item: any): boolean => {
@@ -392,11 +395,335 @@ const ClientStatement: React.FC = () => {
   const handleLogout = async () => {
     try {
       await logout();
-      window.location.href = '/login-cliente';
+      window.location.href = '/login';
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
       // Forçar logout mesmo se der erro
-      window.location.href = '/login-cliente';
+      window.location.href = '/login';
+    }
+  };
+
+  // Função para exportar PDF - VERSÃO PROFISSIONAL PARA IMPRESSÃO
+  const exportToPDF = async () => {
+    if (!data) {
+      toast.error('Nenhum dado disponível para exportar');
+      return;
+    }
+
+    setExportingPDF(true);
+    toast.info('Gerando PDF... Aguarde alguns segundos.');
+
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+      let yPosition = margin;
+
+      // Configurar fonte
+      pdf.setFont('helvetica');
+
+      // === CABEÇALHO PROFISSIONAL ===
+      pdf.setFontSize(20);
+      pdf.setTextColor(0, 0, 0); // Preto
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('EXTRATO OTC', pageWidth / 2, yPosition + 10, { align: 'center' });
+      
+      pdf.setFontSize(11);
+      pdf.setTextColor(60, 60, 60); // Cinza escuro
+      pdf.setFont('helvetica', 'normal');
+      const currentDate = new Date().toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      pdf.text(`Relatório gerado em: ${currentDate}`, pageWidth / 2, yPosition + 18, { align: 'center' });
+      
+      // Linha divisória
+      pdf.setDrawColor(0, 0, 0); // Preto
+      pdf.setLineWidth(1);
+      pdf.line(margin, yPosition + 25, pageWidth - margin, yPosition + 25);
+      
+      yPosition += 35;
+
+      // === INFORMAÇÕES DO CLIENTE ===
+      pdf.setFontSize(14);
+      pdf.setTextColor(0, 0, 0); // Preto
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('DADOS DO CLIENTE', margin, yPosition);
+      
+      yPosition += 8;
+      pdf.setDrawColor(0, 0, 0); // Preto
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 5;
+      
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(0, 0, 0); // Preto
+      
+      // Grid simples de informações
+      const clientData = [
+        [`Nome: ${data.cliente.name}`, `Documento: ${data.cliente.document}`],
+        [`Chave PIX: ${data.cliente.pix_key}`, `Saldo BRL: ${formatCurrency(data.cliente.current_balance)}`],
+        [`Saldo USD: $ ${formatUSD(parseFloat((data.cliente as any).usd_balance || 0))}`, `Total Depositado: ${formatCurrency(totalDepositado)}${searchDate ? ` (${searchDate})` : ' (Hoje)'}`]
+      ];
+      
+      clientData.forEach(([left, right]) => {
+        yPosition += 6;
+        pdf.text(left, margin, yPosition);
+        pdf.text(right, pageWidth / 2 + 5, yPosition);
+      });
+      
+      yPosition += 15;
+
+      // === FILTROS (se houver) ===
+      if (searchName || searchValue || searchDate || !showOnlyToday) {
+        pdf.setFontSize(12);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(0, 0, 0); // Preto
+        pdf.text('FILTROS APLICADOS', margin, yPosition);
+        
+        yPosition += 8;
+        pdf.setDrawColor(0, 0, 0); // Preto
+        pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+        yPosition += 5;
+        
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(60, 60, 60); // Cinza escuro
+        
+        const filters = [];
+        if (searchName) filters.push(`Nome: ${searchName}`);
+        if (searchValue) filters.push(`Valor: ${searchValue}`);
+        if (searchDate) filters.push(`Data: ${searchDate}`);
+        if (!showOnlyToday) filters.push('Período: Todas as datas');
+        else filters.push('Período: Apenas hoje');
+
+        const filterText = filters.join(' | ');
+        yPosition += 5;
+        pdf.text(filterText, margin, yPosition);
+        yPosition += 15;
+      }
+
+      // === TABELA DE TRANSAÇÕES ===
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0); // Preto
+      pdf.text(`TRANSAÇÕES (${filteredAndSortedTransactions.length} registros)`, margin, yPosition);
+      
+      yPosition += 8;
+      pdf.setDrawColor(0, 0, 0); // Preto
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 5;
+
+      // Configuração da tabela
+      const tableWidth = pageWidth - (margin * 2);
+      const colWidths = [22, 30, 50, 30, 30, 30]; // Larguras ajustadas
+      const rowHeight = 12; // Altura aumentada para acomodar texto
+      
+      // Cabeçalho da tabela
+      pdf.setFillColor(240, 240, 240); // Cinza claro
+      pdf.rect(margin, yPosition, tableWidth, 8, 'F');
+      pdf.setDrawColor(0, 0, 0); // Preto
+      pdf.rect(margin, yPosition, tableWidth, 8, 'S');
+      
+      pdf.setFontSize(9);
+      pdf.setTextColor(0, 0, 0); // Preto
+      pdf.setFont('helvetica', 'bold');
+      
+      const headers = ['DATA', 'TIPO', 'PAGADOR/DESCRIÇÃO', 'VALOR', 'SALDO ANT.', 'SALDO POST.'];
+      let xPos = margin + 2;
+      
+      headers.forEach((header, index) => {
+        pdf.text(header, xPos, yPosition + 5);
+        xPos += colWidths[index];
+      });
+      
+      yPosition += 8;
+      pdf.setFont('helvetica', 'normal');
+
+      // Dados da tabela
+      let rowIndex = 0;
+      
+      for (const item of filteredAndSortedTransactions) {
+        // Nova página se necessário
+        if (yPosition > pageHeight - 35) {
+          pdf.addPage();
+          yPosition = margin;
+          
+          // Repetir cabeçalho na nova página
+          pdf.setFillColor(240, 240, 240);
+          pdf.rect(margin, yPosition, tableWidth, 8, 'F');
+          pdf.setDrawColor(0, 0, 0);
+          pdf.rect(margin, yPosition, tableWidth, 8, 'S');
+          
+          pdf.setFontSize(9);
+          pdf.setTextColor(0, 0, 0);
+          pdf.setFont('helvetica', 'bold');
+          
+          xPos = margin + 2;
+          headers.forEach((header, index) => {
+            pdf.text(header, xPos, yPosition + 5);
+            xPos += colWidths[index];
+          });
+          
+          yPosition += 8;
+          pdf.setFont('helvetica', 'normal');
+          rowIndex = 0;
+        }
+
+        // Linha da tabela com fundo alternado
+        if (rowIndex % 2 === 0) {
+          pdf.setFillColor(250, 250, 250); // Cinza muito claro
+          pdf.rect(margin, yPosition, tableWidth, rowHeight, 'F');
+        }
+        
+        // Borda da linha
+        pdf.setDrawColor(180, 180, 180); // Cinza médio
+        pdf.rect(margin, yPosition, tableWidth, rowHeight, 'S');
+
+        xPos = margin + 2;
+        pdf.setFontSize(8);
+        pdf.setTextColor(0, 0, 0); // Preto
+        
+        // Data
+        const dateStr = ((item as any).operation_type === 'manual_credit' || (item as any).operation_type === 'manual_debit') 
+          ? formatTimestamp(item.date, 'dd/MM/yy HH:mm')
+          : formatOTCTimestamp(item.date, 'dd/MM/yy HH:mm');
+        
+        // Quebrar data em duas linhas se necessário
+        const dateParts = dateStr.split(' ');
+        pdf.text(dateParts[0], xPos, yPosition + 4);
+        if (dateParts[1]) {
+          pdf.text(dateParts[1], xPos, yPosition + 8);
+        }
+        xPos += colWidths[0];
+        
+        // Tipo
+        const operationType = (item as any).operation_type;
+        let typeText = '';
+        
+        switch (operationType) {
+          case 'deposit':
+            typeText = 'Depósito';
+            break;
+          case 'withdrawal':
+            typeText = 'Saque';
+            break;
+          case 'manual_credit':
+            typeText = 'Crédito Manual';
+            break;
+          case 'manual_debit':
+            typeText = (item as any).conversion_rate ? 'Conversão BRL>USD' : 'Débito Manual';
+            break;
+          default:
+            typeText = item.type === 'deposit' ? 'Depósito' : 'Saque';
+        }
+        
+        pdf.setFont('helvetica', 'bold');
+        const typeLines = pdf.splitTextToSize(typeText, colWidths[1] - 2);
+        typeLines.forEach((line: string, lineIndex: number) => {
+          pdf.text(line, xPos, yPosition + 4 + (lineIndex * 4));
+        });
+        pdf.setFont('helvetica', 'normal');
+        xPos += colWidths[1];
+        
+        // Pagador/Descrição - LÓGICA CORRIGIDA
+        let payerText = '';
+        
+        // Se é operação manual (manual_credit ou manual_debit), usar description
+        if (operationType === 'manual_credit' || operationType === 'manual_debit') {
+          payerText = (item as any).operation_description || 'N/A';
+        } else {
+          // Se é operação automática (deposit, withdrawal), usar apenas o nome do pagador
+          payerText = item.payer_name || 'N/A';
+        }
+        
+        // Quebrar texto longo em múltiplas linhas
+        const payerLines = pdf.splitTextToSize(payerText, colWidths[2] - 2);
+        payerLines.forEach((line: string, lineIndex: number) => {
+          if (lineIndex < 2) { // Máximo 2 linhas
+            pdf.text(line, xPos, yPosition + 4 + (lineIndex * 4));
+          }
+        });
+        xPos += colWidths[2];
+        
+        // Valor
+        let valueText = '';
+        
+        if ((item as any).operation_type === 'manual_debit' && (item as any).conversion_rate) {
+          valueText = `${formatCurrency(Math.abs((item as any).amount_change || 0))} → $${Math.abs((item as any).usd_amount_change || 0).toFixed(2)}`;
+        } else if (isUSDOnlyOperation(item)) {
+          const prefix = (item as any).usd_amount_change > 0 ? '+' : '-';
+          valueText = `${prefix}$${Math.abs((item as any).usd_amount_change).toFixed(2)}`;
+        } else {
+          const prefix = (operationType === 'deposit' || operationType === 'manual_credit') ? '+' : '-';
+          valueText = `${prefix}${formatCurrency(item.amount)}`;
+        }
+        
+        pdf.setFont('helvetica', 'bold');
+        const valueLines = pdf.splitTextToSize(valueText, colWidths[3] - 2);
+        valueLines.forEach((line: string, lineIndex: number) => {
+          pdf.text(line, xPos, yPosition + 4 + (lineIndex * 4));
+        });
+        pdf.setFont('helvetica', 'normal');
+        xPos += colWidths[3];
+        
+        // Saldo Anterior
+        const balanceBefore = (item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change 
+          ? `$${((item as any).usd_balance_before || 0).toFixed(2)}`
+          : formatCurrency((item as any).saldo_anterior || 0);
+        pdf.text(balanceBefore, xPos, yPosition + 6);
+        xPos += colWidths[4];
+        
+        // Saldo Posterior
+        const balanceAfter = (item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change 
+          ? `$${((item as any).usd_balance_after || 0).toFixed(2)}`
+          : formatCurrency((item as any).saldo_posterior || 0);
+        pdf.text(balanceAfter, xPos, yPosition + 6);
+        
+        yPosition += rowHeight;
+        rowIndex++;
+      }
+
+      // === RODAPÉ PROFISSIONAL ===
+      const footerY = pageHeight - 15;
+      
+      pdf.setDrawColor(0, 0, 0); // Preto
+      pdf.line(margin, footerY - 5, pageWidth - margin, footerY - 5);
+      
+      pdf.setFontSize(8);
+      pdf.setTextColor(60, 60, 60); // Cinza escuro
+      
+      pdf.text(`Última atualização: ${formatTimestamp(data.cliente.last_updated, 'dd/MM/yyyy HH:mm')}`, margin, footerY);
+      pdf.text(`Página 1`, pageWidth - margin, footerY, { align: 'right' });
+      
+      // === SALVAR ARQUIVO ===
+      let dateForFileName = '';
+      if (searchDate) {
+        dateForFileName = searchDate.replace(/\//g, '-');
+      } else if (showOnlyToday) {
+        dateForFileName = new Date().toLocaleDateString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: '2-digit'
+        }).replace(/\//g, '-');
+      } else {
+        dateForFileName = 'periodo-completo';
+      }
+      
+      const fileName = `extrato-otc-${data.cliente.name.replace(/\s+/g, '-').toLowerCase()}-${dateForFileName}.pdf`;
+      pdf.save(fileName);
+      
+      toast.success('PDF exportado com sucesso!');
+      
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      toast.error('Erro ao gerar PDF. Tente novamente.');
+    } finally {
+      setExportingPDF(false);
     }
   };
 
@@ -414,7 +741,7 @@ const ClientStatement: React.FC = () => {
           <CardContent>
             <p className="text-muted-foreground mb-4">Sua sessão expirou. Faça login novamente para acessar seu extrato.</p>
             <button
-              onClick={() => window.location.href = '/login-cliente'}
+              onClick={() => window.location.href = '/login'}
               className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-md hover:bg-primary/90 transition-colors"
             >
               Fazer Login
@@ -524,9 +851,6 @@ const ClientStatement: React.FC = () => {
               <div className="text-right">
                 <p className="text-sm font-medium text-foreground">{user.name}</p>
                 <p className="text-xs text-muted-foreground">{user.email}</p>
-              </div>
-              <div className="bg-green-500 rounded-full p-1">
-                <Shield className="h-3 w-3 text-white" />
               </div>
             </div>
             
@@ -720,6 +1044,14 @@ const ClientStatement: React.FC = () => {
               >
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Atualizar
+              </Button>
+              <Button
+                onClick={exportToPDF}
+                disabled={exportingPDF || !data || filteredAndSortedTransactions.length === 0}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                {exportingPDF ? 'Gerando PDF...' : 'Exportar PDF'}
               </Button>
             </div>
           </CardContent>
@@ -915,6 +1247,6 @@ const ClientStatement: React.FC = () => {
       </div>
     </div>
   );
-  };
+};
 
 export default ClientStatement;

@@ -192,21 +192,20 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
             </div>
             <div className="text-sm text-green-600">Ativos</div>
           </div>
-          <div className="text-center p-3 bg-red-50 rounded-lg">
-            <div className="text-2xl font-bold text-red-600">
-              {statistics.clientes_inativos}
-            </div>
-            <div className="text-sm text-red-600">Inativos</div>
-          </div>
           <div className="text-center p-3 bg-yellow-50 rounded-lg">
             <div className="text-2xl font-bold text-yellow-600">
               {otcService.formatCurrency(statistics.total_saldo)}
             </div>
             <div className="text-sm text-yellow-600">Saldo Total</div>
           </div>
+          <div className="text-center p-3 bg-purple-50 rounded-lg">
+            <div className="text-2xl font-bold text-purple-600">
+              {otcService.formatCurrency(statistics.total_saldo_usd)}
+            </div>
+            <div className="text-sm text-purple-600">Saldo Total USDT</div>
+          </div>
         </div>
 
-        {/* Tabela */}
         {error ? (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
             <p className="text-red-600">
@@ -220,10 +219,9 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Cliente</TableHead>
-                    <TableHead>Documento</TableHead>
                     <TableHead>Chave PIX</TableHead>
-                    <TableHead className="text-right">Saldo</TableHead>
-                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="text-right">Saldo BRL</TableHead>
+                    <TableHead className="text-right">Saldo USD</TableHead>
                     <TableHead className="text-center">Transações</TableHead>
                     <TableHead className="text-center">Ações</TableHead>
                   </TableRow>
@@ -231,13 +229,13 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={7}>
+                      <TableCell colSpan={6}>
                         <TableSkeleton />
                       </TableCell>
                     </TableRow>
                   ) : clients.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8">
+                      <TableCell colSpan={6} className="text-center py-8">
                         <div className="text-muted-foreground">
                           Nenhum cliente encontrado com os filtros aplicados
                         </div>
@@ -250,12 +248,6 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
                           <div className="font-medium">{client.name}</div>
                           <div className="text-sm text-muted-foreground">
                             {client.user?.email || 'N/A'}
-                          </div>
-                        </TableCell>
-                        
-                        <TableCell>
-                          <div className="font-mono text-sm">
-                            {otcService.formatDocument(client.document)}
                           </div>
                         </TableCell>
                         
@@ -278,23 +270,14 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
                           </div>
                         </TableCell>
                         
-                        <TableCell className="text-center">
-                          <Badge 
-                            variant={client.is_active ? "default" : "secondary"}
-                            className={client.is_active ? "bg-green-100 text-green-800" : ""}
-                          >
-                            {client.is_active ? (
-                              <>
-                                <UserCheck className="w-3 h-3 mr-1" />
-                                Ativo
-                              </>
-                            ) : (
-                              <>
-                                <UserX className="w-3 h-3 mr-1" />
-                                Inativo
-                              </>
-                            )}
-                          </Badge>
+                        <TableCell className="text-right">
+                          <div className={`font-semibold ${
+                            client.usd_balance >= 0 
+                              ? 'text-green-600' 
+                              : 'text-red-600'
+                          }`}>
+                            ${client.usd_balance.toFixed(2)}
+                          </div>
                         </TableCell>
                         
                         <TableCell className="text-center">
@@ -422,4 +405,4 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
   );
 };
 
-export default OTCClientTable; 
+export default OTCClientTable;

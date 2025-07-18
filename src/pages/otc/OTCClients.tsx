@@ -13,7 +13,8 @@ import { OTCClient } from '@/types/otc';
  * Página principal dos clientes OTC
  */
 const OTCClients: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  // Mudar de 'dashboard' para 'clients'
+  const [activeTab, setActiveTab] = useState<string>('clients');
   
   // Estados dos modais
   const [clientModal, setClientModal] = useState<{
@@ -137,4 +138,4 @@ const OTCClients: React.FC = () => {
   );
 };
 
-export default OTCClients; 
+export default OTCClients;

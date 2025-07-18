@@ -48,6 +48,7 @@ export const API_CONFIG = {
       LOGIN: '/api/auth/login',
       REGISTER: '/api/auth/register',
       PROFILE: '/api/auth/me',
+      USER_TYPE: '/api/auth/user-type',
       VALIDATE: '/api/auth/validate'
     }
   },
