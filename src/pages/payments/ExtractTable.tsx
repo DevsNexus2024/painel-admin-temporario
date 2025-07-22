@@ -1,19 +1,19 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { useExtrato } from "@/hooks/useExtrato";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useExtratoSeguro } from "@/hooks/useExtratoSeguro";
 import { validarIntervaloData, formatarDataParaAPI, MovimentoExtrato, ExtratoResponse } from "@/services/extrato";
 
 export default function ExtractTable() {
@@ -31,15 +31,15 @@ export default function ExtractTable() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("none");
   const [sortBy, setSortBy] = useState<"value" | "date" | "none">("none");
 
-  // Usar hook de cache para extrato
+  // 🚨 USAR HOOK ULTRA-SEGURO QUE NÃO PERMITE MISTURA
   const { 
     data: extratoData, 
     isLoading, 
     error,
     refetch 
-  } = useExtrato({ 
+  } = useExtratoSeguro({ 
     filtros: filtrosAtivos,
-    staleTime: 3 * 60 * 1000 // 3 minutos para dados com filtros
+    enabled: true
   });
 
   const transactions = (extratoData as ExtratoResponse)?.items || [];
@@ -63,6 +63,20 @@ export default function ExtractTable() {
       setIsLoadingMore(false);
     }
   }, [transactions, filtrosAtivos.cursor]);
+
+  // 🚨 CRÍTICO: Limpar dados antigos quando há erro para evitar contaminação
+  useEffect(() => {
+    if (error) {
+      console.log('🧹 [ExtractTable] Erro detectado - limpando transações antigas para evitar contaminação');
+      setAllTransactions([]);
+    }
+  }, [error]);
+
+  // 🚨 CRÍTICO: Limpar dados quando mudar de conta para evitar mistura de providers
+  useEffect(() => {
+    console.log('🧹 [ExtractTable] Mudança detectada - limpando transações para nova consulta');
+    setAllTransactions([]);
+  }, [filtrosAtivos]); // Quando filtros mudam (incluindo mudança de conta)
 
   // Função para filtrar e ordenar transações
   const filteredAndSortedTransactions = useMemo(() => {
@@ -122,7 +136,7 @@ export default function ExtractTable() {
   };
 
   const handleAplicarFiltros = async () => {
-    if (dateFrom && dateTo) {
+        if (dateFrom && dateTo) {
       if (!validarIntervaloData(formatarDataParaAPI(dateFrom), formatarDataParaAPI(dateTo))) {
         toast.error("Intervalo de datas inválido", {
           description: "Verifique se a data inicial é menor que a final e o intervalo não passa de 31 dias",
@@ -229,7 +243,7 @@ export default function ExtractTable() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
-                <Filter className="h-5 w-5 text-white" />
+                {/* REMOVIDO: Filter icon */}
               </div>
               <div>
                 <CardTitle className="text-xl font-bold text-card-foreground">
@@ -253,10 +267,7 @@ export default function ExtractTable() {
                   <Button
                     variant="outline"
                     disabled={isLoading}
-                    className={cn(
-                      "w-full h-12 justify-start text-left font-normal rounded-xl border-border hover:border-blue-500 transition-colors bg-input",
-                      !dateFrom && "text-muted-foreground"
-                    )}
+                    className={`w-full h-12 justify-start text-left font-normal rounded-xl border-border hover:border-blue-500 transition-colors bg-input ${!dateFrom ? "text-muted-foreground" : ""}`}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {dateFrom ? format(dateFrom, "PPP", { locale: ptBR }) : "Selecionar data"}
@@ -280,10 +291,7 @@ export default function ExtractTable() {
                   <Button
                     variant="outline"
                     disabled={isLoading}
-                    className={cn(
-                      "w-full h-12 justify-start text-left font-normal rounded-xl border-border hover:border-blue-500 transition-colors bg-input",
-                      !dateTo && "text-muted-foreground"
-                    )}
+                    className={`w-full h-12 justify-start text-left font-normal rounded-xl border-border hover:border-blue-500 transition-colors bg-input ${!dateTo ? "text-muted-foreground" : ""}`}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {dateTo ? format(dateTo, "PPP", { locale: ptBR }) : "Selecionar data"}
@@ -305,7 +313,7 @@ export default function ExtractTable() {
               <Button 
                 onClick={handleAplicarFiltros}
                 disabled={isLoading}
-                className="w-full h-12 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                className="w-full h-12 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white border-0"
               >
                 {isLoading ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -767,7 +775,7 @@ export default function ExtractTable() {
                         onClick={(e) => handleCopyCode(JSON.stringify(selectedTransaction, null, 2), {} as React.MouseEvent)}
                         className="text-xs"
                       >
-                        <Copy className="h-3 w-3 mr-2" />
+                        <Copy className="h-3 w-3" />
                         Copiar JSON
                       </Button>
                     </div>
@@ -788,7 +796,7 @@ export default function ExtractTable() {
                   onClick={() => handleCopyCode(selectedTransaction.code, {} as React.MouseEvent)}
                   className="w-full sm:w-auto order-1 sm:order-2 bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90"
                 >
-                  <Copy className="h-4 w-4 mr-2" />
+                  <Copy className="h-3 w-3" />
                   Copiar Código
                 </Button>
               </div>

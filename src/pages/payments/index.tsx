@@ -23,6 +23,9 @@ import ListPixKeysForm from "./ListPixKeysForm";
 import PendingTable from "./PendingTable";
 import ExtractTable from "./ExtractTable";
 
+// Importar testes globais para disponibilizar no console
+import "./testGlobal";
+
 export default function PaymentsPage() {
   return (
     <div className="min-h-screen bg-background">

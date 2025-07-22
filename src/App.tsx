@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useEffect } from "react";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import MainLayout from "./components/layout/MainLayout";
@@ -17,6 +18,9 @@ import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIA
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
 import OTCClients from "./pages/otc/OTCClients";
 import ClientStatement from "./pages/ClientStatement";
+
+// 🚨 IMPORTAR NOVA ARQUITETURA MULTI-BANCO
+import { initializeBankingSystem } from "@/services/banking";
 
 // Página para informar que registro está bloqueado
 const RegisterBlocked = () => (
@@ -62,48 +66,73 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * 🚨 COMPONENTE DE INICIALIZAÇÃO DA ARQUITETURA MULTI-BANCO
+ */
+const BankingSystemInitializer = ({ children }: { children: React.ReactNode }) => {
+  useEffect(() => {
+    const initializeBanking = async () => {
+      try {
+        console.log('🏦 [APP] Inicializando sistema bancário...');
+        await initializeBankingSystem();
+        console.log('✅ [APP] Sistema bancário inicializado com sucesso!');
+      } catch (error) {
+        console.error('❌ [APP] Erro ao inicializar sistema bancário:', error);
+        // Não bloquear a aplicação, mas alertar
+        console.warn('⚠️ [APP] Aplicação funcionará em modo fallback');
+      }
+    };
+
+    initializeBanking();
+  }, []);
+
+  return <>{children}</>;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <AuthProvider>
-        <Toaster />
-        <Sonner position="top-right" theme="dark" />
-        <BrowserRouter>
-          <Routes>
-            {/* Rota pública de autenticação UNIFICADA */}
-            <Route path="/login" element={<Login />} />
-            {/* Redirect da rota antiga para a nova (compatibilidade) */}
-            <Route path="/login-cliente" element={<Navigate to="/login" replace />} />
-            {/* REGISTRO DESBLOQUEADO TEMPORARIAMENTE */}
-            <Route path="/register" element={<Register />} />
-            
-            {/* Rota específica para extrato do cliente (sem sidebar) */}
-            <Route path="/client-statement" element={
-              <ProtectedRoute redirectTo="/login">
-                <ClientStatement />
-              </ProtectedRoute>
-            } />
-            
-            {/* Rotas protegidas - ADMIN APENAS */}
-            <Route element={
-              <ProtectedRoute requireAdmin={true}>
-                <MainLayout />
-              </ProtectedRoute>
-            }>
-              <Route path="/" element={<Index />} />
-              <Route path="/extrato_tcr" element={<ExtratoTcr />} />
-              <Route path="/compensacao-depositos" element={<CompensacaoDepositos />} />
-              <Route path="/pagamentos" element={<PaymentsPage />} />
-              <Route path="/cotacoes" element={<Cotacoes />} />
-              <Route path="/bot-cotacao" element={<BotCotacao />} />
-              <Route path="/otc" element={<OTCClients />} />
-            </Route>
-            
-            {/* Rota 404 */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+      <BankingSystemInitializer>
+        <AuthProvider>
+          <Toaster />
+          <Sonner position="top-right" theme="dark" />
+          <BrowserRouter>
+            <Routes>
+              {/* Rota pública de autenticação UNIFICADA */}
+              <Route path="/login" element={<Login />} />
+              {/* Redirect da rota antiga para a nova (compatibilidade) */}
+              <Route path="/login-cliente" element={<Navigate to="/login" replace />} />
+              {/* REGISTRO DESBLOQUEADO TEMPORARIAMENTE */}
+              <Route path="/register" element={<Register />} />
+              
+              {/* Rota específica para extrato do cliente (sem sidebar) */}
+              <Route path="/client-statement" element={
+                <ProtectedRoute redirectTo="/login">
+                  <ClientStatement />
+                </ProtectedRoute>
+              } />
+              
+              {/* Rotas protegidas - ADMIN APENAS */}
+              <Route element={
+                <ProtectedRoute requireAdmin={true}>
+                  <MainLayout />
+                </ProtectedRoute>
+              }>
+                <Route path="/" element={<Index />} />
+                <Route path="/extrato_tcr" element={<ExtratoTcr />} />
+                <Route path="/compensacao-depositos" element={<CompensacaoDepositos />} />
+                <Route path="/pagamentos" element={<PaymentsPage />} />
+                <Route path="/cotacoes" element={<Cotacoes />} />
+                <Route path="/bot-cotacao" element={<BotCotacao />} />
+                <Route path="/otc" element={<OTCClients />} />
+              </Route>
+              
+              {/* Rota 404 */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </BankingSystemInitializer>
     </TooltipProvider>
   </QueryClientProvider>
 );
