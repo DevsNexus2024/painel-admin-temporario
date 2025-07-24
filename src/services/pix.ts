@@ -1,6 +1,8 @@
 //AQUIIIIIIIIII
 
 import { API_CONFIG, buildApiUrl, getApiHeaders } from "@/config/api";
+// 🎯 IMPORTAR ROTEAMENTO UNIFICADO (REGRA 3)
+import { sendPix } from "@/services/banking";
 
 // Tipos para o serviço PIX
 export interface PixTransferRequest {
@@ -122,115 +124,55 @@ export interface QRCodeReadResponse {
 }
 
 /**
- * Envia transferência PIX por chave
+ * ✅ REGRA 3: Envia PIX via roteamento unificado (detecta conta ativa automaticamente)
  * @param data Dados da transferência (chave, valor, descrição)
  * @returns Promise com resultado da transferência
  */
 export const enviarPixPorChave = async (data: PixTransferRequest): Promise<PixTransferResponse> => {
   try {
-    const url = buildApiUrl(API_CONFIG.ENDPOINTS.PIX.ENVIAR);
+    console.log('[PIX-SERVICE] ✅ Enviando PIX via roteamento unificado...');
     
-    // Dados sensíveis removidos dos logs
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: getApiHeaders(),
-      body: JSON.stringify(data),
-      signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
+    // ✅ REGRA 3: USAR ROTEAMENTO UNIFICADO - detecta conta ativa automaticamente
+    const standardTransaction = await sendPix({
+      key: data.chave,
+      amount: data.valor,
+      description: data.descricao,
+      // keyType será detectado automaticamente pelo provider ativo
     });
 
-    // Sempre tentar extrair o JSON primeiro, independente do status
-    let result;
-    try {
-      result = await response.json();
-    } catch (jsonError) {
-      // Tentar obter o texto da resposta para logs mais detalhados
-      try {
-        const textResponse = await response.text();
-      } catch (textError) {
-        console.error("Erro ao obter resposta como texto:", textError);
-      }
-      
-      // Se não conseguir fazer parse do JSON, retorna erro genérico
-      throw new Error(`Erro HTTP ${response.status}: ${response.statusText}`);
-    }
+    console.log('[PIX-SERVICE] ✅ PIX enviado via roteamento unificado:', {
+      provider: standardTransaction.provider,
+      id: standardTransaction.id,
+      status: standardTransaction.status
+    });
 
-    // Se não ok, mas temos JSON válido, usar a mensagem do backend
-    if (!response.ok) {
-      // Tentar extrair a mensagem de erro de diferentes formatos possíveis
-      let mensagemErro = '';
-      
-      // Formato 1: {mensagem: "erro"}
-      if (result.mensagem) {
-        mensagemErro = result.mensagem;
-      }
-      // Formato 2: {message: "erro"}  
-      else if (result.message) {
-        mensagemErro = result.message;
-      }
-      // Formato 3: {error: "erro"}
-      else if (result.error) {
-        mensagemErro = result.error;
-      }
-      // Formato 4: {errorMessage: "erro"}
-      else if (result.errorMessage) {
-        mensagemErro = result.errorMessage;
-      }
-      // Formato 5: {response: {message: "erro"}}
-      else if (result.response && result.response.message) {
-        mensagemErro = result.response.message;
-      }
-      // Formato 6: {response: {mensagem: "erro"}}
-      else if (result.response && result.response.mensagem) {
-        mensagemErro = result.response.mensagem;
-      }
-      // Formato 7: {data: {message: "erro"}}
-      else if (result.data && result.data.message) {
-        mensagemErro = result.data.message;
-      }
-      // Formato 8: {data: {mensagem: "erro"}}
-      else if (result.data && result.data.mensagem) {
-        mensagemErro = result.data.mensagem;
-      }
-      // Fallback: se a resposta inteira é uma string
-      else if (typeof result === 'string') {
-        mensagemErro = result;
-      }
-      // Último fallback: erro genérico
-      else {
-        mensagemErro = `Erro HTTP ${response.status}: ${response.statusText}`;
-      }
-      
-      return {
-        sucesso: false,
-        mensagem: mensagemErro
-      };
-    }
+    // Converter StandardTransaction para PixTransferResponse
+    return {
+      sucesso: true,
+      codigoTransacao: standardTransaction.id,
+      status: standardTransaction.status,
+      mensagem: `PIX enviado com sucesso via ${standardTransaction.provider}`
+    };
 
-    // Se tudo ok, retornar resultado
-    return result;
   } catch (error) {
-    console.error("Erro ao enviar PIX:", error);
+    console.error('[PIX-SERVICE] ❌ Erro ao enviar PIX via roteamento unificado:', error);
     
-    let mensagemErro = 'Erro desconhecido ao processar transferência PIX';
+    let mensagemErro = 'Erro ao enviar PIX';
     
     if (error instanceof Error) {
-      if (error.name === 'AbortError') {
-        mensagemErro = 'Timeout: A requisição demorou muito para responder';
-      } else if (error.message.includes('fetch')) {
-        mensagemErro = 'Erro de conexão: Verifique sua internet ou se o servidor está disponível';
-      } else {
-        mensagemErro = error.message;
-      }
+      mensagemErro = error.message;
     }
     
-    // Retorna resposta de erro padronizada
+    // ✅ REGRA 2: SEM FALLBACK - Cada conta é isolada
     return {
       sucesso: false,
-      mensagem: mensagemErro
+      mensagem: mensagemErro,
+      status: 'FALHOU'
     };
   }
 };
+
+// ✅ FUNÇÕES DE FALLBACK REMOVIDAS - CADA CONTA É ISOLADA
 
 /**
  * Processa pagamento via QR Code/EMV
@@ -781,11 +723,117 @@ const limparFormatacaoChave = (chave: string): string => {
 };
 
 /**
- * Consulta uma chave PIX para obter informações do destinatário
+ * ❌ FUNÇÃO GENÉRICA REMOVIDA - VIOLA REGRA 1
+ * Use: consultarChavePixBMP() para BMP ou implemente consultarChavePixBitso() para Bitso
+ */
+// export const consultarChavePix = ... // REMOVIDA POR VIOLAR ISOLAMENTO
+
+/**
+ * ✅ REGRA 1: Consulta chave PIX específica do BMP
+ * @param chave - Chave PIX a ser consultada  
+ * @returns Dados do destinatário da chave via BMP
+ */
+export const consultarChavePixBMP = async (chave: string): Promise<PixKeyConsultResponse> => {
+  try {
+    console.log('[PIX-SERVICE] ✅ Consultando chave PIX via BMP...');
+    
+    // Usar implementação BMP que já existe abaixo
+    return await executarConsultaChavePixBMP(chave);
+    
+  } catch (error) {
+    console.error('[PIX-SERVICE] ❌ Erro ao consultar chave PIX via BMP:', error);
+    
+    let mensagemErro = 'Erro ao consultar chave PIX via BMP';
+    
+    if (error instanceof Error) {
+      mensagemErro = error.message;
+    }
+    
+    return {
+      chave: '',
+      tipoChave: 0,
+      nomeCorrentista: '',
+      nomeFantasia: '',
+      tipoPessoa: 0,
+      documentoFederal: '',
+      conta: {
+        conta: '',
+        tipoConta: 0,
+        agencia: '',
+        ispb: null,
+      },
+      banco: {
+        descricao: '',
+        numero: '',
+        ispb: '',
+      },
+      detalhesConsulta: null,
+      ticket: '',
+      sucesso: false,
+      mensagem: mensagemErro,
+    };
+  }
+};
+
+/**
+ * ✅ REGRA 1: Consulta chave PIX específica da Bitso
+ * @param chave - Chave PIX a ser consultada
+ * @returns Resposta explicando limitação da Bitso
+ */
+export const consultarChavePixBitso = async (chave: string): Promise<PixKeyConsultResponse> => {
+  console.log('[PIX-SERVICE] ✅ Consultando chave PIX via Bitso...');
+  console.log('[PIX-SERVICE] ⚠️ Bitso não suporta consulta prévia de chave PIX');
+  
+  // Limpar formatação da chave 
+  const chaveLimpa = limparFormatacaoChave(chave);
+  
+  // Detectar tipo de chave baseado no formato
+  const detectarTipoChave = (chave: string): number => {
+    if (!chave) return 0;
+    if (chave.includes('@')) return 2; // EMAIL
+    if (chave.startsWith('+')) return 3; // PHONE
+    if (chave.length === 11 && /^[0-9]+$/.test(chave)) return 1; // CPF
+    if (chave.length === 14 && /^[0-9]+$/.test(chave)) return 4; // CNPJ
+    if (chave.length === 32) return 5; // EVP
+    return 0; // DESCONHECIDO
+  };
+  
+  // ⚠️ BITSO NÃO TEM ENDPOINT DE CONSULTA DE CHAVE
+  // Retornar resposta que indica chave válida mas sem dados do destinatário
+  return {
+    chave: chaveLimpa,
+    tipoChave: detectarTipoChave(chaveLimpa),
+    nomeCorrentista: 'Destinatário não consultado (Bitso)',
+    nomeFantasia: '',
+    tipoPessoa: 1,
+    documentoFederal: '',
+    conta: {
+      conta: '',
+      tipoConta: 0,
+      agencia: '',
+      ispb: null,
+    },
+    banco: {
+      descricao: 'Destinatário via Bitso',
+      numero: '',
+      ispb: '',
+    },
+    detalhesConsulta: {
+      info: 'A Bitso não oferece consulta prévia de chave PIX. Os dados do destinatário serão validados durante o envio.',
+      limitacao: 'bitso_no_key_consultation'
+    },
+    ticket: '',
+    sucesso: true,
+    mensagem: 'Chave PIX reconhecida. Prossiga com o envio (validação será feita pela Bitso).',
+  };
+};
+
+/**
+ * ✅ REGRA 1: Implementação interna de consulta PIX via BMP  
  * @param chave - Chave PIX a ser consultada
  * @returns Dados do destinatário da chave
  */
-export const consultarChavePix = async (chave: string): Promise<PixKeyConsultResponse> => {
+const executarConsultaChavePixBMP = async (chave: string): Promise<PixKeyConsultResponse> => {
   try {
     const url = buildApiUrl(API_CONFIG.ENDPOINTS.PIX.CONSULTAR);
     
@@ -797,7 +845,7 @@ export const consultarChavePix = async (chave: string): Promise<PixKeyConsultRes
       'chave': chaveLimpa
     };
     
-    // Dados sensíveis de chave PIX removidos dos logs
+    console.log('[PIX-SERVICE] Consultando chave via BMP');
     
     // Construir query string
     const queryString = new URLSearchParams(queryParams).toString();

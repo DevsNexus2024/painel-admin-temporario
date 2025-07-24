@@ -5,7 +5,7 @@
  * Facilita importação e uso da nova arquitetura
  */
 
-import { BankProvider } from './types';
+import { BankProvider, StandardFilters, StandardStatementResponse, TransactionStatus } from './types';
 
 // ===============================
 // SERVIÇO PRINCIPAL (MAIS USADO)
@@ -21,6 +21,64 @@ export {
   getAvailableAccounts,
   type AccountConfig
 } from './UnifiedBankingService';
+
+// ===============================
+// FUNÇÕES PIX UNIFICADAS
+// ===============================
+
+/**
+ * Envia PIX via conta ativa
+ */
+export const sendPix = async (pixData: {
+  key: string;
+  amount: number;
+  description?: string;
+  keyType?: string;
+}) => {
+  const { unifiedBankingService } = await import('./UnifiedBankingService');
+  return unifiedBankingService.sendPix(pixData);
+};
+
+/**
+ * Lista chaves PIX da conta ativa
+ */
+export const getPixKeys = async () => {
+  const { unifiedBankingService } = await import('./UnifiedBankingService');
+  return unifiedBankingService.getPixKeys();
+};
+
+/**
+ * Gera QR Code PIX via conta ativa
+ */
+export const generatePixQR = async (amount: number, description?: string) => {
+  const { unifiedBankingService } = await import('./UnifiedBankingService');
+  return unifiedBankingService.generatePixQR(amount, description);
+};
+
+/**
+ * Cria QR Code dinâmico via Bitso (requer conta Bitso ativa)
+ */
+export const criarQRCodeDinamicoBitso = async (dados: {
+  valor: number;
+  chavePix: string;
+  tipoChave: string;
+  descricao?: string;
+}) => {
+  const { unifiedBankingService } = await import('./UnifiedBankingService');
+  return unifiedBankingService.criarQRCodeDinamicoBitso(dados);
+};
+
+/**
+ * Cria QR Code estático via Bitso (requer conta Bitso ativa)
+ */
+export const criarQRCodeEstaticoBitso = async (dados: {
+  chavePix: string;
+  tipoChave: string;
+  descricao?: string;
+}) => {
+  const { unifiedBankingService } = await import('./UnifiedBankingService');
+  return unifiedBankingService.criarQRCodeEstaticoBitso(dados);
+};
 
 // ===============================
 // TIPOS PADRONIZADOS

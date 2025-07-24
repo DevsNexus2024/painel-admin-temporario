@@ -20,6 +20,50 @@ export interface MovimentoExtrato {
   client?: string;
   identified: boolean;
   code: string;
+  
+  // *** CAMPOS ESPECÍFICOS DA BITSO ***
+  // Apenas preenchidos quando provider === 'bitso'
+  bitsoData?: {
+    // Dados do pagador (quem enviou o PIX)
+    pagador?: {
+      nome?: string;
+      documento?: string;
+      chave?: string;
+      tipo_chave?: string;
+      banco?: string;
+      conta?: string;
+      agencia?: string;
+    };
+    
+    // Dados do destinatário (quem recebeu o PIX)  
+    destinatario?: {
+      nome?: string;
+      documento?: string;
+      chave?: string;
+      tipo_chave?: string;
+      banco?: string;
+      conta?: string;
+      agencia?: string;
+    };
+    
+    // Dados técnicos da transação
+    metadados?: {
+      metodo?: string;
+      protocolo?: string;
+      moeda?: string;
+      taxa?: number;
+      referencia?: string;
+      observacoes?: string;
+      motivo_falha?: string;
+      end_to_end_id?: string;
+      integration?: string;
+      origin_id?: string;
+    };
+    
+    // Origem da transação
+    origem: 'pay-in' | 'payout';
+    provider: 'bitso';
+  };
 }
 
 export interface ExtratoResponse {
@@ -110,9 +154,12 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       baseUrl = `${API_CONFIG.BASE_URL}/api/bitso`;
       endpoint = '/pix/extrato';
       
-      // Preparar parâmetros Bitso
+      // Preparar parâmetros Bitso - NÃO enviar cursor=0 pois a API não aceita
       const params: Record<string, string> = {};
-      if (filtros.cursor !== undefined) params.cursor = filtros.cursor.toString();
+      // Só adicionar cursor se for maior que 0
+      if (filtros.cursor !== undefined && filtros.cursor > 0) {
+        params.cursor = filtros.cursor.toString();
+      }
       
       const queryString = new URLSearchParams(params).toString();
       const fullEndpoint = queryString ? `${endpoint}?${queryString}` : endpoint;
@@ -244,24 +291,75 @@ const formatarMovimentoDoBackend = (item: any): MovimentoExtrato => {
 
 /**
  * Formatar movimento Bitso para o formato esperado pelo frontend
- * @param item Item normalizado do Bitso
+ * @param item Item normalizado do Bitso (com todos os campos novos)
  * @returns Movimento formatado
  */
 const formatarMovimentoBitso = (item: any): MovimentoExtrato => {
-  // Extrair informações da descrição para identificar cliente
+  // Extrair informações da descrição para identificar cliente (fallback)
   const descricao = item.descricao || '';
   const clienteMatch = descricao.match(/- (.+)$/);
-  const cliente = clienteMatch ? clienteMatch[1] : undefined;
+  const clienteFallback = clienteMatch ? clienteMatch[1] : undefined;
+  
+  // Usar dados do pagador/destinatário conforme tipo da transação
+  let clientePrincipal = clienteFallback;
+  if (item.tipo === 'CRÉDITO' && item.pagador?.nome) {
+    clientePrincipal = item.pagador.nome; // Para créditos, mostrar quem enviou
+  } else if (item.tipo === 'DÉBITO' && item.destinatario?.nome) {
+    clientePrincipal = item.destinatario.nome; // Para débitos, mostrar quem recebeu
+  }
   
   return {
     id: item.id || Math.random().toString(36),
     dateTime: item.data || new Date().toISOString(),
     value: Math.abs(parseFloat(item.valor || 0)),
     type: item.tipo === 'CRÉDITO' ? 'CRÉDITO' : 'DÉBITO',
-    document: item.endToEndId || '—', // Usar endToEndId como document
-    client: cliente,
+    // INVERTIDO: document agora tem informações detalhadas do cliente/banco
+    document: clientePrincipal || 'Cliente não identificado',
+    // INVERTIDO: client agora tem o documento (CPF/CNPJ)
+    client: item.tipo === 'CRÉDITO' 
+      ? (item.pagador?.documento || '—') 
+      : (item.destinatario?.documento || '—'),
     identified: true, // Bitso sempre retorna dados identificados
-    code: item.endToEndId || item.id || Math.random().toString(36).substr(2, 9).toUpperCase()
+    code: item.endToEndId || item.id || Math.random().toString(36).substr(2, 9).toUpperCase(),
+    
+    // *** DADOS ESPECÍFICOS DA BITSO ***
+    bitsoData: {
+      pagador: item.pagador ? {
+        nome: item.pagador.nome || undefined,
+        documento: item.pagador.documento || undefined,
+        chave: item.pagador.chave || undefined,
+        tipo_chave: item.pagador.tipo_chave || undefined,
+        banco: item.pagador.banco || undefined,
+        conta: item.pagador.conta || undefined,
+        agencia: item.pagador.agencia || undefined
+      } : undefined,
+      
+      destinatario: item.destinatario ? {
+        nome: item.destinatario.nome || undefined,
+        documento: item.destinatario.documento || undefined,
+        chave: item.destinatario.chave || undefined,
+        tipo_chave: item.destinatario.tipo_chave || undefined,
+        banco: item.destinatario.banco || undefined,
+        conta: item.destinatario.conta || undefined,
+        agencia: item.destinatario.agencia || undefined
+      } : undefined,
+      
+      metadados: item.metadados ? {
+        metodo: item.metadados.metodo || undefined,
+        protocolo: item.metadados.protocolo || undefined,
+        moeda: item.metadados.moeda || 'BRL',
+        taxa: item.metadados.taxa || undefined,
+        referencia: item.metadados.referencia || undefined,
+        observacoes: item.metadados.observacoes || undefined,
+        motivo_falha: item.metadados.motivo_falha || undefined,
+        end_to_end_id: item.metadados.end_to_end_id || item.endToEndId || undefined,
+        integration: item.metadados.integration || undefined,
+        origin_id: item.metadados.origin_id || undefined
+      } : undefined,
+      
+      origem: item.origem || 'pay-in',
+      provider: 'bitso'
+    }
   };
 };
 

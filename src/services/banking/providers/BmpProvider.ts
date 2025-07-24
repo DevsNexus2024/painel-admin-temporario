@@ -43,6 +43,7 @@ export class BmpProvider extends BaseBankProvider {
    */
   async healthCheck(): Promise<BankResponse<{ status: string; latency: number }>> {
     try {
+      console.log('🩺 [BMP] Health check iniciado (teste de conectividade)');
       const startTime = Date.now();
       
       // Usa endpoint de saldo para testar conectividade
@@ -65,6 +66,7 @@ export class BmpProvider extends BaseBankProvider {
    */
   async getBalance(accountId?: string): Promise<BankResponse<StandardBalance>> {
     try {
+      console.log('💰 [BMP] getBalance() chamado - consultando saldo BMP', { accountId });
       this.logger.info('Consultando saldo BMP', { accountId });
       
       const response = await this.makeRequest('GET', '/internal/account/balance');
@@ -229,18 +231,41 @@ export class BmpProvider extends BaseBankProvider {
 
     this.logger.info(`Requisição BMP: ${method} ${url}`, params);
 
-    const response = await fetch(url, {
-      method: method.toUpperCase(),
-      headers,
-      body,
-      redirect: 'follow'
-    });
+    // 🚨 TIMEOUT CRÍTICO: Evitar loop infinito se backend não responder
+    const timeoutMs = 30000; // 30 segundos
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    try {
+      const response = await fetch(url, {
+        method: method.toUpperCase(),
+        headers,
+        body,
+        redirect: 'follow',
+        signal: controller.signal // ← ADICIONAR TIMEOUT
+      });
+      
+      clearTimeout(timeoutId); // Limpar timeout se sucesso
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return response.json();
+      
+    } catch (error: any) {
+      clearTimeout(timeoutId); // Limpar timeout em caso de erro
+      
+      // Tratamento específico para timeout
+      if (error.name === 'AbortError') {
+        const timeoutError = new Error(`Timeout: Requisição para ${url} demorou mais de ${timeoutMs}ms`);
+        (timeoutError as any).code = 'TIMEOUT';
+        throw timeoutError;
+      }
+      
+      // Re-lançar outros erros
+      throw error;
     }
-
-    return response.json();
   }
 
   /**

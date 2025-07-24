@@ -5,7 +5,7 @@ export const fetchTransactions = async (
     startDate: number,
     endDate: number,
     order: 'asc' | 'desc' = 'asc',
-    limit: number = 500
+    limit: number = 50000
 ): Promise<TransactionsResponse> => {
     try {
         const url = `https://vps80270.cloudpublic.com.br/api/b8cash/consultarTransacoes?accountNumber=${accountNumber}&startDate=${startDate}&endDate=${endDate}&order=${order}&limit=${limit}`;

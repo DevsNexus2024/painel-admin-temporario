@@ -85,8 +85,100 @@ if (typeof window !== 'undefined') {
     } catch (error) {
       console.error('❌ Bitso - Erro:', error);
     }
+  };
+
+  // ===============================
+  // NOVA FUNÇÃO DE TESTE - PIX UNIFICADO DA BITSO
+  // ===============================
+
+  (window as any).testarPixBitsoUnificado = async () => {
+    console.log('🧪 [TESTE-PIX-BITSO] Iniciando teste de PIX unificado...');
     
-    console.log('\n🎉 Teste de roteamento concluído!');
+    try {
+      // Importar serviços do gerenciador unificado
+      const { 
+        sendPix, 
+        getPixKeys, 
+        criarQRCodeDinamicoBitso,
+        switchAccount 
+      } = await import('@/services/banking');
+      
+      console.log('\n=== 1️⃣ ATIVAR CONTA BITSO ===');
+      const switchSuccess = switchAccount('bitso-crypto');
+      console.log('✅ Conta Bitso ativada:', switchSuccess);
+      
+      console.log('\n=== 2️⃣ TESTE CHAVES PIX ===');
+      try {
+        const chaves = await getPixKeys();
+        console.log('✅ Chaves PIX obtidas:', chaves);
+      } catch (error) {
+        console.log('⚠️ Chaves PIX (esperado se não implementado):', error.message);
+      }
+      
+      console.log('\n=== 3️⃣ TESTE ENVIO PIX (SIMULADO) ===');
+      try {
+        // ATENÇÃO: Este teste pode tentar enviar PIX real!
+        // Usando valores baixos e chave inválida para evitar transação real
+        const resultadoPix = await sendPix({
+          key: 'teste@exemplo.com',
+          amount: 0.01, // Valor baixo
+          description: 'Teste PIX Unificado - NÃO PROCESSAR',
+          keyType: 'EMAIL'
+        });
+        console.log('⚠️ PIX processado (ATENÇÃO - pode ser real):', resultadoPix);
+      } catch (error) {
+        console.log('✅ PIX falhou (esperado para teste):', error.message);
+      }
+      
+      console.log('\n=== 4️⃣ TESTE QR CODE DINÂMICO ===');
+      try {
+        const qrDinamico = await criarQRCodeDinamicoBitso({
+          valor: 10.00,
+          chavePix: 'teste@exemplo.com',
+          tipoChave: 'EMAIL',
+          descricao: 'QR Code de teste'
+        });
+        console.log('✅ QR Code dinâmico criado:', {
+          txId: qrDinamico.txId,
+          qrCodeLength: qrDinamico.qrCode?.length || 0,
+          qrPreview: qrDinamico.qrCode?.substring(0, 50) + '...'
+        });
+      } catch (error) {
+        console.log('⚠️ QR Code falhou:', error.message);
+      }
+      
+      console.log('\n🎉 [TESTE-PIX-BITSO] Teste concluído!');
+      console.log('💡 Dica: Teste o componente visual na aba "Bitso PIX" quando a conta estiver ativa');
+      
+    } catch (error) {
+      console.error('❌ [TESTE-PIX-BITSO] Erro geral:', error);
+    }
+  };
+
+  // ===============================
+  // FUNÇÃO DE TESTE - SWITCH AUTOMÁTICO PARA BITSO
+  // ===============================
+
+  (window as any).ativarBitsoPix = () => {
+    console.log('🔄 [ATIVAR-BITSO] Ativando conta Bitso...');
+    
+    try {
+      const success = apiRouter.switchAccount('bitso-crypto');
+      
+      if (success) {
+        const conta = apiRouter.getCurrentAccount();
+        console.log('✅ [ATIVAR-BITSO] Conta Bitso ativada:', {
+          id: conta.id,
+          provider: conta.provider,
+          displayName: conta.displayName
+        });
+        console.log('💡 [ATIVAR-BITSO] A aba "Bitso PIX" deve aparecer automaticamente na interface!');
+      } else {
+        console.error('❌ [ATIVAR-BITSO] Falha ao ativar conta Bitso');
+      }
+    } catch (error) {
+      console.error('❌ [ATIVAR-BITSO] Erro:', error);
+    }
   };
   
   // TESTE DIRETO DOS ENDPOINTS

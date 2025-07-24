@@ -10,7 +10,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
-import { enviarPixPorChave, validarChavePix, formatarChavePix, consultarChavePix, PixKeyConsultResponse } from "@/services/pix";
+import { enviarPixPorChave, validarChavePix, formatarChavePix, consultarChavePixBMP, consultarChavePixBitso, PixKeyConsultResponse } from "@/services/pix";
+import { getAvailableAccounts } from "@/services/banking";
 
 const keyTransferSchema = z.object({
   keyType: z.enum(["CPF", "CNPJ", "EMAIL", "PHONE", "EVP"], {
@@ -63,26 +64,47 @@ export default function SendByKeyForm() {
     return () => clearTimeout(timer);
   }, [form.watch("pixKey"), form.watch("keyType")]);
 
-  // Função para consultar a chave PIX automaticamente
+  // ✅ REGRA 1: Função para consultar chave PIX com isolamento por provedor
   const consultarChaveAutomaticamente = async (chave: string) => {
     try {
       setIsConsultingKey(true);
       setKeyConsultData(null);
       
-      const resultado = await consultarChavePix(chave);
+      // ✅ REGRA 3: Detectar conta ativa e usar função específica
+      const accounts = getAvailableAccounts();
+      const activeAccount = accounts.find(acc => acc.isActive);
+      
+      let resultado: PixKeyConsultResponse;
+      
+      if (activeAccount?.provider === 'bitso') {
+        console.log('[SEND-PIX] ✅ Usando consultarChavePixBitso()');
+        resultado = await consultarChavePixBitso(chave);
+      } else {
+        console.log('[SEND-PIX] ✅ Usando consultarChavePixBMP()');
+        resultado = await consultarChavePixBMP(chave);
+      }
       
       if (resultado.sucesso) {
         setKeyConsultData(resultado);
-        toast.success("Destinatário encontrado!", {
-          description: `${resultado.nomeCorrentista}`,
-          duration: 3000,
-        });
+        
+        // Mensagem específica para Bitso
+        if (activeAccount?.provider === 'bitso') {
+          toast.info("Bitso ativa", {
+            description: "Dados do destinatário serão validados durante o envio",
+            duration: 3000,
+          });
+        } else {
+          toast.success("Destinatário encontrado!", {
+            description: `${resultado.nomeCorrentista}`,
+            duration: 3000,
+          });
+        }
       } else {
         setKeyConsultData(null);
         // Não mostrar toast de erro para não incomodar o usuário
       }
     } catch (error) {
-      console.error('Erro ao consultar chave:', error);
+      console.error('[SEND-PIX] ❌ Erro ao consultar chave:', error);
       setKeyConsultData(null);
     } finally {
       setIsConsultingKey(false);
@@ -319,6 +341,8 @@ export default function SendByKeyForm() {
               </FormItem>
             )}
           />
+
+          {/* Alerta removido - integração simplificada */}
 
           {/* Card com Dados do Destinatário */}
           {keyConsultData && (

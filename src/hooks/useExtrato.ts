@@ -168,7 +168,7 @@ export const useExtrato = (options: UseExtratoOptions = {}) => {
 // Hook específico para extrato sem filtros (mais comum)
 export const useExtratoGeral = () => {
   return useExtrato({
-    filtros: { cursor: 0 },
+    filtros: {}, // ✅ REMOVIDO cursor: 0 que causa erro na API Bitso
     staleTime: 3 * 60 * 1000, // 3 minutos para dados gerais
   });
 };

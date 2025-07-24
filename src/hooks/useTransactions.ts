@@ -16,7 +16,7 @@ export const useTransactions = ({
     startDate,
     endDate,
     order = 'asc',
-    limit = 500,
+    limit = 50000, // Aumentado para 50.000 para garantir que todos os registros sejam carregados
     enabled = true
 }: UseTransactionsParams) => {
     return useQuery<TransactionsResponse, Error>({

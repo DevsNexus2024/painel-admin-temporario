@@ -61,12 +61,12 @@ const BANK_REGISTRY: Record<BankProvider, BankSettings> = {
       },
       staging: {
         name: 'staging',
-        apiUrl: 'https://staging-api.bmp.com',
+        apiUrl: 'https://api-bank.gruponexus.com.br',
         timeout: 20000
       },
       production: {
         name: 'production',
-        apiUrl: 'https://api.bmp.com',
+        apiUrl: 'https://api-bank.gruponexus.com.br',
         timeout: 15000
       }
     },
@@ -99,7 +99,7 @@ const BANK_REGISTRY: Record<BankProvider, BankSettings> = {
   [BankProvider.BITSO]: {
     provider: BankProvider.BITSO,
     name: 'Bitso',
-    displayName: 'Bitso Crypto',
+    displayName: 'Bitso - PIX & Crypto',
     environments: {
       development: {
         name: 'development',
@@ -108,12 +108,12 @@ const BANK_REGISTRY: Record<BankProvider, BankSettings> = {
       },
       staging: {
         name: 'staging',
-        apiUrl: 'https://staging-api.bitso.com',
+        apiUrl: 'https://api-bank.gruponexus.com.br',
         timeout: 20000
       },
       production: {
         name: 'production',
-        apiUrl: 'https://api.bitso.com',
+        apiUrl: 'https://api-bank.gruponexus.com.br',
         timeout: 15000
       }
     },
@@ -122,6 +122,7 @@ const BANK_REGISTRY: Record<BankProvider, BankSettings> = {
       BankFeature.STATEMENT,
       BankFeature.PIX_SEND,
       BankFeature.PIX_RECEIVE,
+      BankFeature.PIX_KEYS,
       BankFeature.WEBHOOK
     ],
     defaultCredentials: {
@@ -407,8 +408,9 @@ export class BankConfigManager {
   private currentEnvironment: 'development' | 'staging' | 'production' = 'development';
 
   private constructor() {
-    // Detectar ambiente
-    this.currentEnvironment = this.detectEnvironment();
+    // 🔧 USAR PRODUCTION para alinhar com api.ts (que está configurado como production)
+    this.currentEnvironment = 'production';
+    console.log(`🔧 [BANK-CONFIG] Ambiente forçado para PRODUCTION (alinhado com api.ts): ${this.currentEnvironment}`);
   }
 
   /**
@@ -507,6 +509,8 @@ export class BankConfigManager {
   public getCurrentEnvironment(): string {
     return this.currentEnvironment;
   }
+
+
 
   /**
    * Detecta ambiente automaticamente

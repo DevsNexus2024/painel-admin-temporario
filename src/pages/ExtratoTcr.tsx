@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Wallet, ArrowDownCircle, ArrowUpCircle, CreditCard, DollarSign } from "lucide-react";
+import { Wallet, ArrowDownCircle, ArrowUpCircle, CreditCard, DollarSign, Info } from "lucide-react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { TransactionSearchForm } from "@/components/TransactionSearchForm";
 import { TransactionTable } from "@/components/TransactionTable";
@@ -32,6 +32,10 @@ export default function ExtratoTcr() {
     const [isLoadingSaldo, setIsLoadingSaldo] = useState(false);
 
     const transactions = data?.response?.transactions || [];
+
+    // Log para debug - quantos registros foram retornados
+    console.log(`[ExtratoTcr] Total de transações retornadas: ${transactions.length}`);
+    console.log(`[ExtratoTcr] Data da API completa:`, data);
 
     // Calcular saldos e estatísticas
     const calculateStats = () => {

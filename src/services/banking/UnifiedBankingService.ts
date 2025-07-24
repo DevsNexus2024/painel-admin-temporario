@@ -63,12 +63,26 @@ export class UnifiedBankingService {
     console.log('[UNIFIED-BANKING] Inicializando serviço...');
 
     try {
+      // 🚨 PRESERVAR CONTA ATIVA ANTES DE REINICIALIZAR
+      const currentAccounts = this.getAvailableAccounts();
+      const activeAccountId = currentAccounts.find(acc => acc.isActive)?.id;
+      
+      if (activeAccountId) {
+        console.log(`[UNIFIED-BANKING] 🔒 Preservando conta ativa: ${activeAccountId}`);
+      }
+      
       // Auto-registra providers padrão (BMP, Bitso)
       await bankManager.autoRegisterDefaultProviders();
       
-      // Health check inicial
-      const healthStatus = await bankManager.healthCheckAll();
-      console.log('[UNIFIED-BANKING] Status dos bancos:', healthStatus);
+      // 🚨 RESTAURAR CONTA ATIVA SE HAVIA UMA SELECIONADA
+      if (activeAccountId) {
+        console.log(`[UNIFIED-BANKING] 🔄 Restaurando conta ativa: ${activeAccountId}`);
+        this.setActiveAccount(activeAccountId);
+      }
+      
+      // 🚨 REMOVER HEALTH CHECK DURANTE PIX - evita consultas desnecessárias
+      // Health check pode ser feito separadamente se necessário
+      console.log('[UNIFIED-BANKING] Health check omitido durante inicialização');
       
       this.isInitialized = true;
       console.log('[UNIFIED-BANKING] ✅ Serviço inicializado com sucesso');
@@ -238,6 +252,165 @@ export class UnifiedBankingService {
         error: result.error?.message || result.error
       };
     }).filter(item => item.account); // Apenas contas válidas
+  }
+
+  // ===============================
+  // OPERAÇÕES PIX
+  // ===============================
+
+  /**
+   * Envia PIX via conta ativa
+   */
+  public async sendPix(pixData: {
+    key: string;
+    amount: number;
+    description?: string;
+    keyType?: string;
+  }): Promise<StandardTransaction> {
+    // 🚨 CRÍTICO: NÃO reinicializar durante PIX - apenas verificar se já foi inicializado
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    
+    const activeProvider = bankManager.getActiveProvider();
+    if (!activeProvider) {
+      throw new Error('Nenhuma conta ativa para envio PIX');
+    }
+
+    // Verificar se o provider suporta PIX
+    if (!activeProvider.sendPix) {
+      throw new Error(`Provider ${activeProvider.provider} não suporta envio PIX`);
+    }
+
+    console.log(`[UNIFIED-BANKING] 🚀 Enviando PIX via provider ativo: ${activeProvider.provider}`);
+
+    const result = await activeProvider.sendPix(pixData);
+    
+    if (!result.success) {
+      throw new Error(result.error?.message || 'Erro ao enviar PIX');
+    }
+
+    console.log(`[UNIFIED-BANKING] PIX enviado: ${result.data?.provider} - R$ ${result.data?.amount}`);
+    return result.data!;
+  }
+
+  /**
+   * Lista chaves PIX da conta ativa
+   */
+  public async getPixKeys(): Promise<any[]> {
+    await this.ensureInitialized();
+    
+    const activeProvider = bankManager.getActiveProvider();
+    if (!activeProvider) {
+      throw new Error('Nenhuma conta ativa para consulta de chaves PIX');
+    }
+
+    // Verificar se o provider suporta listagem de chaves
+    if (!activeProvider.getPixKeys) {
+      throw new Error(`Provider ${activeProvider.provider} não suporta listagem de chaves PIX`);
+    }
+
+    const result = await activeProvider.getPixKeys();
+    
+    if (!result.success) {
+      throw new Error(result.error?.message || 'Erro ao consultar chaves PIX');
+    }
+
+    console.log(`[UNIFIED-BANKING] Chaves PIX obtidas: ${result.data?.length} chaves`);
+    return result.data!;
+  }
+
+  /**
+   * Gera QR Code PIX via conta ativa
+   */
+  public async generatePixQR(amount: number, description?: string): Promise<{ qrCode: string; txId: string }> {
+    await this.ensureInitialized();
+    
+    const activeProvider = bankManager.getActiveProvider();
+    if (!activeProvider) {
+      throw new Error('Nenhuma conta ativa para gerar QR Code PIX');
+    }
+
+    // Verificar se o provider suporta geração de QR Code
+    if (!activeProvider.generatePixQR) {
+      throw new Error(`Provider ${activeProvider.provider} não suporta geração de QR Code PIX`);
+    }
+
+    const result = await activeProvider.generatePixQR(amount, description);
+    
+    if (!result.success) {
+      throw new Error(result.error?.message || 'Erro ao gerar QR Code PIX');
+    }
+
+    console.log(`[UNIFIED-BANKING] QR Code gerado: ${result.data?.txId}`);
+    return result.data!;
+  }
+
+  // ===============================
+  // OPERAÇÕES ESPECÍFICAS DA BITSO
+  // ===============================
+
+  /**
+   * Cria QR Code dinâmico via Bitso (requer chave PIX)
+   */
+  public async criarQRCodeDinamicoBitso(dados: {
+    valor: number;
+    chavePix: string;
+    tipoChave: string;
+    descricao?: string;
+  }): Promise<{ qrCode: string; txId: string }> {
+    await this.ensureInitialized();
+    
+    const activeProvider = bankManager.getActiveProvider();
+    if (!activeProvider || activeProvider.provider !== BankProvider.BITSO) {
+      throw new Error('Operação disponível apenas para conta Bitso ativa');
+    }
+
+    // Cast para BitsoProvider para acessar métodos específicos
+    const bitsoProvider = activeProvider as any;
+    if (!bitsoProvider.criarQRCodeDinamico) {
+      throw new Error('Método criarQRCodeDinamico não disponível');
+    }
+
+    const result = await bitsoProvider.criarQRCodeDinamico(dados);
+    
+    if (!result.success) {
+      throw new Error(result.error?.message || 'Erro ao criar QR Code dinâmico');
+    }
+
+    console.log(`[UNIFIED-BANKING] QR Code dinâmico Bitso criado: ${result.data?.txId}`);
+    return result.data!;
+  }
+
+  /**
+   * Cria QR Code estático via Bitso (requer chave PIX)
+   */
+  public async criarQRCodeEstaticoBitso(dados: {
+    chavePix: string;
+    tipoChave: string;
+    descricao?: string;
+  }): Promise<{ qrCode: string; txId: string }> {
+    await this.ensureInitialized();
+    
+    const activeProvider = bankManager.getActiveProvider();
+    if (!activeProvider || activeProvider.provider !== BankProvider.BITSO) {
+      throw new Error('Operação disponível apenas para conta Bitso ativa');
+    }
+
+    // Cast para BitsoProvider para acessar métodos específicos
+    const bitsoProvider = activeProvider as any;
+    if (!bitsoProvider.criarQRCodeEstatico) {
+      throw new Error('Método criarQRCodeEstatico não disponível');
+    }
+
+    const result = await bitsoProvider.criarQRCodeEstatico(dados);
+    
+    if (!result.success) {
+      throw new Error(result.error?.message || 'Erro ao criar QR Code estático');
+    }
+
+    console.log(`[UNIFIED-BANKING] QR Code estático Bitso criado: ${result.data?.txId}`);
+    return result.data!;
   }
 
   // ===============================

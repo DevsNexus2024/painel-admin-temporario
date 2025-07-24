@@ -16,14 +16,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useExtratoSeguro } from "@/hooks/useExtratoSeguro";
 import { validarIntervaloData, formatarDataParaAPI, MovimentoExtrato, ExtratoResponse } from "@/services/extrato";
 
+// Tipo para os filtros
+interface FiltrosAtivos {
+  cursor?: number;
+  de?: string;
+  ate?: string;
+}
+
 export default function ExtractTable() {
   const [selectedTransaction, setSelectedTransaction] = useState<MovimentoExtrato | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState<Date>();
   const [dateTo, setDateTo] = useState<Date>();
-  const [filtrosAtivos, setFiltrosAtivos] = useState({ cursor: 0 });
-  const [allTransactions, setAllTransactions] = useState<MovimentoExtrato[]>([]);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [filtrosAtivos, setFiltrosAtivos] = useState<FiltrosAtivos>({});
+  
+  // *** NOVA PAGINAÇÃO FRONTEND ***
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 200; // Mostrar 50 transações por página
   
   // Novos estados para filtros de busca
   const [searchName, setSearchName] = useState("");
@@ -46,41 +55,23 @@ export default function ExtractTable() {
   const hasMore = (extratoData as ExtratoResponse)?.hasMore || false;
   const currentCursor = (extratoData as ExtratoResponse)?.cursor || 0;
 
-  // Acumular transações quando novos dados chegarem
-  useEffect(() => {
-    if (transactions.length > 0) {
-      if (filtrosAtivos.cursor === 0) {
-        // Nova busca - substitui todos os dados
-        setAllTransactions(transactions);
-      } else {
-        // Carregando mais - adiciona aos existentes
-        setAllTransactions(prev => {
-          const existingIds = new Set(prev.map(t => t.id));
-          const newTransactions = transactions.filter(t => !existingIds.has(t.id));
-          return [...prev, ...newTransactions];
-        });
-      }
-      setIsLoadingMore(false);
-    }
-  }, [transactions, filtrosAtivos.cursor]);
-
   // 🚨 CRÍTICO: Limpar dados antigos quando há erro para evitar contaminação
   useEffect(() => {
     if (error) {
-      console.log('🧹 [ExtractTable] Erro detectado - limpando transações antigas para evitar contaminação');
-      setAllTransactions([]);
+      console.log('🧹 [ExtractTable] Erro detectado - resetando página para evitar contaminação');
+      setCurrentPage(1);
     }
   }, [error]);
 
-  // 🚨 CRÍTICO: Limpar dados quando mudar de conta para evitar mistura de providers
+  // 🚨 CRÍTICO: Resetar página quando mudar filtros
   useEffect(() => {
-    console.log('🧹 [ExtractTable] Mudança detectada - limpando transações para nova consulta');
-    setAllTransactions([]);
-  }, [filtrosAtivos]); // Quando filtros mudam (incluindo mudança de conta)
+    console.log('🧹 [ExtractTable] Mudança detectada - resetando página para nova consulta');
+    setCurrentPage(1);
+  }, [filtrosAtivos]);
 
   // Função para filtrar e ordenar transações
   const filteredAndSortedTransactions = useMemo(() => {
-    let filtered = [...allTransactions];
+    let filtered = [...transactions];
 
     // Filtro por nome do cliente
     if (searchName.trim()) {
@@ -91,12 +82,12 @@ export default function ExtractTable() {
       );
     }
 
-    // Filtro por valor específico
+    // Filtro por valor
     if (searchValue.trim()) {
-      const searchValueNum = parseFloat(searchValue.replace(/[^\d.,]/g, '').replace(',', '.'));
-      if (!isNaN(searchValueNum)) {
+      const searchAmount = parseFloat(searchValue.replace(/[^\d,.-]/g, '').replace(',', '.'));
+      if (!isNaN(searchAmount)) {
         filtered = filtered.filter(transaction => 
-          Math.abs(transaction.value - searchValueNum) < 0.01
+          Math.abs(transaction.value - searchAmount) < 0.01
         );
       }
     }
@@ -104,25 +95,36 @@ export default function ExtractTable() {
     // Ordenação
     if (sortBy !== "none" && sortOrder !== "none") {
       filtered.sort((a, b) => {
-        let comparison = 0;
+        let valueA: any, valueB: any;
         
         if (sortBy === "value") {
-          comparison = a.value - b.value;
+          valueA = a.value;
+          valueB = b.value;
         } else if (sortBy === "date") {
-          const dateA = new Date(a.dateTime).getTime();
-          const dateB = new Date(b.dateTime).getTime();
-          comparison = dateA - dateB;
+          valueA = new Date(a.dateTime).getTime();
+          valueB = new Date(b.dateTime).getTime();
         }
         
-        return sortOrder === "asc" ? comparison : -comparison;
+        if (sortOrder === "asc") {
+          return valueA - valueB;
+        } else {
+          return valueB - valueA;
+        }
       });
     }
 
     return filtered;
-  }, [allTransactions, searchName, searchValue, sortBy, sortOrder]);
+  }, [transactions, searchName, searchValue, sortBy, sortOrder]);
 
-  // Usar transações filtradas em vez de displayTransactions
-  const displayTransactions = filteredAndSortedTransactions;
+  // *** NOVA PAGINAÇÃO FRONTEND ***
+  const totalItems = filteredAndSortedTransactions.length;
+  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const currentPageTransactions = filteredAndSortedTransactions.slice(startIndex, endIndex);
+
+  // Usar transações da página atual
+  const displayTransactions = currentPageTransactions;
 
   const handleRowClick = (transaction: MovimentoExtrato) => {
     setSelectedTransaction(transaction);
@@ -146,16 +148,16 @@ export default function ExtractTable() {
       }
     }
 
-    const novosFiltros = {
-      cursor: 0, // Reset cursor para nova busca
+    const novosFiltros: FiltrosAtivos = {
+      // ✅ REMOVIDO cursor: 0 que causa erro na API Bitso
       ...(dateFrom && dateTo && {
         de: formatarDataParaAPI(dateFrom),
         ate: formatarDataParaAPI(dateTo)
       })
     };
 
-    // Limpar transações acumuladas para nova busca
-    setAllTransactions([]);
+    // Resetar para primeira página
+    setCurrentPage(1);
     setFiltrosAtivos(novosFiltros);
     toast.success("Filtros aplicados com sucesso!");
   };
@@ -167,20 +169,32 @@ export default function ExtractTable() {
     setSearchValue("");
     setSortBy("none");
     setSortOrder("none");
-    setAllTransactions([]);
-    setFiltrosAtivos({ cursor: 0 });
+    setCurrentPage(1);
+    setFiltrosAtivos({});
     toast.success("Filtros limpos!");
   };
 
-  const handleCarregarMais = () => {
-    setIsLoadingMore(true);
-    setFiltrosAtivos(prev => ({
-      ...prev,
-      cursor: currentCursor
-    }));
+  // *** NOVAS FUNÇÕES DE PAGINAÇÃO ***
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(prev => prev + 1);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(prev => prev - 1);
+    }
+  };
+
+  const handleGoToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
   };
 
   const handleRefresh = () => {
+    setCurrentPage(1);
     refetch();
   };
 
@@ -487,8 +501,8 @@ export default function ExtractTable() {
                         <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Data/Hora</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Valor</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Tipo</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 min-w-[200px]">Documento</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Cliente</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 min-w-[200px]">Cliente/Banco</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Documento</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Status</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Código</TableHead>
                       </TableRow>
@@ -517,21 +531,76 @@ export default function ExtractTable() {
                               </Badge>
                             </TableCell>
                             <TableCell className="py-3 text-xs text-muted-foreground break-words">
-                              {transaction.document}
+                              {/* Cliente/Banco: Para Bitso mostra lógica especial, para BMP mostra informações detalhadas */}
+                              {transaction.bitsoData ? (
+                                <div className="space-y-1">
+                                  <div className="font-medium text-card-foreground">
+                                    {transaction.document || "—"}
+                                  </div>
+                                  {transaction.type === 'CRÉDITO' && transaction.bitsoData.pagador && (
+                                    <div className="text-xs text-blue-600">
+                                      De: {transaction.bitsoData.pagador.banco || transaction.bitsoData.pagador.chave || 'N/A'}
+                                      {transaction.bitsoData.pagador.conta && (
+                                        <div className="text-xs text-muted-foreground">
+                                          Conta: {transaction.bitsoData.pagador.conta}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {transaction.type === 'DÉBITO' && transaction.bitsoData.destinatario && (
+                                    <div className="text-xs text-orange-600">
+                                      Para: {transaction.bitsoData.destinatario.banco || transaction.bitsoData.destinatario.chave || 'N/A'}
+                                      {transaction.bitsoData.destinatario.conta && (
+                                        <div className="text-xs text-muted-foreground">
+                                          Conta: {transaction.bitsoData.destinatario.conta}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                // ✅ EXIBIÇÃO BMP SIMPLIFICADA - Cliente e Banco
+                                <div className="space-y-1">
+                                  <div className="font-medium text-card-foreground">
+                                    {transaction.client || "Cliente não identificado"}
+                                  </div>
+                                  {transaction.document && (
+                                    <div className="text-xs text-blue-600">
+                                      Doc: {transaction.document}
+                                    </div>
+                                  )}
+                                  <div className="text-xs text-muted-foreground">
+                                    BMP - Banco Master Pagamentos
+                                  </div>
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell className="py-3 text-xs text-muted-foreground truncate max-w-[160px]">
-                              {transaction.client || "—"}
+                              {/* Documento: Para Bitso mostra documento, para BMP mostra documento */}
+                              {transaction.bitsoData ? (
+                                transaction.client || "—"
+                              ) : (
+                                transaction.document || "—"
+                              )}
                             </TableCell>
                             <TableCell className="py-3">
-                              {transaction.identified ? (
-                                <Badge className="bg-tcr-green/20 text-tcr-green border-tcr-green/30 rounded-full px-2 py-1 text-xs font-semibold">
-                                  ✓
-                                </Badge>
-                              ) : (
-                                <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 rounded-full px-2 py-1 text-xs font-semibold">
-                                  ?
-                                </Badge>
-                              )}
+                              <div className="space-y-1">
+                                {transaction.identified ? (
+                                  <Badge className="bg-tcr-green/20 text-tcr-green border-tcr-green/30 rounded-full px-2 py-1 text-xs font-semibold">
+                                    ✓
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 rounded-full px-2 py-1 text-xs font-semibold">
+                                    ?
+                                  </Badge>
+                                )}
+                                {/* Badge para indicar se é Bitso */}
+                                {transaction.bitsoData && (
+                                  <Badge className="bg-orange-50 text-orange-700 border-orange-200 rounded-full px-2 py-1 text-xs font-semibold">
+                                    Bitso
+                                  </Badge>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="py-3">
                               <div className="flex items-center gap-2">
@@ -570,9 +639,16 @@ export default function ExtractTable() {
                       <CardContent className="p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">{formatDate(transaction.dateTime)}</span>
-                          <Badge className={`${typeConfig.className} rounded-full px-2 py-1 text-xs font-semibold`}>
-                            {transaction.type}
-                          </Badge>
+                          <div className="flex gap-2">
+                            <Badge className={`${typeConfig.className} rounded-full px-2 py-1 text-xs font-semibold`}>
+                              {transaction.type}
+                            </Badge>
+                            {transaction.bitsoData && (
+                              <Badge className="bg-orange-50 text-orange-700 border-orange-200 rounded-full px-2 py-1 text-xs font-semibold">
+                                Bitso
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                         
                         <div className="flex items-center justify-between">
@@ -580,7 +656,57 @@ export default function ExtractTable() {
                             <span className={`font-bold text-xl font-mono ${transaction.type === 'DÉBITO' ? "text-tcr-red" : "text-tcr-green"}`}>
                               {transaction.type === 'DÉBITO' ? "-" : "+"}{formatCurrency(transaction.value)}
                             </span>
-                            <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{transaction.document}</p>
+                            {/* Cliente/Documento: Melhorado para BMP vs Bitso */}
+                            {transaction.bitsoData ? (
+                              <p className="text-sm text-muted-foreground mt-1 line-clamp-1">Cliente: {transaction.document || "—"}</p>
+                            ) : (
+                              <p className="text-sm text-muted-foreground mt-1 line-clamp-1">Cliente: {transaction.client || "Cliente não identificado"}</p>
+                            )}
+                            
+                            {/* Informações específicas da Bitso no mobile */}
+                            {transaction.bitsoData && (
+                              <div className="mt-2 space-y-1">
+                                {transaction.document && (
+                                  <p className="text-sm font-medium text-card-foreground">
+                                    {transaction.document}
+                                  </p>
+                                )}
+                                 {transaction.type === 'CRÉDITO' && transaction.bitsoData.pagador && (
+                                   <div className="text-xs text-blue-600">
+                                     <p>De: {transaction.bitsoData.pagador.banco || transaction.bitsoData.pagador.chave || 'N/A'}</p>
+                                     {transaction.bitsoData.pagador.conta && (
+                                       <p className="text-xs text-muted-foreground">
+                                         Conta: {transaction.bitsoData.pagador.conta}
+                                       </p>
+                                     )}
+                                   </div>
+                                 )}
+                                 {transaction.type === 'DÉBITO' && transaction.bitsoData.destinatario && (
+                                   <div className="text-xs text-orange-600">
+                                     <p>Para: {transaction.bitsoData.destinatario.banco || transaction.bitsoData.destinatario.chave || 'N/A'}</p>
+                                     {transaction.bitsoData.destinatario.conta && (
+                                       <p className="text-xs text-muted-foreground">
+                                         Conta: {transaction.bitsoData.destinatario.conta}
+                                       </p>
+                                     )}
+                                   </div>
+                                 )}
+                              </div>
+                            )}
+                            
+                            {/* ✅ EXIBIÇÃO BMP NO MOBILE SIMPLIFICADA - Cliente e Banco */}
+                            {!transaction.bitsoData && (
+                              <div className="mt-2 space-y-1">
+                                {transaction.document && (
+                                  <p className="text-sm font-medium text-card-foreground">
+                                    Doc: {transaction.document}
+                                  </p>
+                                )}
+                                <div className="text-xs text-muted-foreground">
+                                  BMP - Banco Master Pagamentos
+                                </div>
+                              </div>
+                            )}
                           </div>
                           <Button
                             variant="ghost"
@@ -609,27 +735,71 @@ export default function ExtractTable() {
                 })}
               </div>
 
-              {/* Botão Carregar Mais */}
-              {hasMore && (
+              {/* *** NOVA PAGINAÇÃO FRONTEND *** */}
+              {totalPages > 1 && (
                 <div className="p-4 border-t border-border bg-muted/10">
-                  <Button
-                    onClick={handleCarregarMais}
-                    disabled={isLoadingMore}
-                    variant="outline"
-                    className="w-full h-12 rounded-xl border-border hover:border-blue-500 transition-colors bg-background hover:bg-muted/20"
-                  >
-                    {isLoadingMore ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Carregando mais registros...
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown className="h-4 w-4 mr-2" />
-                        Carregar mais registros
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    
+                    {/* Info da página atual */}
+                    <div className="text-sm text-muted-foreground">
+                      Mostrando {startIndex + 1} a {Math.min(endIndex, totalItems)} de {totalItems} transações
+                      {totalPages > 1 && ` (Página ${currentPage} de ${totalPages})`}
+                    </div>
+                    
+                    {/* Controles de navegação */}
+                    <div className="flex items-center gap-2">
+                      
+                      {/* Botão Anterior */}
+                      <Button
+                        onClick={handlePrevPage}
+                        disabled={currentPage === 1}
+                        variant="outline"
+                        size="sm"
+                        className="h-9 px-3"
+                      >
+                        ← Anterior
+                      </Button>
+                      
+                      {/* Números das páginas (máximo 5) */}
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum;
+                          if (totalPages <= 5) {
+                            pageNum = i + 1;
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i;
+                          } else {
+                            pageNum = currentPage - 2 + i;
+                          }
+                          
+                          return (
+                            <Button
+                              key={pageNum}
+                              onClick={() => handleGoToPage(pageNum)}
+                              variant={pageNum === currentPage ? "default" : "outline"}
+                              size="sm"
+                              className="h-9 w-9 p-0"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                      
+                      {/* Botão Próximo */}
+                      <Button
+                        onClick={handleNextPage}
+                        disabled={currentPage === totalPages}
+                        variant="outline"
+                        size="sm"
+                        className="h-9 px-3"
+                      >
+                        Próximo →
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
             </>
@@ -735,22 +905,147 @@ export default function ExtractTable() {
                     <h3 className="font-semibold text-card-foreground mb-3 sm:mb-4 flex items-center gap-2">
                       <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                       Detalhes da Transação
+                      {selectedTransaction.bitsoData && (
+                        <Badge className="bg-orange-50 text-orange-700 border-orange-200 ml-2">
+                          Bitso PIX
+                        </Badge>
+                      )}
                     </h3>
                     <div className="space-y-3">
                       <div className="flex flex-col gap-1">
                         <span className="text-sm text-muted-foreground font-medium">Documento:</span>
                         <span className="text-sm text-card-foreground bg-muted/30 rounded-lg p-2 break-words">
-                          {selectedTransaction.document}
+                          {selectedTransaction.bitsoData ? selectedTransaction.client : selectedTransaction.document}
                         </span>
                       </div>
                       
-                      {selectedTransaction.client && (
+                      {((selectedTransaction.bitsoData && selectedTransaction.document) || (!selectedTransaction.bitsoData && selectedTransaction.client)) && (
                         <div className="flex flex-col gap-1">
                           <span className="text-sm text-muted-foreground font-medium">Cliente:</span>
                           <span className="text-sm text-card-foreground bg-muted/30 rounded-lg p-2 break-words">
-                            {selectedTransaction.client}
+                            {selectedTransaction.bitsoData ? selectedTransaction.document : selectedTransaction.client}
                           </span>
                         </div>
+                      )}
+
+                      {/* *** INFORMAÇÕES ESPECÍFICAS DA BITSO *** */}
+                      {selectedTransaction.bitsoData && (
+                        <>
+                          {/* Dados do Pagador */}
+                          {selectedTransaction.bitsoData.pagador && (
+                            <div className="flex flex-col gap-1">
+                              <span className="text-sm text-muted-foreground font-medium">
+                                Pagador {selectedTransaction.type === 'CRÉDITO' ? '(Quem enviou)' : '(Nossa conta)'}:
+                              </span>
+                              <div className="text-sm text-card-foreground bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 space-y-1">
+                                {selectedTransaction.bitsoData.pagador.nome && (
+                                  <div><strong>Nome:</strong> {selectedTransaction.bitsoData.pagador.nome}</div>
+                                )}
+                                {selectedTransaction.bitsoData.pagador.documento && (
+                                  <div><strong>Documento:</strong> {selectedTransaction.bitsoData.pagador.documento}</div>
+                                )}
+                                {selectedTransaction.bitsoData.pagador.chave && (
+                                  <div>
+                                    <strong>Chave PIX:</strong> {selectedTransaction.bitsoData.pagador.chave}
+                                    {selectedTransaction.bitsoData.pagador.tipo_chave && (
+                                      <span className="ml-2 text-xs bg-blue-500/20 text-blue-700 dark:text-blue-300 px-2 py-1 rounded">
+                                        {selectedTransaction.bitsoData.pagador.tipo_chave}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                {selectedTransaction.bitsoData.pagador.banco && (
+                                  <div><strong>Banco:</strong> {selectedTransaction.bitsoData.pagador.banco}</div>
+                                )}
+                                {selectedTransaction.bitsoData.pagador.agencia && selectedTransaction.bitsoData.pagador.conta && (
+                                  <div>
+                                    <strong>Conta:</strong> Ag: {selectedTransaction.bitsoData.pagador.agencia} | Conta: {selectedTransaction.bitsoData.pagador.conta}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Dados do Destinatário */}
+                          {selectedTransaction.bitsoData.destinatario && (
+                            <div className="flex flex-col gap-1">
+                              <span className="text-sm text-muted-foreground font-medium">
+                                Destinatário {selectedTransaction.type === 'DÉBITO' ? '(Quem recebeu)' : '(Nossa conta)'}:
+                              </span>
+                              <div className="text-sm text-card-foreground bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 space-y-1">
+                                {selectedTransaction.bitsoData.destinatario.nome && (
+                                  <div><strong>Nome:</strong> {selectedTransaction.bitsoData.destinatario.nome}</div>
+                                )}
+                                {selectedTransaction.bitsoData.destinatario.documento && (
+                                  <div><strong>Documento:</strong> {selectedTransaction.bitsoData.destinatario.documento}</div>
+                                )}
+                                {selectedTransaction.bitsoData.destinatario.chave && (
+                                  <div>
+                                    <strong>Chave PIX:</strong> {selectedTransaction.bitsoData.destinatario.chave}
+                                    {selectedTransaction.bitsoData.destinatario.tipo_chave && (
+                                      <span className="ml-2 text-xs bg-orange-500/20 text-orange-700 dark:text-orange-300 px-2 py-1 rounded">
+                                        {selectedTransaction.bitsoData.destinatario.tipo_chave}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                {selectedTransaction.bitsoData.destinatario.banco && (
+                                  <div><strong>Banco:</strong> {selectedTransaction.bitsoData.destinatario.banco}</div>
+                                )}
+                                {selectedTransaction.bitsoData.destinatario.agencia && selectedTransaction.bitsoData.destinatario.conta && (
+                                  <div>
+                                    <strong>Conta:</strong> Ag: {selectedTransaction.bitsoData.destinatario.agencia} | Conta: {selectedTransaction.bitsoData.destinatario.conta}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Metadados da Transação */}
+                          {selectedTransaction.bitsoData.metadados && (
+                            <div className="flex flex-col gap-1">
+                              <span className="text-sm text-muted-foreground font-medium">Informações Técnicas:</span>
+                              <div className="text-sm text-card-foreground bg-muted/30 border border-border rounded-lg p-3 space-y-1">
+                                {selectedTransaction.bitsoData.metadados.end_to_end_id && (
+                                  <div>
+                                    <strong>End-to-End ID:</strong> 
+                                    <span className="ml-2 font-mono text-xs bg-muted/50 px-2 py-1 rounded">
+                                      {selectedTransaction.bitsoData.metadados.end_to_end_id}
+                                    </span>
+                                  </div>
+                                )}
+                                {selectedTransaction.bitsoData.metadados.protocolo && (
+                                  <div><strong>Protocolo:</strong> {selectedTransaction.bitsoData.metadados.protocolo}</div>
+                                )}
+                                {selectedTransaction.bitsoData.metadados.integration && (
+                                  <div><strong>Integração:</strong> {selectedTransaction.bitsoData.metadados.integration}</div>
+                                )}
+                                {selectedTransaction.bitsoData.metadados.origin_id && (
+                                  <div>
+                                    <strong>Origin ID:</strong> 
+                                    <span className="ml-2 font-mono text-xs bg-muted/50 px-2 py-1 rounded">
+                                      {selectedTransaction.bitsoData.metadados.origin_id}
+                                    </span>
+                                  </div>
+                                )}
+                                {selectedTransaction.bitsoData.metadados.referencia && (
+                                  <div><strong>Referência:</strong> {selectedTransaction.bitsoData.metadados.referencia}</div>
+                                )}
+                                {selectedTransaction.bitsoData.metadados.taxa !== undefined && selectedTransaction.bitsoData.metadados.taxa > 0 && (
+                                  <div><strong>Taxa:</strong> R$ {selectedTransaction.bitsoData.metadados.taxa.toFixed(2)}</div>
+                                )}
+                                {selectedTransaction.bitsoData.metadados.observacoes && (
+                                  <div><strong>Observações:</strong> {selectedTransaction.bitsoData.metadados.observacoes}</div>
+                                )}
+                                {selectedTransaction.bitsoData.metadados.motivo_falha && (
+                                  <div className="text-red-600 dark:text-red-400">
+                                    <strong>Motivo da Falha:</strong> {selectedTransaction.bitsoData.metadados.motivo_falha}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </CardContent>

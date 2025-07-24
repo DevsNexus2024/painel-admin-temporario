@@ -205,6 +205,63 @@ export class BankManager implements IBankManager {
     return provider.getStatement(filters, accountId);
   }
 
+  // ===============================
+  // OPERAÇÕES PIX UNIFICADAS
+  // ===============================
+
+  /**
+   * Envia PIX via provider ativo
+   */
+  public async sendPix(pixData: {
+    key: string;
+    amount: number;
+    description?: string;
+    keyType?: string;
+  }, accountId?: string) {
+    const provider = this.getActiveProvider();
+    if (!provider) {
+      throw new Error('Nenhum provider ativo definido');
+    }
+
+    if (!provider.sendPix) {
+      throw new Error(`Provider ${provider.provider} não suporta envio PIX`);
+    }
+    
+    return provider.sendPix(pixData, accountId);
+  }
+
+  /**
+   * Lista chaves PIX no provider ativo
+   */
+  public async getPixKeys(accountId?: string) {
+    const provider = this.getActiveProvider();
+    if (!provider) {
+      throw new Error('Nenhum provider ativo definido');
+    }
+
+    if (!provider.getPixKeys) {
+      throw new Error(`Provider ${provider.provider} não suporta listagem de chaves PIX`);
+    }
+    
+    return provider.getPixKeys(accountId);
+  }
+
+  /**
+   * Gera QR Code PIX no provider ativo
+   */
+  public async generatePixQR(amount: number, description?: string, accountId?: string) {
+    const provider = this.getActiveProvider();
+    if (!provider) {
+      throw new Error('Nenhum provider ativo definido');
+    }
+
+    if (!provider.generatePixQR) {
+      throw new Error(`Provider ${provider.provider} não suporta geração de QR Code PIX`);
+    }
+    
+    return provider.generatePixQR(amount, description, accountId);
+  }
+
   /**
    * Consulta saldo em todos os providers
    */
@@ -321,6 +378,12 @@ export class BankManager implements IBankManager {
   public async autoRegisterDefaultProviders(): Promise<void> {
     console.log('[BANK-MANAGER] Auto-registrando providers padrão...');
     
+    // 🚨 PRESERVAR PROVIDER ATIVO ANTES DE REGISTRAR
+    const currentActiveProvider = this.activeProvider;
+    if (currentActiveProvider) {
+      console.log(`[BANK-MANAGER] 🔒 Preservando provider ativo: ${currentActiveProvider}`);
+    }
+    
     // Registrar BMP e Bitso por padrão
     const defaultProviders = [BankProvider.BMP, BankProvider.BITSO];
     
@@ -333,11 +396,18 @@ export class BankManager implements IBankManager {
       }
     }
 
-    // Definir BMP como ativo por padrão
-    if (this.providers.has(BankProvider.BMP)) {
-      this.setActiveProvider(BankProvider.BMP);
-    } else if (this.providers.has(BankProvider.BITSO)) {
-      this.setActiveProvider(BankProvider.BITSO);
+    // 🚨 RESTAURAR PROVIDER ATIVO OU DEFINIR PADRÃO
+    if (currentActiveProvider && this.providers.has(currentActiveProvider)) {
+      console.log(`[BANK-MANAGER] 🔄 Restaurando provider ativo: ${currentActiveProvider}`);
+      this.setActiveProvider(currentActiveProvider);
+    } else {
+      // Definir BMP como ativo por padrão apenas se não havia provider ativo
+      console.log('[BANK-MANAGER] Definindo provider padrão (nenhum ativo anterior)');
+      if (this.providers.has(BankProvider.BMP)) {
+        this.setActiveProvider(BankProvider.BMP);
+      } else if (this.providers.has(BankProvider.BITSO)) {
+        this.setActiveProvider(BankProvider.BITSO);
+      }
     }
   }
 

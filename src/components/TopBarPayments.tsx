@@ -235,28 +235,32 @@ export default function TopBarPayments() {
         </div>
       </div>
 
-      {/* Cards de métricas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-emerald-500/20">
-              <DollarSign className="h-5 w-5 text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-muted-foreground text-sm">Saldo disponível</p>
-              <p className={`font-bold text-xl font-mono ${error ? 'text-destructive' : 'text-foreground'}`}>
-                {getSaldoDisplay()}
-              </p>
-              {saldoData && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {currentAccount.provider.toUpperCase()} • {saldoData.moeda || 'BRL'} • {new Date().toLocaleTimeString()}
+      {/* Cards de métricas - Layout padronizado com ações PIX */}
+      <div className="w-full max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-emerald-500/20">
+                <DollarSign className="h-5 w-5 text-emerald-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-muted-foreground text-sm">Saldo disponível</p>
+                <p className={`font-bold text-xl font-mono mt-1 ${error ? 'text-destructive' : 'text-foreground'}`}>
+                  {getSaldoDisplay()}
                 </p>
-              )}
+                {saldoData && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {currentAccount.provider.toUpperCase()} • {saldoData.moeda || 'BRL'} • {new Date().toLocaleTimeString()}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-                 <AccountSelector onAccountChange={handleAccountChange} />
+          <div className="w-full">
+            <AccountSelector onAccountChange={handleAccountChange} />
+          </div>
+        </div>
       </div>
     </div>
   );

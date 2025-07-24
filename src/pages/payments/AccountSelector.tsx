@@ -82,7 +82,7 @@ export function AccountSelector({ onAccountChange }: AccountSelectorProps) {
                 </div>
               </div>
               
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             </div>
           </div>
         </Button>
