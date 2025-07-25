@@ -103,17 +103,17 @@ const BANK_REGISTRY: Record<BankProvider, BankSettings> = {
     environments: {
       development: {
         name: 'development',
-        apiUrl: 'http://localhost:3000',
+        apiUrl: 'http://localhost:3000/api/bitso',
         timeout: 30000
       },
       staging: {
         name: 'staging',
-        apiUrl: 'https://api-bank.gruponexus.com.br',
+        apiUrl: 'https://api-bank.gruponexus.com.br/api/bitso',
         timeout: 20000
       },
       production: {
         name: 'production',
-        apiUrl: 'https://api-bank.gruponexus.com.br',
+        apiUrl: 'https://api-bank.gruponexus.com.br/api/bitso',
         timeout: 15000
       }
     },

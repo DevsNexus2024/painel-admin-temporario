@@ -183,7 +183,9 @@ export class UnifiedBankingService {
     const result = await bankManager.getBalance();
     
     if (!result.success) {
-      throw new Error(result.error?.message || 'Erro ao consultar saldo');
+      const errorMsg = result.error?.message || 'Falha na comunicação com o servidor bancário';
+      const providerName = bankManager.getActiveProviderType() || 'Provedor desconhecido';
+      throw new Error(`[${providerName.toUpperCase()}] ${errorMsg}`);
     }
 
     console.log(`[UNIFIED-BANKING] Saldo obtido: ${result.data?.provider} - R$ ${result.data?.available}`);
@@ -199,7 +201,9 @@ export class UnifiedBankingService {
     const result = await bankManager.getStatement(filters);
     
     if (!result.success) {
-      throw new Error(result.error?.message || 'Erro ao consultar extrato');
+      const errorMsg = result.error?.message || 'Falha ao carregar dados do extrato bancário';
+      const providerName = bankManager.getActiveProviderType() || 'Provedor desconhecido';
+      throw new Error(`[${providerName.toUpperCase()}] Extrato: ${errorMsg}`);
     }
 
     console.log(`[UNIFIED-BANKING] Extrato obtido: ${result.data?.provider} - ${result.data?.transactions.length} transações`);
@@ -274,12 +278,14 @@ export class UnifiedBankingService {
     
     const activeProvider = bankManager.getActiveProvider();
     if (!activeProvider) {
-      throw new Error('Nenhuma conta ativa para envio PIX');
+      const availableAccounts = this.getAvailableAccounts();
+      const accountList = availableAccounts.map(acc => acc.displayName).join(', ');
+      throw new Error(`Nenhuma conta ativa selecionada para envio PIX. Contas disponíveis: ${accountList || 'Nenhuma'}`);
     }
 
     // Verificar se o provider suporta PIX
     if (!activeProvider.sendPix) {
-      throw new Error(`Provider ${activeProvider.provider} não suporta envio PIX`);
+      throw new Error(`[${activeProvider.provider.toUpperCase()}] Conta não suporta envio PIX. Verifique se está usando uma conta bancária com funcionalidades PIX habilitadas.`);
     }
 
     console.log(`[UNIFIED-BANKING] 🚀 Enviando PIX via provider ativo: ${activeProvider.provider}`);
@@ -287,7 +293,9 @@ export class UnifiedBankingService {
     const result = await activeProvider.sendPix(pixData);
     
     if (!result.success) {
-      throw new Error(result.error?.message || 'Erro ao enviar PIX');
+      const errorMsg = result.error?.message || 'Falha no processamento da transferência PIX';
+      const providerName = activeProvider.provider || 'Provedor desconhecido';
+      throw new Error(`[${providerName.toUpperCase()}] PIX: ${errorMsg} (Chave: ${pixData.key}, Valor: R$ ${pixData.amount.toFixed(2)})`);
     }
 
     console.log(`[UNIFIED-BANKING] PIX enviado: ${result.data?.provider} - R$ ${result.data?.amount}`);

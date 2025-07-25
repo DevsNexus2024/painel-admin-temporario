@@ -69,17 +69,17 @@ export class BmpProvider extends BaseBankProvider {
       console.log('💰 [BMP] getBalance() chamado - consultando saldo BMP', { accountId });
       this.logger.info('Consultando saldo BMP', { accountId });
       
-      const response = await this.makeRequest('GET', '/internal/account/balance');
+      const response = await this.makeRequest('GET', '/internal/account/saldo');
       
-      // Padronizar resposta do BMP
+      // Padronizar resposta do BMP (formato real: { saldoDisponivel: 161512, saldoBloqueado: 0, saldoAgendado: 0, atualizadoEm: "..." })
       const standardBalance: StandardBalance = {
         provider: BankProvider.BMP,
         accountId: accountId || 'bmp-main',
         currency: 'BRL',
-        available: response.saldo_disponivel || 0,
-        blocked: response.saldo_bloqueado || 0,
-        total: (response.saldo_disponivel || 0) + (response.saldo_bloqueado || 0),
-        lastUpdate: new Date().toISOString(),
+        available: response.saldoDisponivel || 0,
+        blocked: response.saldoBloqueado || 0,
+        total: (response.saldoDisponivel || 0) + (response.saldoBloqueado || 0),
+        lastUpdate: response.atualizadoEm || new Date().toISOString(),
         raw: response
       };
 
@@ -265,6 +265,130 @@ export class BmpProvider extends BaseBankProvider {
       
       // Re-lançar outros erros
       throw error;
+    }
+  }
+
+  /**
+   * ✅ REGRA 1: Envia PIX via BMP específico
+   */
+  async sendPix(pixData: {
+    key: string;
+    amount: number;
+    description?: string;
+    keyType?: string;
+  }, accountId?: string): Promise<BankResponse<StandardTransaction>> {
+    try {
+      console.log('🚀 [BMP] sendPix() chamado - enviando PIX via BMP', { 
+        key: pixData.key, 
+        amount: pixData.amount,
+        accountId 
+      });
+      
+      this.logger.info('Enviando PIX via BMP', { 
+        amount: pixData.amount,
+        keyType: pixData.keyType,
+        accountId 
+      });
+
+      // Preparar dados para API BMP
+      const requestData = {
+        chave: pixData.key,
+        valor: pixData.amount,
+        descricao: pixData.description || 'Transferência PIX'
+      };
+
+      const response = await this.makeRequest('POST', '/internal/pix/enviar', requestData);
+
+      // Padronizar resposta do BMP para StandardTransaction
+      const standardTransaction: StandardTransaction = {
+        provider: BankProvider.BMP,
+        id: response.codigoTransacao || `bmp-pix-${Date.now()}`,
+        externalId: response.codigoTransacao,
+        accountId: accountId || 'bmp-main',
+        amount: pixData.amount,
+        currency: 'BRL',
+        type: TransactionType.DEBIT,
+        status: response.sucesso ? TransactionStatus.COMPLETED : TransactionStatus.FAILED,
+        description: `PIX para ${pixData.key}: ${pixData.description || 'Transferência PIX'}`,
+        date: new Date().toISOString(),
+        counterparty: {
+          account: pixData.key,
+          keyType: pixData.keyType
+        },
+        metadata: {
+          pixKey: pixData.key,
+          pixKeyType: pixData.keyType,
+          status: response.status
+        },
+        raw: response
+      };
+
+      this.logger.info('PIX BMP enviado com sucesso', {
+        transactionId: standardTransaction.id,
+        amount: pixData.amount,
+        status: standardTransaction.status
+      });
+
+      return this.createSuccessResponse(standardTransaction);
+      
+    } catch (error) {
+      this.logger.error('Erro ao enviar PIX via BMP', error);
+      return this.handleError(error);
+    }
+  }
+
+  /**
+   * ✅ REGRA 1: Lista chaves PIX específicas do BMP
+   */
+  async getPixKeys(accountId?: string): Promise<BankResponse<any[]>> {
+    try {
+      console.log('🔑 [BMP] getPixKeys() chamado - listando chaves PIX via BMP', { accountId });
+      this.logger.info('Listando chaves PIX via BMP', { accountId });
+
+      const response = await this.makeRequest('GET', '/internal/pix/chaves/listar');
+
+      // BMP retorna as chaves no formato já adequado
+      const chaves = response.chaves || [];
+
+      this.logger.info('Chaves PIX BMP obtidas com sucesso', {
+        totalChaves: chaves.length
+      });
+
+      return this.createSuccessResponse(chaves);
+      
+    } catch (error) {
+      this.logger.error('Erro ao listar chaves PIX via BMP', error);
+      return this.handleError(error);
+    }
+  }
+
+  /**
+   * ✅ REGRA 1: Gera QR Code PIX específico do BMP  
+   */
+  async generatePixQR(
+    amount: number, 
+    description?: string, 
+    accountId?: string
+  ): Promise<BankResponse<{ qrCode: string; txId: string }>> {
+    try {
+      console.log('📱 [BMP] generatePixQR() chamado - gerando QR Code via BMP', { 
+        amount, 
+        description,
+        accountId 
+      });
+      
+      this.logger.info('Gerando QR Code PIX via BMP', { amount, description, accountId });
+
+      // BMP pode ter endpoint específico para QR Code
+      // Se não tiver, retornar erro informativo
+      return this.createErrorResponse(
+        'NOT_IMPLEMENTED', 
+        'Geração de QR Code PIX não implementada para BMP. Use endpoint específico se disponível.'
+      );
+      
+    } catch (error) {
+      this.logger.error('Erro ao gerar QR Code PIX via BMP', error);
+      return this.handleError(error);
     }
   }
 

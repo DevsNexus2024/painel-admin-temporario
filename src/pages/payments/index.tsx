@@ -64,6 +64,24 @@ export default function PaymentsPage() {
 
   const isBitsoActive = activeAccount?.provider === 'bitso';
 
+  // 🎨 Função para obter badge do provedor
+  const getProviderBadge = () => {
+    if (bankFeatures.provider === 'bitso') {
+      return (
+        <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs font-medium">
+          Bitso
+        </Badge>
+      );
+    } else if (bankFeatures.provider === 'bmp') {
+      return (
+        <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-medium">
+          BMP
+        </Badge>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <TopBarPayments />
@@ -106,6 +124,7 @@ export default function PaymentsPage() {
           {/* Extrato - Largura Total */}
           <TabsContent value="extract" className="mt-0">
             <div className="w-full">
+              {/* ✅ REMOVIDO: Card extra como solicitado pelo usuário */}
               <ExtractTable />
             </div>
           </TabsContent>
@@ -123,6 +142,8 @@ export default function PaymentsPage() {
                         <SendHorizontal className="h-5 w-5 text-blue-600" />
                       </div>
                       Enviar PIX
+                      {/* ✅ Badge do provedor atualizado dinamicamente */}
+                      {getProviderBadge()}
                     </CardTitle>
                     <CardDescription>
                       Transferência por chave PIX
@@ -142,6 +163,8 @@ export default function PaymentsPage() {
                         <QrCode className="h-5 w-5 text-green-600" />
                       </div>
                       Pagar QR Code
+                      {/* ✅ Badge do provedor atualizado dinamicamente */}
+                      {getProviderBadge()}
                       {!bankFeatures.hasQrCodePayment && (
                         <Badge variant="secondary" className="bg-red-100 text-red-700 border-red-200">
                           Indisponível
@@ -185,6 +208,8 @@ export default function PaymentsPage() {
                           <Plus className="h-5 w-5 text-purple-600" />
                         </div>
                         Criar Chave PIX
+                        {/* ✅ Badge do provedor atualizado dinamicamente */}
+                        {getProviderBadge()}
                       </CardTitle>
                       <CardDescription>
                         Registrar nova chave PIX
@@ -204,6 +229,8 @@ export default function PaymentsPage() {
                           <Key className="h-5 w-5 text-amber-600" />
                         </div>
                         Minhas Chaves PIX
+                        {/* ✅ Badge do provedor atualizado dinamicamente */}
+                        {getProviderBadge()}
                       </CardTitle>
                       <CardDescription>
                         Chaves registradas na conta
@@ -225,6 +252,10 @@ export default function PaymentsPage() {
                         <h3 className="text-lg font-semibold text-amber-800">
                           Gerenciamento de Chaves PIX não disponível
                         </h3>
+                        <div className="flex items-center justify-center gap-2 mb-4">
+                          <span className="text-amber-700">para conta</span>
+                          {getProviderBadge()}
+                        </div>
                         <p className="text-amber-700 max-w-md">
                           A conta <strong>{bankFeatures.displayName}</strong> não suporta criação e gerenciamento de chaves PIX através desta interface.
                         </p>

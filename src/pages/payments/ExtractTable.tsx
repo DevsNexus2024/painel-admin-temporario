@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useExtratoSeguro } from "@/hooks/useExtratoSeguro";
 import { validarIntervaloData, formatarDataParaAPI, MovimentoExtrato, ExtratoResponse } from "@/services/extrato";
+import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
+// ✅ ADICIONADO: Importar hook para identificar provedor
+import { useBankFeatures } from "@/hooks/useBankFeatures";
 
 // Tipo para os filtros
 interface FiltrosAtivos {
@@ -39,6 +42,13 @@ export default function ExtractTable() {
   const [searchValue, setSearchValue] = useState("");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("none");
   const [sortBy, setSortBy] = useState<"value" | "date" | "none">("none");
+
+  // Estados para o modal de crédito OTC
+  const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
+  const [selectedExtractRecord, setSelectedExtractRecord] = useState<MovimentoExtrato | null>(null);
+
+  // ✅ ADICIONADO: Hook para verificar o provedor ativo
+  const bankFeatures = useBankFeatures();
 
   // 🚨 USAR HOOK ULTRA-SEGURO QUE NÃO PERMITE MISTURA
   const { 
@@ -68,6 +78,24 @@ export default function ExtractTable() {
     console.log('🧹 [ExtractTable] Mudança detectada - resetando página para nova consulta');
     setCurrentPage(1);
   }, [filtrosAtivos]);
+
+  // ✅ ADICIONADO: Função para obter badge do provedor
+  const getProviderBadge = () => {
+    if (bankFeatures.provider === 'bitso') {
+      return (
+        <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs font-medium">
+          Bitso
+        </Badge>
+      );
+    } else if (bankFeatures.provider === 'bmp') {
+      return (
+        <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-medium">
+          BMP
+        </Badge>
+      );
+    }
+    return null;
+  };
 
   // Função para filtrar e ordenar transações
   const filteredAndSortedTransactions = useMemo(() => {
@@ -191,6 +219,19 @@ export default function ExtractTable() {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);
     }
+  };
+
+  // Função para abrir modal de crédito OTC
+  const handleCreditToOTC = (transaction: MovimentoExtrato, event: React.MouseEvent) => {
+    event.stopPropagation(); // Evitar que abra o modal de detalhes
+    setSelectedExtractRecord(transaction);
+    setCreditOTCModalOpen(true);
+  };
+
+  // Função para fechar modal de crédito OTC
+  const handleCloseCreditOTCModal = () => {
+    setCreditOTCModalOpen(false);
+    setSelectedExtractRecord(null);
   };
 
   const handleRefresh = () => {
@@ -456,8 +497,10 @@ export default function ExtractTable() {
                 <FileText className="h-5 w-5 text-white" />
               </div>
               <div>
-                <CardTitle className="text-xl font-bold text-card-foreground">
+                <CardTitle className="text-xl font-bold text-card-foreground flex items-center gap-2">
                   Extrato de Transações
+                  {/* ✅ ADICIONADO: Badge do provedor no título da tabela */}
+                  {getProviderBadge()}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">
                   {displayTransactions.length} registros filtrados • {displayTransactions.filter(t => t.type === 'DÉBITO').length} débitos • {displayTransactions.filter(t => t.type === 'CRÉDITO').length} créditos
@@ -505,6 +548,7 @@ export default function ExtractTable() {
                         <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Documento</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Status</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Código</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[120px] text-center">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -617,6 +661,22 @@ export default function ExtractTable() {
                                 </Button>
                               </div>
                             </TableCell>
+                            <TableCell className="py-3">
+                              <div className="flex items-center justify-center gap-1">
+                                {transaction.type === 'CRÉDITO' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => handleCreditToOTC(transaction, e)}
+                                    className="h-7 px-2 text-xs bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
+                                    title="Creditar para cliente OTC"
+                                  >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    OTC
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
                           </TableRow>
                         );
                       })}
@@ -708,14 +768,28 @@ export default function ExtractTable() {
                               </div>
                             )}
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => handleCopyCode(transaction.code, e)}
-                            className="h-8 w-8 p-0 rounded-lg hover:bg-muted flex-shrink-0"
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {transaction.type === 'CRÉDITO' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => handleCreditToOTC(transaction, e)}
+                                className="h-8 px-2 text-xs bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                                title="Creditar para cliente OTC"
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                OTC
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => handleCopyCode(transaction.code, e)}
+                              className="h-8 w-8 p-0 rounded-lg hover:bg-muted flex-shrink-0"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </div>
                         
                         <div className="flex items-center justify-between text-xs">
@@ -1099,6 +1173,13 @@ export default function ExtractTable() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Crédito OTC */}
+      <CreditExtractToOTCModal
+        isOpen={creditOTCModalOpen}
+        onClose={handleCloseCreditOTCModal}
+        extractRecord={selectedExtractRecord}
+      />
     </div>
   );
 }

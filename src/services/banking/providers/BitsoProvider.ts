@@ -70,10 +70,17 @@ export class BitsoProvider extends BaseBankProvider {
       console.log('💰 [BITSO] getBalance() chamado - consultando saldo Bitso', { accountId });
       this.logger.info('Consultando saldo Bitso', { accountId });
       
-      const response = await this.makeRequest('GET', '/api/bitso/balance/consultar');
+      const response = await this.makeRequest('GET', '/balance/active');
+      
+      // Processar resposta do Bitso (formato: { success: true, data: { balances: [...] } })
+      const balances = response.data?.balances || response.balances;
+      
+      if (!balances || !Array.isArray(balances)) {
+        return this.createErrorResponse('INVALID_RESPONSE', 'Resposta inválida da API Bitso');
+      }
       
       // Encontrar saldo BRL
-      const brlBalance = response.payload?.balances?.find((b: any) => b.currency === 'brl');
+      const brlBalance = balances.find((b: any) => b.currency?.toLowerCase() === 'brl');
       
       if (!brlBalance) {
         return this.createErrorResponse('NO_BRL_BALANCE', 'Saldo BRL não encontrado no Bitso');

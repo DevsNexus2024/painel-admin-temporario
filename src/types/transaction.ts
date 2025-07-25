@@ -41,5 +41,6 @@ export interface TransactionsResponse {
     response: {
         success: boolean;
         transactions: Transaction[];
+        totalTransactions?: number; // Campo adicionado pelo backend
     };
 } 

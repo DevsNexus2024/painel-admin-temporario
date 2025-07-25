@@ -3,62 +3,39 @@ import { RefreshCcw, SendHorizontal, TrendingUp, Clock, DollarSign, Loader2 } fr
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { AccountSelector } from "@/pages/payments/AccountSelector";
-import { apiRouter, type Account } from "@/pages/payments/apiRouter";
+// ✅ CORRIGIDO: Usar apenas sistema unificado
+import { unifiedBankingService, getAvailableAccounts, switchAccount } from "@/services/banking";
+import type { AccountConfig } from "@/services/banking/UnifiedBankingService";
 import { useCacheManager } from "@/hooks/useCacheManager";
-import { unifiedBankingService } from "@/services/banking";
+import { useSaldo } from "@/hooks/useSaldo";
 
 export default function TopBarPayments() {
-  const [saldoData, setSaldoData] = useState<any>(null);
-  const [isLoadingSaldo, setIsLoadingSaldo] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [currentAccount, setCurrentAccount] = useState<Account>(apiRouter.getCurrentAccount());
+  // ✅ CORRIGIDO: Usar sistema unificado com hook useSaldo otimizado
+  const { data: saldoData, isLoading: isLoadingSaldo, error: saldoError } = useSaldo();
+  const [currentAccount, setCurrentAccount] = useState<AccountConfig | null>(null);
   
   // Hook para gerenciar cache
   const { invalidateExtrato, queryClient } = useCacheManager();
 
-  // Carregar saldo usando apiRouter
-  const loadSaldo = async () => {
-    if (!apiRouter.hasFeature('saldo')) {
-      setError('Saldo não disponível para esta conta');
-      return;
-    }
+  // Converter erro para string para compatibilidade
+  const error = saldoError?.message || null;
 
-    setIsLoadingSaldo(true);
-    setError(null);
-    
-    try {
-      const data = await apiRouter.getSaldo();
-      setSaldoData(data);
-      console.log("✅ Saldo carregado:", data);
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Erro ao carregar saldo';
-      setError(errorMsg);
-      console.error("❌ Erro ao carregar saldo:", err);
-    } finally {
-      setIsLoadingSaldo(false);
-    }
-  };
-
-  // Atualizar saldo
+  // ✅ CORRIGIDO: Usar invalidação de cache ao invés de loadSaldo
   const handleRefresh = async () => {
+    if (!currentAccount) return;
+    
     console.log("Atualizando saldo da conta:", currentAccount.displayName);
     
-    await loadSaldo();
+    // Invalidar cache do saldo para forçar nova consulta
+    queryClient.invalidateQueries({ queryKey: ['saldo-unified'] });
     
-    if (!error) {
-      toast.success("Saldo atualizado!", {
-        description: `${currentAccount.displayName}`,
-        duration: 3000
-      });
-    } else {
-      toast.error("Erro ao atualizar saldo", {
-        description: "Verifique sua conexão e tente novamente",
-        duration: 4000
-      });
-    }
+    toast.success("Saldo atualizado!", {
+      description: `${currentAccount.displayName}`,
+      duration: 3000
+    });
   };
 
-  const handleAccountChange = (account: Account) => {
+  const handleAccountChange = (account: AccountConfig) => {
     console.log("💳 [TopBarPayments] ===== MUDANÇA DE CONTA =====");
     console.log("💳 [TopBarPayments] Nova conta:", account.displayName);
     console.log("💳 [TopBarPayments] Provider:", account.provider);
@@ -77,13 +54,7 @@ export default function TopBarPayments() {
     
     console.log("✅ [TopBarPayments] Conta trocada com sucesso na NOVA ARQUITETURA");
     
-    // ⚠️ MANTER apiRouter APENAS para compatibilidade com sistema legado (será removido)
-    const legacySuccess = apiRouter.switchAccount(account.id);
-    if (legacySuccess) {
-      console.log("✅ [TopBarPayments] Sistema legado também atualizado (compatibilidade)");
-    } else {
-      console.warn("⚠️ [TopBarPayments] Sistema legado falhou, mas nova arquitetura está funcionando");
-    }
+    // ✅ REMOVIDO: Sistema legado não é mais necessário
     
     setCurrentAccount(account);
     
@@ -108,32 +79,40 @@ export default function TopBarPayments() {
       id: activeAccount?.id
     });
     
-    // Recarregar saldo da nova conta
-    loadSaldo();
+    // ✅ CORRIGIDO: Invalidar cache para recarregar saldo da nova conta
+    queryClient.invalidateQueries({ queryKey: ['saldo-unified'] });
   };
 
-  // Carregar saldo inicial
-  useEffect(() => {
-    loadSaldo();
-  }, []);
+  // ✅ REMOVIDO: Hook useSaldo já carrega automaticamente
 
-  // Recuperar conta salva no localStorage
+  // ✅ CORRIGIDO: Usar sistema unificado para gerenciar conta ativa
   useEffect(() => {
-    const savedAccountId = localStorage.getItem('selected_account_id');
-    if (savedAccountId && apiRouter.switchAccount(savedAccountId)) {
-      setCurrentAccount(apiRouter.getCurrentAccount());
-    }
+    // Inicializar sistema bancário unificado
+    const initializeAccount = async () => {
+      try {
+        await unifiedBankingService.initialize();
+        
+        // Verificar se há conta salva no localStorage
+        const savedAccountId = localStorage.getItem('selected_account_id');
+        if (savedAccountId && switchAccount(savedAccountId)) {
+          console.log(`✅ Conta restaurada: ${savedAccountId}`);
+        }
+        
+        // Obter conta ativa atual
+        const activeAccount = unifiedBankingService.getActiveAccount();
+        setCurrentAccount(activeAccount);
+        
+      } catch (error) {
+        console.error('❌ Erro ao inicializar sistema bancário:', error);
+      }
+    };
+
+    initializeAccount();
   }, []);
 
   const getSaldoDisplay = () => {
-    console.log('🔍 [getSaldoDisplay] Debugging saldo:', {
-      isLoadingSaldo,
-      error,
-      saldoData,
-      provider: currentAccount.provider,
-      saldoDataKeys: saldoData ? Object.keys(saldoData) : null
-    });
-
+    // ✅ Remover logs de debug que causavam loop infinito
+    
     if (isLoadingSaldo) {
       return (
         <div className="flex items-center gap-2">
@@ -144,60 +123,48 @@ export default function TopBarPayments() {
     }
     
     if (error) {
-      console.log('🔍 [getSaldoDisplay] Erro:', error);
       return "Erro ao carregar";
     }
     
     if (!saldoData) {
-      console.log('🔍 [getSaldoDisplay] Sem saldoData, retornando R$ 0,00');
       return "R$ 0,00";
     }
 
-    console.log('🔍 [getSaldoDisplay] Processando saldoData:', {
-      saldoFormatado: saldoData.saldoFormatado,
-      saldo: saldoData.saldo,
-      saldoDisponivel: saldoData.saldoDisponivel,
-      saldoType: typeof saldoData.saldo,
-      provider: currentAccount.provider
-    });
+    // ✅ Processar StandardBalance do sistema unificado
+    
+    // StandardBalance tem: available, blocked, total, currency, provider
+    if (saldoData && typeof (saldoData as any).available === 'number') {
+      const formatted = new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: (saldoData as any).currency || 'BRL'
+      }).format((saldoData as any).available);
+      
+      return formatted;
+    }
 
-    // 🔧 CORREÇÃO: Para BMP, usar saldoDisponivel que é onde vem o valor real
-    if (currentAccount.provider === 'bmp' && typeof saldoData.saldoDisponivel === 'number') {
+    // Fallback para compatibilidade com formato antigo (enquanto migração não estiver completa)
+    if (saldoData && typeof (saldoData as any).saldoDisponivel === 'number') {
+      const formatted = new Intl.NumberFormat('pt-BR', {
+        style: 'currency', 
+        currency: 'BRL'
+      }).format((saldoData as any).saldoDisponivel);
+      
+      return formatted;
+    }
+
+    if (saldoData && (saldoData as any).saldoFormatado) {
+      return (saldoData as any).saldoFormatado;
+    }
+
+    if (saldoData && typeof (saldoData as any).saldo === 'number') {
       const formatted = new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: 'BRL'
-      }).format(saldoData.saldoDisponivel);
-      
-      console.log('🔍 [getSaldoDisplay] Usando saldoDisponivel BMP:', {
-        valor: saldoData.saldoDisponivel,
-        formatted
-      });
+      }).format((saldoData as any).saldo);
       
       return formatted;
     }
 
-    // Para BMP: usar saldoFormatado se existir (fallback)
-    if (saldoData.saldoFormatado) {
-      console.log('🔍 [getSaldoDisplay] Usando saldoFormatado:', saldoData.saldoFormatado);
-      return saldoData.saldoFormatado;
-    }
-
-    // Para Bitso ou outros: usar o saldo formatado retornado pelo apiRouter
-    if (typeof saldoData.saldo === 'number') {
-      const formatted = currentAccount.provider === 'bmp' 
-        ? `R$ ${saldoData.saldo.toFixed(2)}`
-        : saldoData.saldoFormatado || `$${saldoData.saldo.toFixed(2)}`;
-      
-      console.log('🔍 [getSaldoDisplay] Formatando número:', {
-        saldo: saldoData.saldo,
-        formatted,
-        provider: currentAccount.provider
-      });
-      
-      return formatted;
-    }
-
-    console.log('🔍 [getSaldoDisplay] Nenhuma condição atendida, retornando R$ 0,00');
     return "R$ 0,00";
   };
 
@@ -248,9 +215,9 @@ export default function TopBarPayments() {
                 <p className={`font-bold text-xl font-mono mt-1 ${error ? 'text-destructive' : 'text-foreground'}`}>
                   {getSaldoDisplay()}
                 </p>
-                {saldoData && (
+                {saldoData && currentAccount && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    {currentAccount.provider.toUpperCase()} • {saldoData.moeda || 'BRL'} • {new Date().toLocaleTimeString()}
+                    {currentAccount.provider.toUpperCase()} • {(saldoData as any).moeda || 'BRL'} • {new Date().toLocaleTimeString()}
                   </p>
                 )}
               </div>

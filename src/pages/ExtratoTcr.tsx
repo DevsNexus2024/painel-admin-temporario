@@ -32,10 +32,18 @@ export default function ExtratoTcr() {
     const [isLoadingSaldo, setIsLoadingSaldo] = useState(false);
 
     const transactions = data?.response?.transactions || [];
+    // ✅ Usar contador do backend que conta todas as transações do período
+    const backendTotalCount = data?.response?.totalTransactions;
+    const displayedCount = transactions.length;
 
     // Log para debug - quantos registros foram retornados
-    console.log(`[ExtratoTcr] Total de transações retornadas: ${transactions.length}`);
+    console.log(`[ExtratoTcr] Transações exibidas: ${displayedCount}`);
+    console.log(`[ExtratoTcr] Total do backend: ${backendTotalCount}`);
     console.log(`[ExtratoTcr] Data da API completa:`, data);
+
+    // Usar o contador do backend se disponível, senão usar o length das transações exibidas
+    const transactionCount = backendTotalCount || displayedCount;
+    console.log(`[ExtratoTcr] Contador final usado: ${transactionCount}`);
 
     // Calcular saldos e estatísticas
     const calculateStats = () => {
@@ -129,8 +137,8 @@ export default function ExtratoTcr() {
 
     // Componente de Skeleton para os cards de resumo financeiro
     const SummarySkeleton = () => (
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
+            {[1, 2, 3, 4, 5].map((i) => (
                 <Card key={i} className="overflow-hidden">
                     <CardContent className="p-0">
                         <div className="p-4 space-y-3">
@@ -243,32 +251,38 @@ export default function ExtratoTcr() {
                                 </>
                             ) : (
                                 <>
-                                    <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
-                                        <FinancialSummaryCard
-                                            title="Saldo Total"
-                                            value={isLoadingSaldo ? 'Carregando...' : (saldoApi !== null ? saldoApi : 'Erro ao buscar')}
-                                            description="Saldo atual da conta (API)"
-                                            icon={<Wallet className="h-5 w-5" />}
-                                        />
-                                        <FinancialSummaryCard
-                                            title="Entradas"
-                                            value={formatCurrency(stats.totalEntries)}
-                                            description="Total de créditos no período"
-                                            icon={<ArrowDownCircle className="h-5 w-5 text-green-500" />}
-                                        />
-                                        <FinancialSummaryCard
-                                            title="Saídas"
-                                            value={formatCurrency(stats.totalExits)}
-                                            description="Total de débitos no período"
-                                            icon={<ArrowUpCircle className="h-5 w-5 text-red-500" />}
-                                        />
-                                        <FinancialSummaryCard
-                                            title="Taxas"
-                                            value={formatCurrency(stats.totalFees)}
-                                            description="Total de taxas no período"
-                                            icon={<DollarSign className="h-5 w-5 text-yellow-500" />}
-                                        />
-                                    </div>
+                                                                    <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
+                                    <FinancialSummaryCard
+                                        title="Saldo Total"
+                                        value={isLoadingSaldo ? 'Carregando...' : (saldoApi !== null ? saldoApi : 'Erro ao buscar')}
+                                        description="Saldo atual da conta (API)"
+                                        icon={<Wallet className="h-5 w-5" />}
+                                    />
+                                    <FinancialSummaryCard
+                                        title="Transações"
+                                        value={transactionCount.toLocaleString('pt-BR')}
+                                        description={backendTotalCount ? `Total real do período selecionado${displayedCount !== backendTotalCount ? ` (exibindo ${displayedCount.toLocaleString('pt-BR')})` : ''}` : 'Total retornado no período selecionado'}
+                                        icon={<CreditCard className="h-5 w-5 text-blue-500" />}
+                                    />
+                                    <FinancialSummaryCard
+                                        title="Entradas"
+                                        value={formatCurrency(stats.totalEntries)}
+                                        description="Total de créditos no período"
+                                        icon={<ArrowDownCircle className="h-5 w-5 text-green-500" />}
+                                    />
+                                    <FinancialSummaryCard
+                                        title="Saídas"
+                                        value={formatCurrency(stats.totalExits)}
+                                        description="Total de débitos no período"
+                                        icon={<ArrowUpCircle className="h-5 w-5 text-red-500" />}
+                                    />
+                                    <FinancialSummaryCard
+                                        title="Taxas"
+                                        value={formatCurrency(stats.totalFees)}
+                                        description="Total de taxas no período"
+                                        icon={<DollarSign className="h-5 w-5 text-yellow-500" />}
+                                    />
+                                </div>
 
                                     {error ? (
                                         <Card>

@@ -48,7 +48,27 @@ export function useBankFeatures(): BankFeaturesState {
 
   const updateFeatures = () => {
     try {
-      const activeAccount = unifiedBankingService.getActiveAccount();
+      // ✅ CORRIGIDO: Verificar conta ativa via apiRouter também
+      let activeAccount = null;
+      
+      // Tentar pegar do unifiedBankingService primeiro
+      try {
+        activeAccount = unifiedBankingService.getActiveAccount();
+      } catch (error) {
+        // Se falhar, tentar via apiRouter (método alternativo)
+        try {
+          const apiRouter = (window as any).apiRouter;
+          if (apiRouter?.getCurrentAccount) {
+            const account = apiRouter.getCurrentAccount();
+            activeAccount = {
+              provider: account.provider,
+              displayName: account.displayName
+            };
+          }
+        } catch (apiError) {
+          console.log('🏦 [useBankFeatures] ApiRouter não disponível');
+        }
+      }
       
       if (!activeAccount) {
         setFeaturesState(prev => ({
@@ -122,10 +142,14 @@ export function useBankFeatures(): BankFeaturesState {
     // Atualizar features na inicialização
     updateFeatures();
 
-    // Verificar mudanças de conta periodicamente
-    const interval = setInterval(updateFeatures, 2000);
+    // ✅ REATIVADO: Polling para detectar mudanças de conta em tempo real
+    // Necessário para atualizar badges dos provedores quando usuário trocar de conta
+    const interval = setInterval(() => {
+      updateFeatures();
+    }, 1000); // Verificar a cada 1 segundo
 
     return () => clearInterval(interval);
+    
   }, []);
 
   return featuresState;

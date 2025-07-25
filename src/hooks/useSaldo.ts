@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { consultarSaldo, SaldoResponse } from '@/services/account';
+// ✅ CORRIGIDO: Usar sistema unificado ao invés do serviço antigo
+import { getBalance } from '@/services/banking';
+import type { StandardBalance } from '@/services/banking/types';
 
 export interface UseSaldoOptions {
   enabled?: boolean;
@@ -14,9 +16,9 @@ export const useSaldo = (options: UseSaldoOptions = {}) => {
     cacheTime = 5 * 60 * 1000 // 5 minutos
   } = options;
 
-  return useQuery<SaldoResponse, Error>({
-    queryKey: ['saldo'],
-    queryFn: consultarSaldo,
+  return useQuery<StandardBalance, Error>({
+    queryKey: ['saldo-unified'],
+    queryFn: getBalance, // ✅ Usar sistema unificado que detecta conta ativa automaticamente
     enabled,
     staleTime, // Dados são frescos por 2 minutos
     cacheTime, // Cache persiste por 5 minutos
