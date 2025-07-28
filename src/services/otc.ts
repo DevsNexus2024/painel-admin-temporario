@@ -138,6 +138,44 @@ export class OTCService {
   }
 
   /**
+   * Verifica se um registro do extrato já foi creditado
+   */
+  async checkExtractDuplicate(externalId: string, provider: string, code?: string): Promise<OTCApiResponse<{
+    isDuplicate: boolean;
+    operation?: {
+      id: number;
+      amount: number | null;
+      description: string;
+      created_at: string;
+      client: {
+        id: number;
+        name: string;
+        document: string;
+      };
+      admin: {
+        id: number;
+        name: string;
+        email: string;
+      };
+    } | null;
+  }>> {
+    const params = new URLSearchParams({
+      external_id: externalId,
+      provider: provider
+    });
+    
+    if (code) {
+      params.append('code', code);
+    }
+    
+    const response = await api.get<OTCApiResponse<any>>(
+      `${OTC_BASE_URL}/operations/check-duplicate?${params.toString()}`
+    );
+    
+    return response.data;
+  }
+
+  /**
    * Lista operações manuais
    */
   async getOperations(params: OTCOperationsParams = {}): Promise<OTCApiResponse<OTCOperation[]>> {

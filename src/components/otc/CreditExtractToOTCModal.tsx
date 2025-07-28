@@ -24,10 +24,12 @@ import { useOTCOperations } from '@/hooks/useOTCOperations';
 import { MovimentoExtrato } from '@/services/extrato';
 import { OTCClient } from '@/types/otc';
 import { cn } from '@/lib/utils';
+import { otcService } from '@/services/otc';
+import { useBankFeatures } from '@/hooks/useBankFeatures';
 
 interface CreditExtractToOTCModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (wasSuccessful?: boolean) => void;
   extractRecord?: MovimentoExtrato | null;
 }
 
@@ -41,6 +43,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
 }) => {
   const { clients, isLoading: loadingClients } = useOTCClients();
   const { createOperation, isCreating } = useOTCOperations();
+  const bankFeatures = useBankFeatures();
 
   // Estados do formulário
   const [selectedClient, setSelectedClient] = useState<OTCClient | null>(null);
@@ -49,10 +52,12 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
   const [clientSearchValue, setClientSearchValue] = useState('');
   const [showConfirmation, setShowConfirmation] = useState(false);
 
-  // Estados de validação
+  // Estados de validação e duplicação
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isDuplicateChecking, setIsDuplicateChecking] = useState(false);
+  const [duplicateInfo, setDuplicateInfo] = useState<any>(null);
 
-  // Resetar formulário quando modal abrir/fechar
+  // Resetar formulário e verificar duplicação quando modal abrir/fechar
   useEffect(() => {
     if (isOpen && extractRecord) {
       setSelectedClient(null);
@@ -60,20 +65,71 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
       setClientSearchValue('');
       setErrors({});
       setShowConfirmation(false);
+      setDuplicateInfo(null);
+      
+      // 🚨 VERIFICAR DUPLICAÇÃO AUTOMATICAMENTE
+      checkForDuplicate();
     } else if (!isOpen) {
       setSelectedClient(null);
       setCustomDescription('');
       setClientSearchValue('');
       setErrors({});
       setShowConfirmation(false);
+      setDuplicateInfo(null);
     }
   }, [isOpen, extractRecord]);
+
+  // 🚨 FUNÇÃO PARA VERIFICAR DUPLICAÇÃO
+  const checkForDuplicate = async () => {
+    if (!extractRecord) return;
+    
+    setIsDuplicateChecking(true);
+    
+    try {
+      // Determinar identificador único baseado no provedor
+      let externalId: string;
+      let provider: string;
+      let code: string;
+      
+      if (extractRecord.bitsoData) {
+        // Para Bitso, usar ID da transação
+        externalId = extractRecord.id;
+        provider = 'bitso';
+        code = extractRecord.code;
+      } else {
+        // Para BMP, usar ID da transação
+        externalId = extractRecord.id;
+        provider = 'bmp';
+        code = extractRecord.code;
+      }
+      
+      console.log('🔍 Verificando duplicação:', { externalId, provider, code });
+      
+      const result = await otcService.checkExtractDuplicate(externalId, provider, code);
+      
+      if (result.data.isDuplicate) {
+        setDuplicateInfo(result.data.operation);
+        console.log('🚫 Duplicação encontrada:', result.data.operation);
+      } else {
+        console.log('✅ Nenhuma duplicação encontrada');
+      }
+      
+    } catch (error) {
+      console.error('❌ Erro ao verificar duplicação:', error);
+      toast.error('Erro ao verificar duplicação', {
+        description: 'Não foi possível verificar se este registro já foi creditado'
+      });
+    } finally {
+      setIsDuplicateChecking(false);
+    }
+  };
 
   // Gerar descrição padrão baseada no registro do extrato
   const generateDefaultDescription = (record: MovimentoExtrato): string => {
     const parts = [];
     
-    parts.push('Crédito via extrato BMP');
+    const providerName = bankFeatures.provider?.toUpperCase() || 'BMP';
+    parts.push(`Crédito via extrato ${providerName}`);
     
     if (record.client) {
       parts.push(`- Cliente: ${record.client}`);
@@ -146,20 +202,52 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
     }
 
     try {
+      // 🚨 PREPARAR DADOS DO EXTRATO PARA CONTROLE DE DUPLICAÇÃO
+      let externalId: string;
+      let provider: string;
+      let code: string;
+      
+      if (extractRecord.bitsoData) {
+        externalId = extractRecord.id;
+        provider = 'bitso';
+        code = extractRecord.code;
+      } else {
+        externalId = extractRecord.id;
+        provider = 'bmp';
+        code = extractRecord.code;
+      }
+
       await createOperation({
         otc_client_id: selectedClient.id,
         operation_type: 'credit',
         amount: extractRecord.value,
-        description: customDescription.trim()
+        description: customDescription.trim(),
+        // 🚨 DADOS DO EXTRATO PARA CONTROLE DE DUPLICAÇÃO
+        reference_external_id: externalId,
+        reference_provider: provider,
+        reference_code: code,
+        reference_date: extractRecord.dateTime
       });
       
       toast.success('Operação realizada com sucesso!', {
         description: `R$ ${extractRecord.value.toFixed(2)} creditados para ${selectedClient.name}`
       });
       
-      onClose();
+      onClose(true); // 🚨 NOTIFICAR SUCESSO
     } catch (error) {
       console.error('Erro ao criar operação:', error);
+      
+      // Mostrar erro específico de duplicação
+      if (error instanceof Error && error.message.includes('já foi creditado')) {
+        toast.error('Registro já creditado', {
+          description: error.message
+        });
+      } else {
+        toast.error('Erro ao criar operação', {
+          description: 'Não foi possível processar a operação'
+        });
+      }
+      
       setShowConfirmation(false);
     }
   };
@@ -190,13 +278,43 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
             Creditar Extrato para Cliente OTC
           </DialogTitle>
           <DialogDescription>
-            Converter registro do extrato BMP em operação de crédito OTC
+            Converter registro do extrato {bankFeatures.provider?.toUpperCase() || 'BMP'} em operação de crédito OTC
           </DialogDescription>
         </DialogHeader>
 
         {!showConfirmation ? (
           // Formulário principal
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* 🚨 ALERTA DE DUPLICAÇÃO */}
+            {isDuplicateChecking && (
+              <Alert className="border-amber-200 bg-amber-50">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <AlertDescription className="text-amber-800">
+                  Verificando se este registro já foi creditado...
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {duplicateInfo && (
+              <Alert className="border-red-200 bg-red-50">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800">
+                  <div className="space-y-2">
+                    <p className="font-medium">⚠️ Este registro já foi creditado!</p>
+                    <div className="text-sm space-y-1">
+                      <p><strong>Cliente:</strong> {duplicateInfo.client.name}</p>
+                      <p><strong>Valor:</strong> R$ {duplicateInfo.amount?.toFixed(2)}</p>
+                      <p><strong>Data:</strong> {new Date(duplicateInfo.created_at).toLocaleDateString('pt-BR')}</p>
+                      <p><strong>Por:</strong> {duplicateInfo.admin.name}</p>
+                    </div>
+                    <p className="mt-2 text-xs text-red-600">
+                      Para evitar duplicação, este modal será bloqueado.
+                    </p>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* Informações do Registro do Extrato */}
             <Card className="bg-muted/30 border-border">
               <CardHeader>
@@ -404,18 +522,23 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
               <Button
                 type="button"
                 variant="outline"
-                onClick={onClose}
+                onClick={() => onClose()}
                 disabled={isCreating}
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
-                disabled={isCreating || extractRecord.type !== 'CRÉDITO'}
-                className="bg-green-600 hover:bg-green-700"
+                disabled={isCreating || extractRecord.type !== 'CRÉDITO' || !!duplicateInfo || isDuplicateChecking}
+                className={cn(
+                  "transition-all",
+                  duplicateInfo 
+                    ? "bg-gray-400 hover:bg-gray-400 cursor-not-allowed" 
+                    : "bg-green-600 hover:bg-green-700"
+                )}
               >
                 <Plus className="w-4 h-4 mr-2" />
-                Continuar
+                {duplicateInfo ? 'Já Creditado' : 'Continuar'}
               </Button>
             </div>
           </form>
@@ -478,7 +601,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-muted-foreground">
-                    Origem (Extrato BMP)
+                    Origem (Extrato {bankFeatures.provider?.toUpperCase() || 'BMP'})
                   </Label>
                   <p className="text-sm font-mono">{extractRecord.code}</p>
                 </div>

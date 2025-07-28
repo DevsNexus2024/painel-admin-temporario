@@ -1,11 +1,12 @@
 /**
  * 🏦 HOOK PARA VERIFICAR FEATURES DO BANCO ATIVO
  * 
+ * ⚡ VERSÃO OTIMIZADA - PERFORMANCE MELHORADA
  * Facilita a verificação de funcionalidades suportadas pelo banco atual
  * Usado para mostrar/esconder funcionalidades no frontend
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BankFeature, BankProvider } from '@/services/banking/types';
 import { unifiedBankingService } from '@/services/banking';
 import { bankConfigManager } from '@/services/banking/config/BankConfigs';
@@ -46,6 +47,10 @@ export function useBankFeatures(): BankFeaturesState {
     isLoading: true
   });
 
+  // 🚀 REF PARA EVITAR RE-RENDERS DESNECESSÁRIOS
+  const lastProviderRef = useRef<string>('');
+  const lastDisplayNameRef = useRef<string>('');
+
   const updateFeatures = () => {
     try {
       // ✅ CORRIGIDO: Verificar conta ativa via apiRouter também
@@ -66,23 +71,40 @@ export function useBankFeatures(): BankFeaturesState {
             };
           }
         } catch (apiError) {
-          console.log('🏦 [useBankFeatures] ApiRouter não disponível');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🏦 [useBankFeatures] ApiRouter não disponível');
+          }
         }
       }
       
       if (!activeAccount) {
-        setFeaturesState(prev => ({
-          ...prev,
-          provider: null,
-          displayName: '',
-          isLoading: false
-        }));
+        // Só atualizar se realmente mudou
+        if (lastProviderRef.current !== '' || lastDisplayNameRef.current !== '') {
+          lastProviderRef.current = '';
+          lastDisplayNameRef.current = '';
+          setFeaturesState(prev => ({
+            ...prev,
+            provider: null,
+            displayName: '',
+            isLoading: false
+          }));
+        }
         return;
+      }
+
+      // 🚀 OTIMIZAÇÃO: Só atualizar se provider ou displayName mudaram
+      const currentKey = `${activeAccount.provider}-${activeAccount.displayName}`;
+      const lastKey = `${lastProviderRef.current}-${lastDisplayNameRef.current}`;
+      
+      if (currentKey === lastKey) {
+        return; // Nada mudou, não precisa atualizar
       }
 
       const bankInfo = bankConfigManager.getBankInfo(activeAccount.provider);
       
       if (!bankInfo) {
+        lastProviderRef.current = activeAccount.provider;
+        lastDisplayNameRef.current = activeAccount.displayName;
         setFeaturesState(prev => ({
           ...prev,
           provider: activeAccount.provider,
@@ -106,6 +128,10 @@ export function useBankFeatures(): BankFeaturesState {
       const hasPixKeysManagement = features.includes(BankFeature.PIX_KEYS) && 
                                    activeAccount.provider !== BankProvider.BITSO;
 
+      // Atualizar referências
+      lastProviderRef.current = activeAccount.provider;
+      lastDisplayNameRef.current = activeAccount.displayName;
+
       setFeaturesState({
         provider: activeAccount.provider,
         displayName: activeAccount.displayName,
@@ -122,12 +148,15 @@ export function useBankFeatures(): BankFeaturesState {
         isLoading: false
       });
 
-      console.log(`🏦 [useBankFeatures] Features atualizadas para ${activeAccount.displayName}:`, {
-        provider: activeAccount.provider,
-        hasQrCodePayment,
-        hasPixKeys: hasPixKeysManagement,
-        features: features
-      });
+      // ✅ LOGS APENAS EM DESENVOLVIMENTO E APENAS QUANDO MUDOU
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🏦 [useBankFeatures] Features atualizadas para ${activeAccount.displayName}:`, {
+          provider: activeAccount.provider,
+          hasQrCodePayment,
+          hasPixKeys: hasPixKeysManagement,
+          features: features
+        });
+      }
 
     } catch (error) {
       console.error('🏦 [useBankFeatures] Erro ao atualizar features:', error);
@@ -142,11 +171,11 @@ export function useBankFeatures(): BankFeaturesState {
     // Atualizar features na inicialização
     updateFeatures();
 
-    // ✅ REATIVADO: Polling para detectar mudanças de conta em tempo real
-    // Necessário para atualizar badges dos provedores quando usuário trocar de conta
+    // ✅ POLLING OTIMIZADO: De 1000ms para 3000ms (3x menos requisições)
+    // Necessário para detectar mudanças de conta, mas com menos frequência
     const interval = setInterval(() => {
       updateFeatures();
-    }, 1000); // Verificar a cada 1 segundo
+    }, 3000); // Verificar a cada 3 segundos
 
     return () => clearInterval(interval);
     

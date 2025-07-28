@@ -346,10 +346,9 @@ export class BitsoProvider extends BaseBankProvider {
 
       console.log('🌐 [BITSO-PIX] Fazendo requisição para /api/bitso/pix/enviar...');
       console.log('🌐 [BITSO-PIX] URL base configurada:', this.baseUrl);
-      console.log('🌐 [BITSO-PIX] URL completa será:', `${this.baseUrl}/api/bitso/pix/enviar`);
       
       // Chamada para endpoint simplificado do backend
-      const response = await this.makeRequest('POST', '/api/bitso/pix/enviar', requestData);
+      const response = await this.makeRequest('POST', '/pix/enviar', requestData);
       
       console.log('📥 [BITSO-PIX] Resposta recebida do backend:', response);
 

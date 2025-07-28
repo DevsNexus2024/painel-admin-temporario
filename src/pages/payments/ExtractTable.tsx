@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus } from "lucide-react";
+import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +32,9 @@ export default function ExtractTable() {
   const [dateFrom, setDateFrom] = useState<Date>();
   const [dateTo, setDateTo] = useState<Date>();
   const [filtrosAtivos, setFiltrosAtivos] = useState<FiltrosAtivos>({});
+  
+  // 🚨 NOVO: Estado para rastrear registros já creditados
+  const [creditedRecords, setCreditedRecords] = useState<Set<string>>(new Set());
   
   // *** NOVA PAGINAÇÃO FRONTEND ***
   const [currentPage, setCurrentPage] = useState(1);
@@ -221,15 +224,36 @@ export default function ExtractTable() {
     }
   };
 
+  // 🚨 FUNÇÃO PARA VERIFICAR SE REGISTRO JÁ FOI CREDITADO
+  const isRecordCredited = (transaction: MovimentoExtrato): boolean => {
+    const recordKey = `${bankFeatures.provider}-${transaction.id}`;
+    return creditedRecords.has(recordKey);
+  };
+
   // Função para abrir modal de crédito OTC
-  const handleCreditToOTC = (transaction: MovimentoExtrato, event: React.MouseEvent) => {
+  const handleCreditToOTC = async (transaction: MovimentoExtrato, event: React.MouseEvent) => {
     event.stopPropagation(); // Evitar que abra o modal de detalhes
+    
+    // 🚨 VERIFICAR SE JÁ FOI CREDITADO ANTES DE ABRIR MODAL
+    if (isRecordCredited(transaction)) {
+      toast.error('Registro já creditado', {
+        description: 'Este registro do extrato já foi creditado para um cliente OTC'
+      });
+      return;
+    }
+    
     setSelectedExtractRecord(transaction);
     setCreditOTCModalOpen(true);
   };
 
   // Função para fechar modal de crédito OTC
-  const handleCloseCreditOTCModal = () => {
+  const handleCloseCreditOTCModal = (wasSuccessful?: boolean) => {
+    // 🚨 SE OPERAÇÃO FOI REALIZADA COM SUCESSO, MARCAR COMO CREDITADO
+    if (wasSuccessful && selectedExtractRecord) {
+      const recordKey = `${bankFeatures.provider}-${selectedExtractRecord.id}`;
+      setCreditedRecords(prev => new Set(prev).add(recordKey));
+    }
+    
     setCreditOTCModalOpen(false);
     setSelectedExtractRecord(null);
   };
@@ -668,11 +692,26 @@ export default function ExtractTable() {
                                     variant="outline"
                                     size="sm"
                                     onClick={(e) => handleCreditToOTC(transaction, e)}
-                                    className="h-7 px-2 text-xs bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
-                                    title="Creditar para cliente OTC"
+                                    disabled={isRecordCredited(transaction)}
+                                    className={cn(
+                                      "h-7 px-2 text-xs transition-all",
+                                      isRecordCredited(transaction)
+                                        ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                        : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
+                                    )}
+                                    title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
                                   >
-                                    <Plus className="h-3 w-3 mr-1" />
-                                    OTC
+                                    {isRecordCredited(transaction) ? (
+                                      <>
+                                        <Check className="h-3 w-3 mr-1" />
+                                        Creditado
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="h-3 w-3 mr-1" />
+                                        OTC
+                                      </>
+                                    )}
                                   </Button>
                                 )}
                               </div>
@@ -774,11 +813,26 @@ export default function ExtractTable() {
                                 variant="outline"
                                 size="sm"
                                 onClick={(e) => handleCreditToOTC(transaction, e)}
-                                className="h-8 px-2 text-xs bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                                title="Creditar para cliente OTC"
+                                disabled={isRecordCredited(transaction)}
+                                className={cn(
+                                  "h-8 px-2 text-xs transition-all",
+                                  isRecordCredited(transaction)
+                                    ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                    : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                                )}
+                                title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
                               >
-                                <Plus className="h-3 w-3 mr-1" />
-                                OTC
+                                {isRecordCredited(transaction) ? (
+                                  <>
+                                    <Check className="h-3 w-3 mr-1" />
+                                    Creditado
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    OTC
+                                  </>
+                                )}
                               </Button>
                             )}
                             <Button

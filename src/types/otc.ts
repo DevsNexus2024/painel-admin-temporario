@@ -221,6 +221,11 @@ export interface CreateOTCOperationRequest {
   brl_amount?: number;
   usd_amount?: number;
   conversion_rate?: number;
+  // 🚨 NOVOS CAMPOS PARA CONTROLE DE DUPLICAÇÃO DE EXTRATOS
+  reference_external_id?: string;
+  reference_provider?: string;
+  reference_code?: string;
+  reference_date?: string;
 }
 
 // Interface para resposta da API de clientes
