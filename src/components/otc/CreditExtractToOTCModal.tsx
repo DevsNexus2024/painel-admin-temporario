@@ -217,9 +217,9 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         code = extractRecord.code;
       }
 
-      await createOperation({
+      const operationData = {
         otc_client_id: selectedClient.id,
-        operation_type: 'credit',
+        operation_type: 'credit' as const,
         amount: extractRecord.value,
         description: customDescription.trim(),
         // 🚨 DADOS DO EXTRATO PARA CONTROLE DE DUPLICAÇÃO
@@ -227,7 +227,11 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         reference_provider: provider,
         reference_code: code,
         reference_date: extractRecord.dateTime
-      });
+      };
+
+      console.log('🚀 [CreditExtractToOTCModal] Enviando dados para backend:', operationData);
+
+      await createOperation(operationData);
       
       toast.success('Operação realizada com sucesso!', {
         description: `R$ ${extractRecord.value.toFixed(2)} creditados para ${selectedClient.name}`

@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FileText, 
-  Calendar, 
   Filter, 
   Download, 
   RefreshCw, 
@@ -27,6 +26,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { CalendarDays } from 'lucide-react';
 import { useOTCStatement } from '@/hooks/useOTCStatement';
 import { otcService } from '@/services/otc';
 import { OTCClient, OTCTransaction, OTCBalanceHistory } from '@/types/otc';
@@ -49,11 +53,19 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
   const [activeTab, setActiveTab] = useState<string>('transactions');
   const [filters, setFilters] = useState({
     page: 1,
-    limit: 20,
+    limit: 10000, // Limite muito alto para admins verem TODAS as transações
     dateFrom: '',
     dateTo: '',
     hideReversals: false // Admins podem ver operações de reversão
   });
+
+  // Estados para filtros adicionais (como no cliente)
+  const [showOnlyToday, setShowOnlyToday] = useState(false);
+  const [searchName, setSearchName] = useState('');
+  const [searchValue, setSearchValue] = useState('');
+  const [searchDate, setSearchDate] = useState('');
+  const [sortBy, setSortBy] = useState<'value' | 'date' | 'none'>('none');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'none'>('none');
 
   // Estados para reversão de operação
   const [reversalModalOpen, setReversalModalOpen] = useState(false);
@@ -72,24 +84,172 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
     if (isOpen) {
       setFilters({
         page: 1,
-        limit: 20,
+        limit: 10000, // Limite muito alto para admins verem TODAS as transações
         dateFrom: '',
         dateTo: '',
         hideReversals: false // Admins podem ver operações de reversão
       });
+      // Resetar filtros adicionais
+      setShowOnlyToday(false);
+      setSearchName('');
+      setSearchValue('');
+      setSearchDate('');
+      setSortBy('none');
+      setSortOrder('none');
       setActiveTab('transactions');
     }
   }, [isOpen]);
 
   // Atualizar filtros
   const updateFilters = (newFilters: Partial<typeof filters>) => {
-    setFilters(prev => ({
-      ...prev,
+    const updatedFilters = {
+      ...filters,
       ...newFilters,
       page: newFilters.page || 1,
-      hideReversals: newFilters.hideReversals !== undefined ? newFilters.hideReversals : prev.hideReversals
-    }));
+      hideReversals: newFilters.hideReversals !== undefined ? newFilters.hideReversals : filters.hideReversals
+    };
+    
+    console.log('[ADMIN-MODAL] Atualizando filtros:', {
+      filtrosAnteriores: filters,
+      novosFiltros: newFilters,
+      filtrosFinais: updatedFilters
+    });
+    
+    setFilters(updatedFilters);
   };
+
+  // Limpar todos os filtros
+  const clearAllFilters = () => {
+    setFilters({
+      page: 1,
+      limit: 10000,
+      dateFrom: '',
+      dateTo: '',
+      hideReversals: false
+    });
+    setShowOnlyToday(false);
+    setSearchName('');
+    setSearchValue('');
+    setSearchDate('');
+    setSortBy('none');
+    setSortOrder('none');
+  };
+
+  // Função para selecionar data do calendário
+  const handleDateSelect = (date: Date | undefined) => {
+    if (date) {
+      const formattedDate = date.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit'
+      });
+      setSearchDate(formattedDate);
+      setShowOnlyToday(false); // Desabilitar "apenas hoje" quando uma data específica for selecionada
+    }
+  };
+
+  // Aplicar filtros de data quando necessário
+  useEffect(() => {
+    if (!isOpen || !client?.id) return;
+
+    let dateFilters: { dateFrom?: string; dateTo?: string } = {};
+    
+    if (showOnlyToday && !searchDate.trim()) {
+      // Filtro de hoje
+      const hoje = new Date();
+      const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+      const fimHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 23, 59, 59);
+      
+      dateFilters.dateFrom = inicioHoje.toISOString();
+      dateFilters.dateTo = fimHoje.toISOString();
+    } else if (searchDate.trim()) {
+      // Filtro de data específica
+      try {
+        const [day, month, year] = searchDate.split('/');
+        const fullYear = year.length === 2 ? `20${year}` : year;
+        const dataEspecifica = new Date(parseInt(fullYear), parseInt(month) - 1, parseInt(day));
+        const inicioData = new Date(dataEspecifica.getFullYear(), dataEspecifica.getMonth(), dataEspecifica.getDate());
+        const fimData = new Date(dataEspecifica.getFullYear(), dataEspecifica.getMonth(), dataEspecifica.getDate(), 23, 59, 59);
+        
+        dateFilters.dateFrom = inicioData.toISOString();
+        dateFilters.dateTo = fimData.toISOString();
+      } catch (error) {
+        console.warn('Erro ao parsear data de filtro:', searchDate);
+        dateFilters = {};
+      }
+    }
+
+    // Aplicar filtros de data apenas se diferentes dos atuais
+    if (dateFilters.dateFrom !== filters.dateFrom || dateFilters.dateTo !== filters.dateTo) {
+      updateFilters(dateFilters);
+    }
+  }, [showOnlyToday, searchDate, isOpen, client?.id]);
+
+  // Filtrar e ordenar transações (similar ao cliente)
+  const filteredAndSortedTransactions = useMemo(() => {
+    if (!statement?.transacoes) return [];
+
+    let filtered = [...statement.transacoes];
+
+    // Filtro por nome/documento
+    if (searchName.trim()) {
+      const searchTerm = searchName.toLowerCase();
+      filtered = filtered.filter(transaction => {
+        const payerName = (transaction.payer_name || '').toLowerCase();
+        const payerDoc = (transaction.payer_document || '').toLowerCase();
+        const notes = (transaction.notes || '').toLowerCase();
+        
+        return payerName.includes(searchTerm) || 
+               payerDoc.includes(searchTerm) || 
+               notes.includes(searchTerm);
+      });
+    }
+
+    // Filtro por valor
+    if (searchValue.trim()) {
+      const searchAmount = parseFloat(searchValue.replace(',', '.'));
+      if (!isNaN(searchAmount)) {
+        filtered = filtered.filter(transaction => {
+          return Math.abs(transaction.amount) === Math.abs(searchAmount);
+        });
+      }
+    }
+
+    // Ordenação
+    if (sortBy !== 'none' && sortOrder !== 'none') {
+      filtered.sort((a, b) => {
+        let comparison = 0;
+        
+        if (sortBy === 'value') {
+          comparison = Math.abs(a.amount) - Math.abs(b.amount);
+        } else if (sortBy === 'date') {
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+        }
+        
+        return sortOrder === 'desc' ? -comparison : comparison;
+      });
+    }
+
+    return filtered;
+  }, [statement?.transacoes, searchName, searchValue, sortBy, sortOrder]);
+
+  // Filtrar histórico de saldo (apenas por nome se aplicável)
+  const filteredBalanceHistory = useMemo(() => {
+    if (!statement?.historico_saldo) return [];
+
+    let filtered = [...statement.historico_saldo];
+
+    // Filtro por descrição (similar ao nome)
+    if (searchName.trim()) {
+      const searchTerm = searchName.toLowerCase();
+      filtered = filtered.filter(history => {
+        const description = (history.description || '').toLowerCase();
+        return description.includes(searchTerm);
+      });
+    }
+
+    return filtered;
+  }, [statement?.historico_saldo, searchName]);
 
   // Função para reverter operação
   const handleReverseOperation = async () => {
@@ -100,12 +260,25 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
 
     setIsReversing(true);
     try {
-      // Usar um motivo padrão automático
-      const defaultReason = `Reversão automática da operação ${transactionToReverse.type} realizada em ${otcService.formatDate(transactionToReverse.date)}`;
+      // Gerar motivo específico baseado na moeda
+      const usdValue = getUsdValueFromHistory(transactionToReverse.id);
+      const isUsdOperation = transactionToReverse.notes?.toLowerCase().includes('usd');
+      
+      let defaultReason;
+      if (isUsdOperation && transactionToReverse.amount === 0 && usdValue !== null) {
+        defaultReason = `Estorno de operação USD: ${transactionToReverse.type} de $ ${Math.abs(usdValue).toFixed(4)} realizada em ${otcService.formatDate(transactionToReverse.date)}`;
+      } else if (isUsdOperation && transactionToReverse.amount !== 0 && usdValue !== null) {
+        defaultReason = `Estorno de conversão BRL→USD: ${otcService.formatCurrency(transactionToReverse.amount)} + $ ${Math.abs(usdValue).toFixed(4)} realizada em ${otcService.formatDate(transactionToReverse.date)}`;
+      } else {
+        defaultReason = `Estorno de operação BRL: ${transactionToReverse.type} de ${otcService.formatCurrency(transactionToReverse.amount)} realizada em ${otcService.formatDate(transactionToReverse.date)}`;
+      }
       
       console.log('[FRONTEND] Enviando reversão:', {
         transactionId: transactionToReverse.id,
-        reason: defaultReason
+        reason: defaultReason,
+        isUsdOperation,
+        usdValue,
+        amount: transactionToReverse.amount
       });
       
       await otcService.reverseOperation(transactionToReverse.id, defaultReason);
@@ -455,7 +628,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
   return (
     <>
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] sm:max-w-[900px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="w-5 h-5" />
@@ -476,7 +649,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div>
                   <Label className="text-sm font-medium text-muted-foreground">
                     Nome
@@ -526,16 +699,86 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
             </CardContent>
           </Card>
 
-          {/* Filtros */}
+          {/* Filtros Completos */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Filter className="w-4 h-4" />
-                Filtros
+                Filtros de Busca
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Toggle para mostrar apenas hoje */}
+              <div className="mb-4 p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="showOnlyToday"
+                    checked={showOnlyToday}
+                    onCheckedChange={(checked) => setShowOnlyToday(checked as boolean)}
+                  />
+                  <Label htmlFor="showOnlyToday" className="text-sm font-medium cursor-pointer">
+                    📅 Mostrar apenas transações de hoje
+                  </Label>
+                  {showOnlyToday && (
+                    <span className="text-xs text-muted-foreground ml-2">
+                      ({new Date().toLocaleDateString('pt-BR')})
+                    </span>
+                  )}
+                </div>
+                {showOnlyToday && (
+                  <p className="text-xs text-muted-foreground mt-1 ml-6">
+                    Para ver outras datas, desmarque esta opção ou use o filtro de data abaixo
+                  </p>
+                )}
+              </div>
+
+              {/* Filtros principais */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="searchName">Buscar por nome</Label>
+                  <Input
+                    id="searchName"
+                    placeholder="Nome ou documento do pagador"
+                    value={searchName}
+                    onChange={(e) => setSearchName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="searchValue">Buscar por valor</Label>
+                  <Input
+                    id="searchValue"
+                    placeholder="Ex: 100.50"
+                    value={searchValue}
+                    onChange={(e) => setSearchValue(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="searchDate">Buscar por data</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="searchDate"
+                      placeholder="Ex: 16/07/25"
+                      value={searchDate}
+                      onChange={(e) => setSearchDate(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="px-3">
+                          <CalendarDays className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={undefined}
+                          onSelect={handleDateSelect}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
                 <div>
                   <Label htmlFor="dateFrom">Data Inicial</Label>
                   <Input
@@ -554,13 +797,42 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                     onChange={(e) => updateFilters({ dateTo: e.target.value })}
                   />
                 </div>
-                <div className="flex items-end gap-2">
+                <div>
+                  <Label htmlFor="sortBy">Ordenar por</Label>
+                  <Select value={sortBy} onValueChange={(value: 'value' | 'date' | 'none') => setSortBy(value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Padrão</SelectItem>
+                      <SelectItem value="value">Valor</SelectItem>
+                      <SelectItem value="date">Data</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="sortOrder">Ordem</Label>
+                  <Select value={sortOrder} onValueChange={(value: 'asc' | 'desc' | 'none') => setSortOrder(value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Padrão</SelectItem>
+                      <SelectItem value="asc">Crescente</SelectItem>
+                      <SelectItem value="desc">Decrescente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Botões de ação */}
+              <div className="flex items-end gap-2 mt-4">
                   <Button
                     variant="outline"
-                    onClick={() => updateFilters({ dateFrom: '', dateTo: '' })}
+                  onClick={clearAllFilters}
                     disabled={isLoading}
                   >
-                    Limpar
+                  Limpar Filtros
                   </Button>
                   <Button
                     variant="outline"
@@ -570,7 +842,17 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                     <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                     Atualizar
                   </Button>
-                </div>
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  disabled={isLoading}
+                  onClick={() => {
+                    // TODO: Implementar exportação PDF
+                    toast.info('Funcionalidade de exportação em desenvolvimento');
+                  }}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Exportar PDF
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -595,7 +877,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                     </div>
                   ) : isLoading ? (
                     <LoadingSkeleton />
-                  ) : statement.transacoes.length === 0 ? (
+                  ) : filteredAndSortedTransactions.length === 0 ? (
                     <div className="text-center py-8">
                       <p className="text-muted-foreground">
                         Nenhuma transação encontrada
@@ -603,6 +885,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                     </div>
                   ) : (
                     <>
+                      <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -613,34 +896,17 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {statement.transacoes.map((transaction) => (
+                            {filteredAndSortedTransactions.map((transaction) => (
                             <TransactionRow key={transaction.id} transaction={transaction} />
                           ))}
                         </TableBody>
                       </Table>
+                      </div>
                       
-                      {/* Paginação */}
-                      <div className="flex justify-between items-center mt-4">
+                      {/* Info sobre total de transações */}
+                      <div className="flex justify-center items-center mt-4">
                         <div className="text-sm text-muted-foreground">
-                          Página {statement.paginacao.page} de {statement.paginacao.total_pages}
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => updateFilters({ page: filters.page - 1 })}
-                            disabled={filters.page <= 1 || isLoading}
-                          >
-                            <ChevronLeft className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => updateFilters({ page: filters.page + 1 })}
-                            disabled={filters.page >= statement.paginacao.total_pages || isLoading}
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </Button>
+                          Total: {filteredAndSortedTransactions.length} de {statement.transacoes.length} transação(ões) encontrada(s)
                         </div>
                       </div>
                     </>
@@ -662,7 +928,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                     </div>
                   ) : isLoading ? (
                     <LoadingSkeleton />
-                  ) : statement.historico_saldo.length === 0 ? (
+                  ) : filteredBalanceHistory.length === 0 ? (
                     <div className="text-center py-8">
                       <p className="text-muted-foreground">
                         Nenhum histórico encontrado
@@ -670,6 +936,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                     </div>
                   ) : (
                     <>
+                      <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -681,34 +948,17 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {statement.historico_saldo.map((history) => (
+                            {filteredBalanceHistory.map((history) => (
                             <BalanceHistoryRow key={history.id} history={history} />
                           ))}
                         </TableBody>
                       </Table>
+                      </div>
                       
-                      {/* Paginação */}
-                      <div className="flex justify-between items-center mt-4">
+                      {/* Info sobre total de registros históricos */}
+                      <div className="flex justify-center items-center mt-4">
                         <div className="text-sm text-muted-foreground">
-                          Página {statement.paginacao.page} de {statement.paginacao.total_pages}
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => updateFilters({ page: filters.page - 1 })}
-                            disabled={filters.page <= 1 || isLoading}
-                          >
-                            <ChevronLeft className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => updateFilters({ page: filters.page + 1 })}
-                            disabled={filters.page >= statement.paginacao.total_pages || isLoading}
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </Button>
+                          Total: {filteredBalanceHistory.length} de {statement.historico_saldo.length} registro(s) de histórico encontrado(s)
                         </div>
                       </div>
                     </>
@@ -768,14 +1018,28 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                       const isUsdOperation = transactionToReverse.notes?.toLowerCase().includes('usd');
                       
                       if (isUsdOperation && transactionToReverse.amount === 0 && usdValue !== null) {
-                        return `$ ${Math.abs(usdValue).toFixed(4)} USD`;
+                        return (
+                          <span className="text-blue-600 font-semibold">
+                            $ {Math.abs(usdValue).toFixed(4)} USD
+                          </span>
+                        );
                       }
                       
                       if (isUsdOperation && transactionToReverse.amount !== 0 && usdValue !== null) {
-                        return `${otcService.formatCurrency(transactionToReverse.amount)} BRL + $ ${Math.abs(usdValue).toFixed(4)} USD`;
+                        return (
+                          <span>
+                            <span className="text-green-600 font-semibold">{otcService.formatCurrency(transactionToReverse.amount)} BRL</span>
+                            {" + "}
+                            <span className="text-blue-600 font-semibold">$ {Math.abs(usdValue).toFixed(4)} USD</span>
+                          </span>
+                        );
                       }
                       
-                      return `${otcService.formatCurrency(transactionToReverse.amount)} BRL`;
+                      return (
+                        <span className="text-green-600 font-semibold">
+                          {otcService.formatCurrency(transactionToReverse.amount)} BRL
+                        </span>
+                      );
                     })()}</p>
                     <p><strong>Data:</strong> {otcService.formatDate(transactionToReverse.date)}</p>
                     {transactionToReverse.notes && (
@@ -785,9 +1049,38 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
                 </div>
               )}
 
-                             <div className="text-center text-sm text-muted-foreground">
-                 A operação será revertida automaticamente com registro no sistema.
-               </div>
+              <div className="text-center space-y-2">
+                <div className="text-sm text-muted-foreground">
+                  A operação será revertida automaticamente com registro no sistema.
+                </div>
+                {transactionToReverse && (() => {
+                  const usdValue = getUsdValueFromHistory(transactionToReverse.id);
+                  const isUsdOperation = transactionToReverse.notes?.toLowerCase().includes('usd');
+                  
+                  // Mostrar aviso específico sobre que moeda será afetada
+                  if (isUsdOperation && transactionToReverse.amount === 0 && usdValue !== null) {
+                    return (
+                      <div className="text-xs text-blue-700 bg-blue-50 p-2 rounded border">
+                        🔄 <strong>Reversão USD:</strong> O saldo em dólares será {usdValue > 0 ? 'debitado' : 'creditado'}
+                      </div>
+                    );
+                  }
+                  
+                  if (isUsdOperation && transactionToReverse.amount !== 0 && usdValue !== null) {
+                    return (
+                      <div className="text-xs text-purple-700 bg-purple-50 p-2 rounded border">
+                        🔄 <strong>Reversão de Conversão:</strong> Saldos BRL e USD serão ajustados
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <div className="text-xs text-green-700 bg-green-50 p-2 rounded border">
+                      🔄 <strong>Reversão BRL:</strong> O saldo em reais será {transactionToReverse.amount > 0 ? 'debitado' : 'creditado'}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>

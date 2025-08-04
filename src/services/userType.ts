@@ -3,7 +3,7 @@ import { authService } from './auth';
 /**
  * Tipos de usuário no sistema
  */
-export type UserType = 'otc_client' | 'admin';
+export type UserType = 'otc_client' | 'admin' | 'otc_employee';
 
 /**
  * Resultado da verificação de tipo de usuário
@@ -12,8 +12,14 @@ export interface UserTypeResult {
   type: UserType;
   isOTC: boolean;
   isAdmin: boolean;
+  isEmployee?: boolean;
   otcClient?: any;
   hasOTCRole?: boolean;
+  otcAccess?: {
+    client_id: number;
+    client_name: string;
+    client_document: string;
+  };
 }
 
 /**
@@ -26,8 +32,14 @@ interface UserTypeAPIResponse {
     type: UserType;
     isAdmin: boolean;
     isOTCClient: boolean;
+    isOTCEmployee?: boolean;
     otcClient?: any;
     hasOTCRole?: boolean;
+    otcAccess?: {
+      client_id: number;
+      client_name: string;
+      client_document: string;
+    };
   };
 }
 
@@ -46,21 +58,25 @@ export class UserTypeService {
       const response = await authService.getUserType();
       
       if (response.sucesso && response.data) {
-        const { type, isAdmin, isOTCClient, otcClient, hasOTCRole } = response.data;
+        const { type, isAdmin, isOTCClient, isOTCEmployee, otcClient, hasOTCRole, otcAccess } = response.data;
         
         console.log('✅ UserTypeService: Tipo obtido da API:', {
           type,
           isAdmin,
           isOTCClient,
-          hasOTCClient: !!otcClient
+          isOTCEmployee,
+          hasOTCClient: !!otcClient,
+          hasOTCAccess: !!otcAccess
         });
         
         return {
           type,
           isOTC: isOTCClient,
           isAdmin,
+          isEmployee: isOTCEmployee,
           otcClient,
-          hasOTCRole
+          hasOTCRole,
+          otcAccess
         };
       } else {
         console.warn('⚠️ UserTypeService: Resposta inválida da API, assumindo admin');
@@ -95,6 +111,14 @@ export class UserTypeService {
   async isAdminUser(user: { id: string | number; email: string; name?: string }): Promise<boolean> {
     const result = await this.checkUserType(user);
     return result.isAdmin;
+  }
+
+  /**
+   * Verifica se o usuário é Funcionário OTC (método simplificado)
+   */
+  async isEmployeeUser(user: { id: string | number; email: string; name?: string }): Promise<boolean> {
+    const result = await this.checkUserType(user);
+    return result.isEmployee || false;
   }
 }
 

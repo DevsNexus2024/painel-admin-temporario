@@ -72,7 +72,20 @@ export const API_CONFIG = {
 // Storage keys
 const STORAGE_KEYS = {
   TOKEN: 'auth_token',
-  USER: 'auth_user'
+  USER: 'auth_user',
+  LAST_ACTIVITY: 'last_activity'
+};
+
+// Login timeout configuration
+export const LOGIN_TIMEOUT_CONFIG = {
+  // Tempo de inatividade em minutos antes do logout automático
+  TIMEOUT_MINUTES: 3000,
+  // Intervalo de verificação em milissegundos
+  CHECK_INTERVAL_MS: 6000000000000, // 1 minuto
+  // Tempo de aviso antes do logout (em minutos)
+  WARNING_MINUTES: 5,
+  // Eventos que contam como atividade do usuário
+  ACTIVITY_EVENTS: ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'] as const
 };
 
 // Token Storage utilities
@@ -128,6 +141,70 @@ export const USER_STORAGE = {
       localStorage.removeItem(STORAGE_KEYS.USER);
     } catch (error) {
       console.error('Erro ao remover usuário:', error);
+    }
+  }
+};
+
+// Last Activity Storage utilities
+export const LAST_ACTIVITY_STORAGE = {
+  get: (): number | null => {
+    try {
+      const timestamp = localStorage.getItem(STORAGE_KEYS.LAST_ACTIVITY);
+      return timestamp ? parseInt(timestamp, 10) : null;
+    } catch (error) {
+      console.error('Erro ao recuperar última atividade:', error);
+      return null;
+    }
+  },
+  
+  set: (timestamp: number = Date.now()): void => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LAST_ACTIVITY, timestamp.toString());
+    } catch (error) {
+      console.error('Erro ao salvar última atividade:', error);
+    }
+  },
+  
+  remove: (): void => {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.LAST_ACTIVITY);
+    } catch (error) {
+      console.error('Erro ao remover última atividade:', error);
+    }
+  },
+  
+  // Verificar se o usuário está inativo há mais tempo que o configurado
+  isInactive: (): boolean => {
+    try {
+      const lastActivity = LAST_ACTIVITY_STORAGE.get();
+      if (!lastActivity) return true;
+      
+      const now = Date.now();
+      const timeoutMs = LOGIN_TIMEOUT_CONFIG.TIMEOUT_MINUTES * 60 * 1000;
+      const timeSinceLastActivity = now - lastActivity;
+      
+      return timeSinceLastActivity > timeoutMs;
+    } catch (error) {
+      console.error('Erro ao verificar inatividade:', error);
+      return true;
+    }
+  },
+  
+  // Obter tempo restante antes do timeout (em minutos)
+  getTimeUntilTimeout: (): number => {
+    try {
+      const lastActivity = LAST_ACTIVITY_STORAGE.get();
+      if (!lastActivity) return 0;
+      
+      const now = Date.now();
+      const timeoutMs = LOGIN_TIMEOUT_CONFIG.TIMEOUT_MINUTES * 60 * 1000;
+      const timeSinceLastActivity = now - lastActivity;
+      const timeRemaining = timeoutMs - timeSinceLastActivity;
+      
+      return Math.max(0, Math.ceil(timeRemaining / (60 * 1000)));
+    } catch (error) {
+      console.error('Erro ao calcular tempo restante:', error);
+      return 0;
     }
   }
 };
@@ -218,7 +295,23 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // Tentar extrair mensagem de erro da resposta
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData?.message) {
+          errorMessage = errorData.message;
+        }
+      } catch (e) {
+        // Se não conseguir fazer parse do JSON, manter a mensagem padrão
+      }
+      
+      const error = new Error(errorMessage);
+      (error as any).response = { 
+        status: response.status, 
+        data: { message: errorMessage } 
+      };
+      throw error;
     }
 
     const data = await response.json();
@@ -236,7 +329,23 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // Tentar extrair mensagem de erro da resposta
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData?.message) {
+          errorMessage = errorData.message;
+        }
+      } catch (e) {
+        // Se não conseguir fazer parse do JSON, manter a mensagem padrão
+      }
+      
+      const error = new Error(errorMessage);
+      (error as any).response = { 
+        status: response.status, 
+        data: { message: errorMessage } 
+      };
+      throw error;
     }
 
     const data = await response.json();
@@ -254,7 +363,23 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // Tentar extrair mensagem de erro da resposta
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData?.message) {
+          errorMessage = errorData.message;
+        }
+      } catch (e) {
+        // Se não conseguir fazer parse do JSON, manter a mensagem padrão
+      }
+      
+      const error = new Error(errorMessage);
+      (error as any).response = { 
+        status: response.status, 
+        data: { message: errorMessage } 
+      };
+      throw error;
     }
 
     const data = await response.json();
@@ -272,7 +397,23 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // Tentar extrair mensagem de erro da resposta
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData?.message) {
+          errorMessage = errorData.message;
+        }
+      } catch (e) {
+        // Se não conseguir fazer parse do JSON, manter a mensagem padrão
+      }
+      
+      const error = new Error(errorMessage);
+      (error as any).response = { 
+        status: response.status, 
+        data: { message: errorMessage } 
+      };
+      throw error;
     }
 
     const data = await response.json();
@@ -289,7 +430,23 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // Tentar extrair mensagem de erro da resposta
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData?.message) {
+          errorMessage = errorData.message;
+        }
+      } catch (e) {
+        // Se não conseguir fazer parse do JSON, manter a mensagem padrão
+      }
+      
+      const error = new Error(errorMessage);
+      (error as any).response = { 
+        status: response.status, 
+        data: { message: errorMessage } 
+      };
+      throw error;
     }
 
     const data = await response.json();

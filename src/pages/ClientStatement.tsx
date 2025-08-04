@@ -110,33 +110,11 @@ const ClientStatement: React.FC = () => {
 
 
   // Filtrar e ordenar transações
+  // NOTA: Filtros de data agora são aplicados no backend, não aqui
   const filteredAndSortedTransactions = useMemo(() => {
     if (!data?.transacoes) return [];
     
     let filtered = data.transacoes;
-    
-    // Aplicar filtro do dia atual se estiver ativo
-    if (showOnlyToday && !searchDate.trim()) {
-      const hoje = new Date();
-      const hojeFormatado = hoje.toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: '2-digit'
-      });
-      
-      filtered = filtered.filter(transaction => {
-        // Usar sort_date para operações manuais, date para outras
-        const dataTransacao = (transaction as any).sort_date || transaction.date;
-        const operationType = (transaction as any).operation_type;
-        
-        // Aplicar correção de timezone apenas para operações não manuais
-        const dataFormatada = (operationType === 'manual_credit' || operationType === 'manual_debit') 
-          ? formatTimestamp(dataTransacao, 'dd/MM/yy')
-          : formatOTCTimestamp(dataTransacao, 'dd/MM/yy');
-        
-        return dataFormatada === hojeFormatado;
-      });
-    }
     
     // Filtrar por nome do pagador
     if (searchName.trim()) {
@@ -155,22 +133,6 @@ const ClientStatement: React.FC = () => {
           Math.abs(transaction.amount - searchAmount) < 0.01
         );
       }
-    }
-    
-    // Filtrar por data específica
-    if (searchDate.trim()) {
-      filtered = filtered.filter(transaction => {
-        // Usar sort_date para operações manuais, date para outras
-        const dataTransacao = (transaction as any).sort_date || transaction.date;
-        const operationType = (transaction as any).operation_type;
-        
-        // Aplicar correção de timezone apenas para operações não manuais
-        const dataFormatada = (operationType === 'manual_credit' || operationType === 'manual_debit') 
-          ? formatTimestamp(dataTransacao, 'dd/MM/yy')
-          : formatOTCTimestamp(dataTransacao, 'dd/MM/yy');
-        
-        return dataFormatada === searchDate;
-      });
     }
     
     // SEMPRE ordenar por data (mais recente primeiro) como padrão
@@ -199,7 +161,7 @@ const ClientStatement: React.FC = () => {
     }
     
     return filtered;
-  }, [data?.transacoes, searchName, searchValue, searchDate, sortBy, sortOrder, showOnlyToday]);
+  }, [data?.transacoes, searchName, searchValue, sortBy, sortOrder]);
 
   // Limpar todos os filtros
   const clearAllFilters = () => {
@@ -270,13 +232,17 @@ const ClientStatement: React.FC = () => {
     }
   };
 
+  // Estado para armazenar o ID do cliente encontrado
+  const [clientId, setClientId] = useState<number | null>(null);
+
   useEffect(() => {
     if (user?.id) {
-      fetchClientStatement();
+      findOTCClient();
     }
   }, [user?.id]);
 
-  const fetchClientStatement = async () => {
+  // Separar busca do cliente da busca do extrato
+  const findOTCClient = async () => {
     try {
       setLoading(true);
       setError(null);
@@ -289,7 +255,7 @@ const ClientStatement: React.FC = () => {
       
       // Buscar cliente OTC vinculado ao usuário logado
       const clientsResponse = await otcService.getClients({ 
-        limit: 200 // Já está correto - buscar todos os clientes
+        limit: 200
       });
       
       if (!clientsResponse.data?.clientes || clientsResponse.data.clientes.length === 0) {
@@ -298,7 +264,6 @@ const ClientStatement: React.FC = () => {
 
       // Buscar cliente específico vinculado ao usuário logado
       const client = clientsResponse.data.clientes.find(c => {
-        // Verificar se o cliente está vinculado ao usuário logado
         return String(c.user?.id) === String(user.id) || 
                c.user?.email === user.email ||
                c.user?.name === user.name;
@@ -321,19 +286,43 @@ const ClientStatement: React.FC = () => {
         throw new Error('Acesso negado. Você não tem permissão para visualizar este extrato.');
       }
 
-      // Buscar extrato específico do cliente 
-      // Por padrão, sem filtro de data (mostrar todos os registros)
-      const statementResponse = await otcService.getClientStatement(client.id, {
-        limit: 200 // Aumentado para 200 registros por página
-      });
+      setClientId(client.id);
+      
+    } catch (error) {
+      console.error('Erro ao buscar cliente OTC:', error);
+      setError(error instanceof Error ? error.message : 'Erro desconhecido');
+      setLoading(false);
+    }
+  };
+
+  // Função para buscar extrato com filtros de data
+  const fetchClientStatement = async (filters?: { dateFrom?: string; dateTo?: string }) => {
+    if (!clientId) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Preparar filtros para enviar ao backend
+      const statementParams: any = {
+        limit: 200
+      };
+
+      // Aplicar filtros de data se fornecidos
+      if (filters?.dateFrom) {
+        statementParams.dateFrom = filters.dateFrom;
+      }
+      if (filters?.dateTo) {
+        statementParams.dateTo = filters.dateTo;
+      }
+
+      console.log('Buscando extrato com filtros:', statementParams);
+
+      // Buscar extrato específico do cliente com filtros
+      const statementResponse = await otcService.getClientStatement(clientId, statementParams);
       
       if (!statementResponse.success || !statementResponse.data) {
         throw new Error(statementResponse.message || 'Erro ao buscar extrato do cliente');
-      }
-
-      // Validação adicional de segurança
-      if (statementResponse.data.cliente.id !== client.id) {
-        throw new Error('Erro de segurança: dados inconsistentes');
       }
 
       // Usar o histórico de saldo como base para garantir ordenação correta
@@ -389,6 +378,76 @@ const ClientStatement: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Erro de conexão com o servidor');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // UseEffect para carregar extrato inicial quando clientId estiver disponível
+  useEffect(() => {
+    if (clientId) {
+      // Determinar filtros de data baseados no estado atual
+      let dateFilters: { dateFrom?: string; dateTo?: string } = {};
+      
+      if (showOnlyToday && !searchDate.trim()) {
+        // Filtro de hoje: do início do dia até o final do dia
+        const hoje = new Date();
+        const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+        const fimHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 23, 59, 59);
+        
+        dateFilters.dateFrom = inicioHoje.toISOString();
+        dateFilters.dateTo = fimHoje.toISOString();
+      } else if (searchDate.trim()) {
+        // Filtro de data específica: converter de dd/MM/yy para ISO
+        try {
+          const [day, month, year] = searchDate.split('/');
+          const fullYear = year.length === 2 ? `20${year}` : year;
+          const dataEspecifica = new Date(parseInt(fullYear), parseInt(month) - 1, parseInt(day));
+          const inicioData = new Date(dataEspecifica.getFullYear(), dataEspecifica.getMonth(), dataEspecifica.getDate());
+          const fimData = new Date(dataEspecifica.getFullYear(), dataEspecifica.getMonth(), dataEspecifica.getDate(), 23, 59, 59);
+          
+          dateFilters.dateFrom = inicioData.toISOString();
+          dateFilters.dateTo = fimData.toISOString();
+        } catch (error) {
+          console.warn('Erro ao parsear data de filtro:', searchDate);
+          // Se houver erro no parse, buscar sem filtro de data
+          dateFilters = {};
+        }
+      }
+      // Se não houver filtros de data, buscar todos os registros (sem dateFrom/dateTo)
+      
+      fetchClientStatement(dateFilters);
+    }
+  }, [clientId, showOnlyToday, searchDate]);
+
+  // Função para recarregar dados (para botões de atualizar)
+  const handleRefresh = () => {
+    if (clientId) {
+      // Determinar filtros atuais baseados no estado
+      let dateFilters: { dateFrom?: string; dateTo?: string } = {};
+      
+      if (showOnlyToday && !searchDate.trim()) {
+        const hoje = new Date();
+        const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+        const fimHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 23, 59, 59);
+        
+        dateFilters.dateFrom = inicioHoje.toISOString();
+        dateFilters.dateTo = fimHoje.toISOString();
+      } else if (searchDate.trim()) {
+        try {
+          const [day, month, year] = searchDate.split('/');
+          const fullYear = year.length === 2 ? `20${year}` : year;
+          const dataEspecifica = new Date(parseInt(fullYear), parseInt(month) - 1, parseInt(day));
+          const inicioData = new Date(dataEspecifica.getFullYear(), dataEspecifica.getMonth(), dataEspecifica.getDate());
+          const fimData = new Date(dataEspecifica.getFullYear(), dataEspecifica.getMonth(), dataEspecifica.getDate(), 23, 59, 59);
+          
+          dateFilters.dateFrom = inicioData.toISOString();
+          dateFilters.dateTo = fimData.toISOString();
+        } catch (error) {
+          console.warn('Erro ao parsear data de filtro:', searchDate);
+          dateFilters = {};
+        }
+      }
+      
+      fetchClientStatement(dateFilters);
     }
   };
 
@@ -799,7 +858,7 @@ const ClientStatement: React.FC = () => {
             
             <div className="flex gap-3">
               <button
-                onClick={fetchClientStatement}
+                onClick={handleRefresh}
                 className="flex-1 bg-primary text-primary-foreground py-2 px-4 rounded-md hover:bg-primary/90 transition-colors"
               >
                 Tentar Novamente
@@ -915,7 +974,7 @@ const ClientStatement: React.FC = () => {
                 </p>
                 {(data.cliente as any).last_conversion_rate && (
                   <p className="text-xs text-muted-foreground/70 mt-1">
-                    Taxa Media Dia: {parseFloat((data.cliente as any).last_conversion_rate || 0).toFixed(4)}
+                    Taxa Media Dia: {parseFloat((data.cliente as any).last_conversion_rate || 0).toFixed(2)}
                   </p>
                 )}
               </div>
@@ -1039,7 +1098,7 @@ const ClientStatement: React.FC = () => {
               </Button>
               <Button
                 variant="outline"
-                onClick={fetchClientStatement}
+                onClick={handleRefresh}
                 disabled={loading}
               >
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -1147,16 +1206,16 @@ const ClientStatement: React.FC = () => {
                           // CONVERSÃO BRL → USD (tem conversion_rate)
                           <>
                             <div className="space-y-1">
-                              <p className="text-lg font-bold text-blue-500">
-                                ⇄ {formatCurrency(Math.abs((item as any).amount_change || 0))}
+                              <p className="text-lg font-bold text-red-500">
+                                -R$ {Math.abs((item as any).amount_change || 0).toFixed(2)}
                               </p>
                               <p className="text-lg font-bold text-green-500">
-                                → $ {Math.abs((item as any).usd_amount_change || 0).toFixed(4)}
+                                +$ {Math.abs((item as any).usd_amount_change || 0).toFixed(2)}
                               </p>
                             </div>
-                            <p className="text-xs text-blue-400 font-medium">Conversão BRL→USD</p>
+                            <p className="text-xs text-white font-medium">Conversão BRL→USD</p>
                             <p className="text-xs text-muted-foreground">
-                              Taxa: {parseFloat((item as any).conversion_rate || 0).toFixed(4)}
+                              Taxa: {parseFloat((item as any).conversion_rate || 0).toFixed(2)}
                             </p>
                           </>
                         ) : isUSDOnlyOperation(item) ? (
@@ -1165,9 +1224,9 @@ const ClientStatement: React.FC = () => {
                             <p className={`text-lg font-bold ${
                               (item as any).usd_amount_change > 0 ? 'text-green-500' : 'text-red-500'
                             }`}>
-                              {(item as any).usd_amount_change > 0 ? '+' : ''}$ {Math.abs((item as any).usd_amount_change).toFixed(4)}
+                              {(item as any).usd_amount_change > 0 ? '+' : '-'}$ {Math.abs((item as any).usd_amount_change).toFixed(2)}
                             </p>
-                            <p className="text-xs text-blue-400 font-medium">Operação USD</p>
+                            <p className="text-xs text-white font-medium">USD</p>
                           </>
                         ) : (
                           // TRANSAÇÃO NORMAL BRL
@@ -1175,9 +1234,9 @@ const ClientStatement: React.FC = () => {
                             <p className={`text-lg font-bold ${
                               (item as any).operation_type === 'deposit' || (item as any).operation_type === 'manual_credit' ? 'text-green-500' : 'text-red-500'
                             }`}>
-                              {(item as any).operation_type === 'deposit' || (item as any).operation_type === 'manual_credit' ? '+' : '-'}{formatCurrency(item.amount)}
+                              {(item as any).operation_type === 'deposit' || (item as any).operation_type === 'manual_credit' ? '+' : '-'}R$ {Math.abs(item.amount).toFixed(2)}
                             </p>
-                            <p className="text-xs text-muted-foreground">{item.status}</p>
+                            <p className="text-xs text-white font-medium">BRL</p>
                           </>
                         )}
                       </div>
@@ -1189,7 +1248,7 @@ const ClientStatement: React.FC = () => {
                         </p>
                         <p className="text-sm font-medium text-foreground">
                           {(item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change 
-                            ? `$ ${((item as any).usd_balance_before || 0).toFixed(4)}`
+                            ? `$ ${formatUSD((item as any).usd_balance_before || 0)}`
                             : formatCurrency((item as any).saldo_anterior || 0)
                           }
                         </p>
@@ -1202,7 +1261,7 @@ const ClientStatement: React.FC = () => {
                         </p>
                         <p className="text-sm font-medium text-foreground">
                           {(item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change 
-                            ? `$ ${((item as any).usd_balance_after || 0).toFixed(4)}`
+                            ? `$ ${formatUSD((item as any).usd_balance_after || 0)}`
                             : formatCurrency((item as any).saldo_posterior || 0)
                           }
                         </p>

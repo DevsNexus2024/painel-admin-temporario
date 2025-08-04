@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
-import { Plus, Users, BarChart3 } from 'lucide-react';
+import { Plus, Users, BarChart3, UserPlus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import OTCDashboard from './OTCDashboard';
 import OTCClientTable from '@/components/otc/OTCClientTable';
 import OTCClientModal from '@/components/otc/OTCClientModal';
 import OTCOperationModal from '@/components/otc/OTCOperationModal';
-import OTCStatementModal from '@/components/otc/OTCStatementModal';
+
+import OTCEmployeeModal from '@/components/otc/OTCEmployeeModal';
 import { OTCClient } from '@/types/otc';
 
 /**
  * Página principal dos clientes OTC
  */
 const OTCClients: React.FC = () => {
+  const navigate = useNavigate();
   // Mudar de 'dashboard' para 'clients'
   const [activeTab, setActiveTab] = useState<string>('clients');
   
@@ -27,14 +30,16 @@ const OTCClients: React.FC = () => {
     client?: OTCClient;
   }>({ isOpen: false });
   
-  const [statementModal, setStatementModal] = useState<{
+
+
+  const [employeeModal, setEmployeeModal] = useState<{
     isOpen: boolean;
-    client?: OTCClient;
   }>({ isOpen: false });
 
   // Handlers para ações da tabela
   const handleViewStatement = (client: OTCClient) => {
-    setStatementModal({ isOpen: true, client });
+    // Navegar para a nova página de extrato administrativo
+    navigate(`/otc/admin-statement/${client.id}`);
   };
 
   const handleEditClient = (client: OTCClient) => {
@@ -46,12 +51,16 @@ const OTCClients: React.FC = () => {
   };
 
   const handleViewBalance = (client: OTCClient) => {
-    // Por enquanto, redireciona para o extrato
-    setStatementModal({ isOpen: true, client });
+    // Redireciona para o extrato administrativo
+    navigate(`/otc/admin-statement/${client.id}`);
   };
 
   const handleNewClient = () => {
     setClientModal({ isOpen: true });
+  };
+
+  const handleManageEmployees = () => {
+    setEmployeeModal({ isOpen: true });
   };
 
   // Fechar modais
@@ -63,8 +72,10 @@ const OTCClients: React.FC = () => {
     setOperationModal({ isOpen: false, client: undefined });
   };
 
-  const closeStatementModal = () => {
-    setStatementModal({ isOpen: false, client: undefined });
+
+
+  const closeEmployeeModal = () => {
+    setEmployeeModal({ isOpen: false });
   };
 
   return (
@@ -79,13 +90,28 @@ const OTCClients: React.FC = () => {
             Gerenciamento de clientes Over-the-Counter
           </p>
         </div>
-        <Button 
-          onClick={handleNewClient}
-          className="bg-blue-600 hover:bg-blue-700"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Novo Cliente
-        </Button>
+        
+        {/* Grupo de botões */}
+        <div className="flex gap-3">
+          <Button 
+            onClick={handleNewClient}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Novo Cliente
+          </Button>
+          
+          <Button 
+            onClick={handleManageEmployees}
+            variant="outline"
+            disabled={true}
+            className="border-gray-300 text-gray-400 cursor-not-allowed"
+            title="Funcionalidade em desenvolvimento"
+          >
+            <UserPlus className="w-4 h-4 mr-2" />
+            Funcionários OTC
+          </Button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -129,10 +155,11 @@ const OTCClients: React.FC = () => {
         client={operationModal.client}
       />
       
-      <OTCStatementModal 
-        isOpen={statementModal.isOpen}
-        onClose={closeStatementModal}
-        client={statementModal.client}
+
+      
+      <OTCEmployeeModal 
+        isOpen={employeeModal.isOpen}
+        onClose={closeEmployeeModal}
       />
     </div>
   );

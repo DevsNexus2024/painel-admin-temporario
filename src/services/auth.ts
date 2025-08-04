@@ -1,4 +1,4 @@
-import { API_CONFIG, createApiRequest, TOKEN_STORAGE, USER_STORAGE } from '@/config/api';
+import { API_CONFIG, createApiRequest, TOKEN_STORAGE, USER_STORAGE, LAST_ACTIVITY_STORAGE } from '@/config/api';
 
 // Tipos
 export interface User {
@@ -47,6 +47,9 @@ class AuthService {
         // Salvar token e usuário
         TOKEN_STORAGE.set(result.data.token);
         USER_STORAGE.set(result.data.user);
+        
+        // Registrar atividade inicial do registro
+        LAST_ACTIVITY_STORAGE.set();
       }
 
       return result;
@@ -82,7 +85,10 @@ class AuthService {
         TOKEN_STORAGE.set(result.data.token);
         USER_STORAGE.set(result.data.user);
         
-        console.log('✅ AuthService: Token e usuário salvos com sucesso');
+        // Registrar atividade inicial do login
+        LAST_ACTIVITY_STORAGE.set();
+        
+        console.log('✅ AuthService: Token, usuário e atividade inicial salvos com sucesso');
       } else {
         console.log('❌ AuthService: Login falhou:', result.mensagem);
       }
@@ -103,6 +109,7 @@ class AuthService {
   logout(): void {
     TOKEN_STORAGE.remove();
     USER_STORAGE.remove();
+    LAST_ACTIVITY_STORAGE.remove();
   }
 
   /**

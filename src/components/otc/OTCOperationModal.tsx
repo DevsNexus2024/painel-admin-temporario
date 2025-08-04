@@ -221,8 +221,8 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
       case 'convert':
         return {
           icon: <ArrowRightLeft className="w-4 h-4" />,
-          label: 'Inserir Trava',
-          description: 'Converter reais para dólares automaticamente',
+          label: 'Conversão BRL → USD',
+          description: 'Debita valor em reais (BRL) e credita em dólares (USD)',
           color: 'text-blue-600',
           bgColor: 'bg-blue-50',
           borderColor: 'border-blue-200',
@@ -580,7 +580,10 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                     )}
                     {formData.amount && !errors.amount && (
                       <p className="text-sm text-green-600">
-                        ✓ {otcService.formatCurrency(parseFloat(formData.amount) || 0)}
+                        ✓ {formData.currency === 'USD' 
+                          ? formatUSD(parseFloat(formData.amount) || 0)
+                          : otcService.formatCurrency(parseFloat(formData.amount) || 0)
+                        }
                       </p>
                     )}
                   </div>
@@ -596,9 +599,19 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                     <ArrowRightLeft className="w-4 h-4" />
                     Dados da Conversão
                   </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Preencha qualquer dois campos que o terceiro será calculado automaticamente
-                  </p>
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      Preencha qualquer dois campos que o terceiro será calculado automaticamente
+                    </p>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <ArrowRightLeft className="w-4 h-4 text-blue-600" />
+                        <span className="font-medium text-blue-900">
+                          Esta operação irá <span className="text-red-600">debitar reais (BRL)</span> do saldo e <span className="text-green-600">creditar dólares (USD)</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

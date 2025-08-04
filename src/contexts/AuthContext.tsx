@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { User, authService, LoginCredentials, RegisterData } from '@/services/auth';
 import { userTypeService } from '@/services/userType';
 import { toast } from 'sonner';
+import { useLoginTimeout } from '@/hooks/useLoginTimeout';
+import { LAST_ACTIVITY_STORAGE } from '@/config/api';
 
 // Tipos do contexto
 interface AuthContextType {
@@ -32,6 +34,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Computed state
   const isAuthenticated = !!user;
+
+  /**
+   * Logout de usuário (função separada para reutilizar)
+   */
+  const performLogout = () => {
+    console.log('🚪 AuthProvider: Realizando logout');
+    authService.logout();
+    setUser(null);
+    toast.info('Sua sessão expirou. Faça login novamente.');
+  };
+
+  /**
+   * Hook de timeout de login
+   */
+  const { updateActivity } = useLoginTimeout({
+    enabled: isAuthenticated,
+    onTimeout: performLogout,
+    onWarning: (minutesRemaining) => {
+      toast.warning(
+        `Sua sessão expirará em ${minutesRemaining} minuto${minutesRemaining > 1 ? 's' : ''}. ` +
+        'Mova o mouse ou clique em qualquer lugar para manter a sessão ativa.',
+        {
+          duration: 10000, // 10 segundos
+          description: 'Atividade detectada automaticamente'
+        }
+      );
+    }
+  });
 
   /**
    * Verifica tipo de usuário (apenas verificação, sem redirecionamento automático)
@@ -71,7 +101,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         });
 
         if (storedUser && token) {
-          console.log('✅ AuthProvider: Dados encontrados no storage, buscando perfil atualizado...');
+          console.log('✅ AuthProvider: Dados encontrados no storage, verificando timeout...');
+          
+          // Verificar se a sessão não expirou por inatividade
+          if (LAST_ACTIVITY_STORAGE.isInactive()) {
+            console.log('⏰ AuthProvider: Sessão expirou por inatividade, fazendo logout');
+            authService.logout();
+            setUser(null);
+            toast.info('Sua sessão expirou por inatividade. Faça login novamente.');
+            return;
+          }
+          
+          console.log('✅ AuthProvider: Sessão ativa, buscando perfil atualizado...');
           
           // Tentar buscar perfil atualizado
           const profileResult = await authService.getProfile();
@@ -173,9 +214,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   /**
-   * Logout de usuário
+   * Logout de usuário (manual)
    */
   const logout = () => {
+    console.log('🚪 AuthProvider: Logout manual');
     authService.logout();
     setUser(null);
     toast.info('Logout realizado com sucesso');

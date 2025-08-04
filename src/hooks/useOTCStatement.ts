@@ -10,25 +10,30 @@ export const OTC_STATEMENT_QUERY_KEY = 'otc-statement';
  * Hook para gerenciar extrato de cliente OTC
  */
 export function useOTCStatement(clientId: number, params: OTCStatementParams = {}) {
-  const {
-    data: statementData,
-    isLoading,
-    error,
-    refetch
-  } = useQuery({
-    queryKey: [OTC_STATEMENT_QUERY_KEY, clientId, params],
-    queryFn: () => otcService.getClientStatement(clientId, params),
-    enabled: !!clientId,
-    staleTime: 30 * 1000, // 30 segundos
-    cacheTime: 5 * 60 * 1000, // 5 minutos
-    refetchOnWindowFocus: true,
-    retry: 2,
-    onError: (error: any) => {
-      toast.error('Erro ao carregar extrato do cliente', {
-        description: error.message || 'Falha na comunicação com o servidor'
-      });
-    }
-  });
+      const {
+      data: statementData,
+      isLoading,
+      error,
+      refetch
+    } = useQuery({
+      queryKey: [OTC_STATEMENT_QUERY_KEY, clientId, params],
+      queryFn: async () => {
+        console.log('[HOOK] useOTCStatement executando com:', { clientId, params });
+        const result = await otcService.getClientStatement(clientId, params);
+        console.log('[HOOK] useOTCStatement resultado bruto:', result);
+        console.log('[HOOK] useOTCStatement transações:', result?.data?.transacoes?.map(tx => ({
+          id: tx.id,
+          type: tx.type,
+          manual_operation: tx.manual_operation
+        })));
+        return result;
+      },
+      enabled: !!clientId,
+      staleTime: 30 * 1000, // 30 segundos
+      gcTime: 5 * 60 * 1000, // 5 minutos (renamed from cacheTime)
+      refetchOnWindowFocus: true,
+      retry: 2
+    });
 
   const defaultStatement: OTCStatement = {
     cliente: {
@@ -37,6 +42,8 @@ export function useOTCStatement(clientId: number, params: OTCStatementParams = {
       document: '',
       pix_key: '',
       current_balance: 0,
+      usd_balance: 0,
+      last_conversion_rate: 0,
       last_updated: new Date().toISOString()
     },
     transacoes: [],
@@ -51,7 +58,7 @@ export function useOTCStatement(clientId: number, params: OTCStatementParams = {
 
   return {
     // Dados
-    statement: statementData?.data || defaultStatement,
+    statement: (statementData as any)?.data || defaultStatement,
     
     // Estados
     isLoading,

@@ -67,6 +67,13 @@ export interface OTCTransaction {
   processed_by?: string;
   currency?: CurrencyType; // Adicionado para suporte a USD
   usd_amount?: number; // Valor em USD se aplicável
+  // Operação manual relacionada (para reversão)
+  manual_operation?: {
+    id: number;
+    operation_type: string;
+    description: string;
+    is_reversed_or_reversal?: boolean;
+  };
   // Campos adicionados do histórico de saldo
   history_id?: number;
   checked_by_client?: boolean;

@@ -17,7 +17,9 @@ import Login from "./pages/Login";
 import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIAMENTE
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
 import OTCClients from "./pages/otc/OTCClients";
+import AdminClientStatement from "./pages/otc/AdminClientStatement.tsx";
 import ClientStatement from "./pages/ClientStatement";
+import EmployeeStatement from "./pages/EmployeeStatement";
 
 // 🚨 IMPORTAR NOVA ARQUITETURA MULTI-BANCO
 import { initializeBankingSystem } from "@/services/banking";
@@ -112,6 +114,13 @@ const App = () => (
                 </ProtectedRoute>
               } />
               
+              {/* Rota específica para extrato de funcionário OTC (sem sidebar) */}
+              <Route path="/employee-statement" element={
+                <ProtectedRoute requireEmployee={true} redirectTo="/login">
+                  <EmployeeStatement />
+                </ProtectedRoute>
+              } />
+              
               {/* Rotas protegidas - ADMIN APENAS */}
               <Route element={
                 <ProtectedRoute requireAdmin={true}>
@@ -125,6 +134,7 @@ const App = () => (
                 <Route path="/cotacoes" element={<Cotacoes />} />
                 <Route path="/bot-cotacao" element={<BotCotacao />} />
                 <Route path="/otc" element={<OTCClients />} />
+                <Route path="/otc/admin-statement/:clientId" element={<AdminClientStatement />} />
               </Route>
               
               {/* Rota 404 */}

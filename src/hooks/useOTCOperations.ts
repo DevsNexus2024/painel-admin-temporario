@@ -49,13 +49,9 @@ export function useOTCOperations(params: OTCOperationsParams = {}) {
       queryClient.invalidateQueries({ queryKey: ['otc-client'] }); // Cliente individual
       queryClient.invalidateQueries({ queryKey: ['otc-statement'] });
       queryClient.invalidateQueries({ queryKey: ['otc-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['otc-conversions'] }); // Histórico de conversões
       
-      // Forçar reload da página após conversão para garantir atualização
-      if (data.data?.operation_type === 'convert') {
-        setTimeout(() => {
-          window.location.reload();
-        }, 1500);
-      }
+      // ✅ REMOVIDO RELOAD FORÇADO - invalidação de cache já atualiza os dados
       
       const operationType = data.data?.operation_type || 'desconhecida';
       const operationLabels = {
