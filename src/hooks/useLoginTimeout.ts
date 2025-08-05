@@ -40,7 +40,6 @@ export const useLoginTimeout = (options: LoginTimeoutOptions = {}): LoginTimeout
     // Reset warning flag quando há nova atividade
     warningTriggeredRef.current = false;
     
-    console.log('🔄 [LoginTimeout] Atividade atualizada:', new Date(now).toLocaleTimeString());
   }, [enabled]);
 
   /**
@@ -52,11 +51,6 @@ export const useLoginTimeout = (options: LoginTimeoutOptions = {}): LoginTimeout
     const timeRemaining = LAST_ACTIVITY_STORAGE.getTimeUntilTimeout();
     const isInactive = LAST_ACTIVITY_STORAGE.isInactive();
 
-    console.log('⏱️ [LoginTimeout] Verificação:', {
-      timeRemaining,
-      isInactive,
-      warningTriggered: warningTriggeredRef.current
-    });
 
     if (isInactive) {
       console.log('🚪 [LoginTimeout] Usuário inativo, fazendo logout...');

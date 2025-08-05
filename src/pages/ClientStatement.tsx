@@ -136,11 +136,55 @@ const ClientStatement: React.FC = () => {
     }
     
     // SEMPRE ordenar por data (mais recente primeiro) como padrão
-    // Usar sort_date se disponível (operações manuais), senão usar date
+    // Considerando diferença de fuso horário entre operações manuais e automáticas
     filtered = [...filtered].sort((a, b) => {
-      const dateA = (a as any).sort_date || a.date;
-      const dateB = (b as any).sort_date || b.date;
-      return new Date(dateB).getTime() - new Date(dateA).getTime();
+      // Função para obter timestamp considerando tipo de operação
+      const getOrderingTimestamp = (transaction: OTCTransaction): number => {
+        const isManualOperation = ['manual_credit', 'manual_debit', 'manual_adjustment'].includes(transaction.type);
+        
+        // Sempre usar a data original da transação, não o created_at do histórico
+        const dateToUse = transaction.date;
+        
+        if (typeof dateToUse === 'string') {
+          const baseDate = new Date(dateToUse);
+          
+          // Se é operação manual, usar data direta (formatTimestamp)
+          if (isManualOperation) {
+            return baseDate.getTime();
+          } else {
+            // Se é operação automática, aplicar correção de fuso (+5h como no formatOTCTimestamp)
+            return baseDate.getTime() + (5 * 60 * 60 * 1000); // +5 horas em ms
+          }
+        } else {
+          // Se for timestamp numérico, usar diretamente
+          return new Date(dateToUse).getTime();
+        }
+      };
+      
+      const timestampA = getOrderingTimestamp(a);
+      const timestampB = getOrderingTimestamp(b);
+      
+      // Debug da ordenação para verificar se está funcionando
+      if (process.env.NODE_ENV === 'development') {
+        const formatForDebug = (tx: OTCTransaction) => ({
+          id: tx.id,
+          type: tx.type,
+          originalDate: (tx as any).sort_date || tx.date,
+          timestamp: getOrderingTimestamp(tx),
+          formattedDate: new Date(getOrderingTimestamp(tx)).toLocaleString('pt-BR')
+        });
+        
+        // Log apenas para as primeiras comparações para não poluir
+        if (Math.random() < 0.05) {
+          console.log('[CLIENT-STATEMENT] Ordenação DEBUG:', {
+            a: formatForDebug(a),
+            b: formatForDebug(b),
+            comparison: timestampB - timestampA
+          });
+        }
+      }
+      
+      return timestampB - timestampA; // Mais recente primeiro
     });
     
     // Aplicar ordenação personalizada se solicitada
@@ -151,9 +195,24 @@ const ClientStatement: React.FC = () => {
         if (sortBy === "value") {
           comparison = a.amount - b.amount;
         } else if (sortBy === "date") {
-          const dateA = (a as any).sort_date || a.date;
-          const dateB = (b as any).sort_date || b.date;
-          comparison = new Date(dateA).getTime() - new Date(dateB).getTime();
+          // Usar a mesma lógica de ordenação inteligente
+          const getOrderingTimestamp = (transaction: OTCTransaction): number => {
+            const isManualOperation = ['manual_credit', 'manual_debit', 'manual_adjustment'].includes(transaction.type);
+            const dateToUse = transaction.date;
+            
+            if (typeof dateToUse === 'string') {
+              const baseDate = new Date(dateToUse);
+              if (isManualOperation) {
+                return baseDate.getTime();
+              } else {
+                return baseDate.getTime() + (5 * 60 * 60 * 1000);
+              }
+            } else {
+              return new Date(dateToUse).getTime();
+            }
+          };
+          
+          comparison = getOrderingTimestamp(a) - getOrderingTimestamp(b);
         }
         
         return sortOrder === "asc" ? comparison : -comparison;
@@ -305,7 +364,7 @@ const ClientStatement: React.FC = () => {
 
       // Preparar filtros para enviar ao backend
       const statementParams: any = {
-        limit: 200
+        limit: 10000 // Limite alto para cliente ver todos os seus registros
       };
 
       // Aplicar filtros de data se fornecidos
@@ -349,8 +408,8 @@ const ClientStatement: React.FC = () => {
             conversion_rate: historico.conversion_rate,
             checked_by_client: historico.checked_by_client || false,
             history_id: historico.id,
-            // Para ordenação, usar created_at do histórico (quando foi efetivamente processada)
-            sort_date: historico.created_at
+            // REMOVIDO sort_date para usar sempre transaction.date original
+            // sort_date: historico.created_at  // ← Isso estava causando ordenação incorreta
           };
         } else {
           // Caso não encontre a transação (não deveria acontecer normalmente)

@@ -472,8 +472,52 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
     }
 
     // Ordenação padrão por data (mais recente primeiro)
+    // Considerando diferença de fuso horário entre operações manuais e automáticas
     filtered.sort((a, b) => {
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
+      // Função para obter timestamp considerando tipo de operação
+      const getOrderingTimestamp = (transaction: OTCTransaction): number => {
+        const isManualOperation = ['manual_credit', 'manual_debit', 'manual_adjustment'].includes(transaction.type);
+        
+        if (typeof transaction.date === 'string') {
+          const baseDate = new Date(transaction.date);
+          
+          // Se é operação manual, usar data direta (formatTimestamp)
+          if (isManualOperation) {
+            return baseDate.getTime();
+          } else {
+            // Se é operação automática, aplicar correção de fuso (+5h como no formatOTCTimestamp)
+            return baseDate.getTime() + (5 * 60 * 60 * 1000); // +5 horas em ms
+          }
+        } else {
+          // Se for timestamp numérico, usar diretamente
+          return new Date(transaction.date).getTime();
+        }
+      };
+      
+      const timestampA = getOrderingTimestamp(a);
+      const timestampB = getOrderingTimestamp(b);
+      
+      // Debug da ordenação para verificar se está funcionando
+      if (process.env.NODE_ENV === 'development') {
+        const formatForDebug = (tx: OTCTransaction) => ({
+          id: tx.id,
+          type: tx.type,
+          originalDate: tx.date,
+          timestamp: getOrderingTimestamp(tx),
+          formattedDate: new Date(getOrderingTimestamp(tx)).toLocaleString('pt-BR')
+        });
+        
+        // Log apenas para as primeiras comparações para não poluir
+        if (Math.random() < 0.1) {
+          console.log('[ADMIN-STATEMENT] Ordenação DEBUG:', {
+            a: formatForDebug(a),
+            b: formatForDebug(b),
+            comparison: timestampB - timestampA
+          });
+        }
+      }
+      
+      return timestampB - timestampA; // Mais recente primeiro
     });
 
     return filtered;

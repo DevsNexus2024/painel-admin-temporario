@@ -6,6 +6,7 @@ import { useTransactions } from "@/hooks/useTransactions";
 import { TransactionSearchForm } from "@/components/TransactionSearchForm";
 import { TransactionTable } from "@/components/TransactionTable";
 import { FinancialSummaryCard } from "@/components/FinancialSummaryCard";
+import DepositReport from "@/components/DepositReport";
 import { Transaction } from "@/types/transaction";
 import { formatCurrency } from "@/utils/date";
 import { ExportData } from "@/services/pdfExport";
@@ -350,14 +351,7 @@ export default function ExtratoTcr() {
                 </TabsContent>
 
                 <TabsContent value="reports" className="space-y-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Relatórios</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <p className="text-muted-foreground">Funcionalidade em desenvolvimento.</p>
-                        </CardContent>
-                    </Card>
+                    <DepositReport />
                 </TabsContent>
             </Tabs>
         </div>

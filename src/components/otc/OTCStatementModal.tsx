@@ -215,7 +215,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
       }
     }
 
-    // Ordenação
+    // Ordenação com correção de fuso horário
     if (sortBy !== 'none' && sortOrder !== 'none') {
       filtered.sort((a, b) => {
         let comparison = 0;
@@ -223,10 +223,51 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
         if (sortBy === 'value') {
           comparison = Math.abs(a.amount) - Math.abs(b.amount);
         } else if (sortBy === 'date') {
-          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          // Usar lógica de ordenação inteligente considerando fuso horário
+          const getOrderingTimestamp = (transaction: OTCTransaction): number => {
+            const isManualOperation = ['manual_credit', 'manual_debit', 'manual_adjustment'].includes(transaction.type);
+            
+            if (typeof transaction.date === 'string') {
+              const baseDate = new Date(transaction.date);
+              
+              // Se é operação manual, usar data direta (formatTimestamp)
+              if (isManualOperation) {
+                return baseDate.getTime();
+              } else {
+                // Se é operação automática, aplicar correção de fuso (+5h como no formatOTCTimestamp)
+                return baseDate.getTime() + (5 * 60 * 60 * 1000); // +5 horas em ms
+              }
+            } else {
+              // Se for timestamp numérico, usar diretamente
+              return new Date(transaction.date).getTime();
+            }
+          };
+          
+          comparison = getOrderingTimestamp(a) - getOrderingTimestamp(b);
         }
         
         return sortOrder === 'desc' ? -comparison : comparison;
+      });
+    } else {
+      // Ordenação padrão por data (mais recente primeiro) mesmo quando sortBy é 'none'
+      filtered.sort((a, b) => {
+        const getOrderingTimestamp = (transaction: OTCTransaction): number => {
+          const isManualOperation = ['manual_credit', 'manual_debit', 'manual_adjustment'].includes(transaction.type);
+          
+          if (typeof transaction.date === 'string') {
+            const baseDate = new Date(transaction.date);
+            
+            if (isManualOperation) {
+              return baseDate.getTime();
+            } else {
+              return baseDate.getTime() + (5 * 60 * 60 * 1000);
+            }
+          } else {
+            return new Date(transaction.date).getTime();
+          }
+        };
+        
+        return getOrderingTimestamp(b) - getOrderingTimestamp(a); // Mais recente primeiro
       });
     }
 
