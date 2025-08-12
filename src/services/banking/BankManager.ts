@@ -8,6 +8,7 @@
 import type { IBankProvider, IBankManager } from './interfaces';
 import { bankConfigManager } from './config/BankConfigs';
 import { BmpProvider } from './providers/BmpProvider';
+import { Bmp531Provider } from './providers/Bmp531Provider';
 import { BitsoProvider } from './providers/BitsoProvider';
 import {
   BankProvider,
@@ -38,6 +39,9 @@ class BankProviderFactory {
     switch (provider) {
       case BankProvider.BMP:
         return new BmpProvider(config);
+        
+      case BankProvider.BMP_531:
+        return new Bmp531Provider(config);
         
       case BankProvider.BITSO:
         return new BitsoProvider(config);
@@ -384,8 +388,8 @@ export class BankManager implements IBankManager {
       console.log(`[BANK-MANAGER] 🔒 Preservando provider ativo: ${currentActiveProvider}`);
     }
     
-    // Registrar BMP e Bitso por padrão
-    const defaultProviders = [BankProvider.BMP, BankProvider.BITSO];
+    // Registrar BMP, BMP-531 e Bitso por padrão
+    const defaultProviders = [BankProvider.BMP, BankProvider.BMP_531, BankProvider.BITSO];
     
     for (const providerType of defaultProviders) {
       try {
@@ -405,6 +409,8 @@ export class BankManager implements IBankManager {
       console.log('[BANK-MANAGER] Definindo provider padrão (nenhum ativo anterior)');
       if (this.providers.has(BankProvider.BMP)) {
         this.setActiveProvider(BankProvider.BMP);
+      } else if (this.providers.has(BankProvider.BMP_531)) {
+        this.setActiveProvider(BankProvider.BMP_531);
       } else if (this.providers.has(BankProvider.BITSO)) {
         this.setActiveProvider(BankProvider.BITSO);
       }

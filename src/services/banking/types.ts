@@ -11,6 +11,7 @@
 
 export enum BankProvider {
   BMP = 'bmp',
+  BMP_531 = 'bmp-531',
   BITSO = 'bitso',
   BRADESCO = 'bradesco',
   ITAU = 'itau',

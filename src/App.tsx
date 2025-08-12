@@ -13,6 +13,8 @@ import ExtratoTcr from "./pages/ExtratoTcr";
 import CompensacaoDepositos from "./pages/CompensacaoDepositos";
 import PaymentsPage from "./pages/payments";
 import Cotacoes from "./pages/Cotacoes";
+import GrupoTcrSaldos from "./pages/GrupoTcrSaldos";
+import Bmp531Page from "./pages/Bmp531Page";
 import Login from "./pages/Login";
 import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIAMENTE
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
@@ -130,6 +132,8 @@ const App = () => (
                 <Route path="/" element={<Index />} />
                 <Route path="/extrato_tcr" element={<ExtratoTcr />} />
                 <Route path="/compensacao-depositos" element={<CompensacaoDepositos />} />
+                <Route path="/grupo-tcr/saldos" element={<GrupoTcrSaldos />} />
+                <Route path="/bmp-531" element={<Bmp531Page />} />
                 <Route path="/pagamentos" element={<PaymentsPage />} />
                 <Route path="/cotacoes" element={<Cotacoes />} />
                 <Route path="/bot-cotacao" element={<BotCotacao />} />

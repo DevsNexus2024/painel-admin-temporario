@@ -13,7 +13,8 @@ import {
     Settings,
     BarChart3,
     Bot,
-    Users
+    Users,
+    ListChecks
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -174,6 +175,16 @@ export default function MainLayout() {
                                         to="/compensacao-depositos"
                                         icon={<ArrowDownToLine className="h-4 w-4" />}
                                         label="Compensação de Depósitos - TCR"
+                                    />
+                                    <SidebarLink
+                                        to="/grupo-tcr/saldos"
+                                        icon={<ListChecks className="h-4 w-4" />}
+                                        label="Saldos & Conferência"
+                                    />
+                                    <SidebarLink
+                                        to="/bmp-531"
+                                        icon={<CreditCard className="h-4 w-4" />}
+                                        label="BMP 531"
                                     />
                                 </div>
                             </div>

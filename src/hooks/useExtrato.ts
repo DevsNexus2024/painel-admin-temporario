@@ -97,26 +97,30 @@ export const useExtrato = (options: UseExtratoOptions = {}) => {
   }, [accountKey]);
 
   // 🚨 OBTER PROVIDER SEGURO
-  const getProviderSeguro = (): 'bmp' | 'bitso' => {
+  const getProviderSeguro = (): 'bmp' | 'bmp-531' | 'bitso' => {
     try {
       // 1. Tentar nova arquitetura primeiro
       const activeAccount = unifiedBankingService.getActiveAccount();
-      if (activeAccount && (activeAccount.provider === 'bmp' || activeAccount.provider === 'bitso')) {
+      if (activeAccount && (activeAccount.provider === 'bmp' || activeAccount.provider === 'bmp-531' || activeAccount.provider === 'bitso')) {
         console.log(`🔒 [useExtrato-SEGURO] Provider da NOVA ARQUITETURA: ${activeAccount.provider}`);
-        return activeAccount.provider as 'bmp' | 'bitso';
+        return activeAccount.provider as 'bmp' | 'bmp-531' | 'bitso';
       }
 
       // 2. Fallback para sistema antigo
       const apiRouter = (window as any).apiRouter;
       if (apiRouter) {
         const currentAccount = apiRouter.getCurrentAccount();
-        if (currentAccount.provider === 'bmp' || currentAccount.provider === 'bitso') {
+        if (currentAccount.provider === 'bmp' || currentAccount.provider === 'bmp-531' || currentAccount.provider === 'bitso') {
           console.log(`🔒 [useExtrato-SEGURO] Provider do SISTEMA ANTIGO: ${currentAccount.provider}`);
-          return currentAccount.provider as 'bmp' | 'bitso';
+          return currentAccount.provider as 'bmp' | 'bmp-531' | 'bitso';
         }
       }
 
       // 3. Último recurso: extrair do accountKey
+      if (accountKey.includes('bmp-531')) {
+        console.log(`🔒 [useExtrato-SEGURO] Provider do ACCOUNT KEY: bmp-531`);
+        return 'bmp-531';
+      }
       if (accountKey.includes('bmp')) {
         console.log(`🔒 [useExtrato-SEGURO] Provider do ACCOUNT KEY: bmp`);
         return 'bmp';

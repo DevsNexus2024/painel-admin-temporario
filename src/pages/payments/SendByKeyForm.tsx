@@ -10,7 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
-import { enviarPixPorChave, validarChavePix, formatarChavePix, consultarChavePixBMP, consultarChavePixBitso, PixKeyConsultResponse } from "@/services/pix";
+import { enviarPixPorChave, validarChavePix, formatarChavePix, consultarChavePixBMP, consultarChavePixBMP531, consultarChavePixBitso, PixKeyConsultResponse } from "@/services/pix";
 import { getAvailableAccounts } from "@/services/banking";
 
 const keyTransferSchema = z.object({
@@ -79,6 +79,9 @@ export default function SendByKeyForm() {
       if (activeAccount?.provider === 'bitso') {
         console.log('[SEND-PIX] ✅ Usando consultarChavePixBitso()');
         resultado = await consultarChavePixBitso(chave);
+      } else if (activeAccount?.provider === 'bmp-531') {
+        console.log('[SEND-PIX] ✅ Usando consultarChavePixBMP531()');
+        resultado = await consultarChavePixBMP531(chave);
       } else {
         console.log('[SEND-PIX] ✅ Usando consultarChavePixBMP()');
         resultado = await consultarChavePixBMP(chave);

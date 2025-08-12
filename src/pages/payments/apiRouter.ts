@@ -34,6 +34,17 @@ export const ACCOUNTS: Account[] = [
     }
   },
   {
+    id: 'bmp-531-main',
+    name: 'BMP 531',
+    provider: 'bmp-531',
+    displayName: 'BMP 531 - Pagamentos',
+    bankInfo: {
+      bank: 'Banco 531',
+      agency: '0001',
+      account: '531001-0'
+    }
+  },
+  {
     id: 'bitso-crypto',
     name: 'Bitso PIX',
     provider: 'bitso', 
@@ -55,6 +66,14 @@ const API_ROUTES = {
     pixEnviar: '/internal/pix/enviar',
     pixConsultar: '/internal/pix/consultar-chave',
     pixChaves: '/internal/pix/chaves/listar'
+  },
+  'bmp-531': {
+    baseUrl: API_CONFIG.BASE_URL,
+    saldo: '/bmp-531/account/saldo',
+    extrato: '/bmp-531/account/extrato',
+    pixEnviar: '/bmp-531/pix/enviar',
+    pixConsultar: '/bmp-531/pix/consultar-chave',
+    pixChaves: '/bmp-531/pix/chaves/listar'
   },
   bitso: {
     baseUrl: `${API_CONFIG.BASE_URL}/api/bitso`,

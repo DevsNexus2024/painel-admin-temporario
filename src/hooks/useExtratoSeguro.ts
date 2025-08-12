@@ -22,7 +22,7 @@ export const useExtratoSeguro = (options: UseExtratoSeguroOptions = {}) => {
   const { filtros = {}, enabled = true } = options;
   
   // 🚨 FUNÇÃO PARA OBTER PROVIDER EXCLUSIVAMENTE DA NOVA ARQUITETURA
-  const obterProviderNovaArquitetura = (): 'bmp' | 'bitso' => {
+  const obterProviderNovaArquitetura = (): 'bmp' | 'bmp-531' | 'bitso' => {
     try {
       const activeAccount = unifiedBankingService.getActiveAccount();
       
@@ -40,8 +40,8 @@ export const useExtratoSeguro = (options: UseExtratoSeguroOptions = {}) => {
         console.log(`🔒 [useExtratoSeguro-V2] ID: ${activeAccount.id}`);
       }
       
-      if (provider === 'bmp' || provider === 'bitso') {
-        return provider;
+      if (provider === 'bmp' || provider === 'bmp-531' || provider === 'bitso') {
+        return provider as 'bmp' | 'bmp-531' | 'bitso';
       }
       
       console.warn(`⚠️ [useExtratoSeguro-V2] Provider inválido: ${provider}, usando BMP`);

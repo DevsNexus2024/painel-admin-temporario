@@ -9,12 +9,16 @@ const API_URLS = {
   production: 'https://api-bank.gruponexus.com.br'
 } as const;
 
+// URL específica para APIs de diagnóstico
+const DIAGNOSTICO_API_URL = 'https://vps80270.cloudpublic.com.br:8081';
+
 // Função para determinar URL base
 const getBaseUrl = (): string => {
   const baseUrl = API_URLS[FORCE_ENVIRONMENT];
   
   console.log(`🔧 Ambiente: ${FORCE_ENVIRONMENT.toUpperCase()} (FORÇADO)`);
   console.log(`🔧 API Base URL: ${baseUrl}`);
+  console.log(`🔍 API Diagnóstico URL: ${DIAGNOSTICO_API_URL}`);
   
   return baseUrl;
 };
@@ -23,6 +27,12 @@ const getBaseUrl = (): string => {
 export const API_CONFIG = {
   // URL base do backend
   BASE_URL: getBaseUrl(),
+  
+  // URL específica para diagnóstico
+  DIAGNOSTICO_URL: DIAGNOSTICO_API_URL,
+  
+  // Token de admin para operações especiais (vem do .env)
+  ADMIN_TOKEN: import.meta.env.VITE_ADMIN_TOKEN || 'ISRVdeWTZ5jYFKJQytjH9ZylF1ZrwhTdrrdKY4uFqXm041XIL3aVjCwojSH1EeYbUOQjPx0aO',
   
   // Endpoints
   ENDPOINTS: {
@@ -50,6 +60,16 @@ export const API_CONFIG = {
       PROFILE: '/api/auth/me',
       USER_TYPE: '/api/auth/user-type',
       VALIDATE: '/api/auth/validate'
+    },
+    DIAGNOSTICO: {
+      // ✨ Nova API simplificada (RECOMENDADA)
+      DIAGNOSTICAR_DEPOSITO_SIMPLIFICADO: '/diagnosticar_deposito_simplificado',
+      // API de compatibilidade
+      DIAGNOSTICAR_DEPOSITO: '/diagnosticar_deposito',
+      // Ações de reprocessamento
+      REPROCESSAR_PIX_BMP531: '/reprocessar_pix_bmp531',
+      REPROCESSAR_TRANSFERENCIA_ADMIN: '/reprocessar_transferencia_admin',
+      COMPENSAR_DEPOSITO_DIRETO: '/compensar_deposito_direto'
     }
   },
   
@@ -214,6 +234,11 @@ export const buildApiUrl = (endpoint: string): string => {
   return `${API_CONFIG.BASE_URL}${endpoint}`;
 };
 
+// Função específica para construir URLs de diagnóstico
+export const buildDiagnosticoApiUrl = (endpoint: string): string => {
+  return `${DIAGNOSTICO_API_URL}${endpoint}`;
+};
+
 // Função utilitária para headers com possíveis tokens
 export const getApiHeaders = (additionalHeaders?: Record<string, string>) => {
   const token = TOKEN_STORAGE.get();
@@ -221,6 +246,15 @@ export const getApiHeaders = (additionalHeaders?: Record<string, string>) => {
   return {
     ...API_CONFIG.DEFAULT_HEADERS,
     ...(token && { Authorization: `Bearer ${token}` }),
+    ...additionalHeaders
+  };
+};
+
+// Função específica para headers de admin
+export const getAdminHeaders = (additionalHeaders?: Record<string, string>) => {
+  return {
+    ...API_CONFIG.DEFAULT_HEADERS,
+    'xPassRouteTCR': API_CONFIG.ADMIN_TOKEN,
     ...additionalHeaders
   };
 };
@@ -255,6 +289,42 @@ export const createApiRequest = async (
     return response;
   } catch (error) {
     console.error('Erro na requisição:', error);
+    throw error;
+  }
+};
+
+// Função específica para requisições de admin
+export const createAdminApiRequest = async (
+  endpoint: string, 
+  options: RequestInit = {}
+): Promise<Response> => {
+  // Verificar se é uma operação de diagnóstico
+  const isDiagnosticoOperation = Object.values(API_CONFIG.ENDPOINTS.DIAGNOSTICO).includes(endpoint);
+  const url = isDiagnosticoOperation ? buildDiagnosticoApiUrl(endpoint) : buildApiUrl(endpoint);
+  const headers = getAdminHeaders(options.headers as Record<string, string>);
+  
+  const config: RequestInit = {
+    ...options,
+    headers,
+    signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
+  };
+
+  try {
+    console.log(`🔍 Fazendo requisição de diagnóstico para: ${url}`);
+    console.log(`📋 Headers:`, headers);
+    console.log(`📦 Body:`, options.body);
+    
+    const response = await fetch(url, config);
+    
+    console.log(`📥 Resposta recebida:`, {
+      status: response.status,
+      statusText: response.statusText,
+      url: response.url
+    });
+    
+    return response;
+  } catch (error) {
+    console.error('❌ Erro na requisição admin:', error);
     throw error;
   }
 };

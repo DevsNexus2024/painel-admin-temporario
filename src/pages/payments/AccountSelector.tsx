@@ -37,14 +37,15 @@ export function AccountSelector({ onAccountChange }: AccountSelectorProps) {
   const getProviderBadge = (provider: string) => {
     const badges = {
       'bmp': { label: 'BMP', color: 'bg-blue-100 text-blue-800' },
+      'bmp-531': { label: 'BMP-531', color: 'bg-indigo-100 text-indigo-800' },
       'bitso': { label: 'Bitso', color: 'bg-orange-100 text-orange-800' }
     };
     return badges[provider] || { label: provider.toUpperCase(), color: 'bg-gray-100 text-gray-800' };
   };
 
   const getStatusIcon = (provider: string) => {
-    // BMP é real, Bitso é mock
-    return provider === 'bmp' ? 
+    // BMP e BMP-531 são reais, Bitso é mock
+    return (provider === 'bmp' || provider === 'bmp-531') ? 
       <CheckCircle className="h-3 w-3 text-green-500" /> : 
       <AlertTriangle className="h-3 w-3 text-orange-500" />;
   };

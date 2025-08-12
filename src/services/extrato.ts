@@ -8,7 +8,7 @@ export interface ExtratoFiltros {
   de?: string; // Data inicial no formato YYYY-MM-DD
   ate?: string; // Data final no formato YYYY-MM-DD
   cursor?: number; // Offset para paginação
-  provider?: 'bmp' | 'bitso'; // 🚨 OBRIGATÓRIO: Provider explícito
+  provider?: 'bmp' | 'bmp-531' | 'bitso'; // 🚨 OBRIGATÓRIO: Provider explícito
 }
 
 export interface MovimentoExtrato {
@@ -20,6 +20,8 @@ export interface MovimentoExtrato {
   client?: string;
   identified: boolean;
   code: string;
+  descCliente?: string; // Campo específico BMP-531
+  descricaoOperacao?: string; // Campo específico BMP-531
   
   // *** CAMPOS ESPECÍFICOS DA BITSO ***
   // Apenas preenchidos quando provider === 'bitso'
@@ -107,12 +109,18 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
     let baseUrl: string;
 
     // 🚨 ROTEAMENTO ISOLADO E EXPLÍCITO
+    if (provider === 'bmp' || provider === 'bmp-531') {
     if (provider === 'bmp') {
       console.log(`🔵 [EXTRATO-SEGURO] ===== ROTA BMP EXCLUSIVA =====`);
       baseUrl = API_CONFIG.BASE_URL;
       endpoint = '/internal/account/extrato';
+      } else { // provider === 'bmp-531'
+        console.log(`🟣 [EXTRATO-SEGURO] ===== ROTA BMP-531 EXCLUSIVA =====`);
+        baseUrl = API_CONFIG.BASE_URL;
+        endpoint = '/bmp-531/account/extrato';
+      }
       
-      // Preparar parâmetros BMP
+      // Preparar parâmetros BMP/BMP-531 (mesmo formato)
       const params: Record<string, string> = {};
       if (filtros.de) params.start_date = filtros.de;
       if (filtros.ate) params.end_date = filtros.ate;
@@ -122,9 +130,9 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       const fullEndpoint = queryString ? `${endpoint}?${queryString}` : endpoint;
       const fullUrl = `${baseUrl}${fullEndpoint}`;
       
-      console.log(`🔵 [EXTRATO-SEGURO] URL BMP: ${fullUrl}`);
+      console.log(`🔵 [EXTRATO-SEGURO] URL ${provider.toUpperCase()}: ${fullUrl}`);
       
-      // Chamada direta e isolada para BMP
+      // Chamada direta e isolada para BMP/BMP-531
       const response = await fetch(fullUrl, {
         method: 'GET',
         headers: {
@@ -141,10 +149,10 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       result = await response.json();
       
       if (!response.ok) {
-        throw new Error(`BMP API Error ${response.status}: ${result.message || response.statusText}`);
+        throw new Error(`${provider.toUpperCase()} API Error ${response.status}: ${result.message || response.statusText}`);
       }
       
-      console.log(`✅ [EXTRATO-SEGURO] Resposta BMP recebida:`, {
+      console.log(`✅ [EXTRATO-SEGURO] Resposta ${provider.toUpperCase()} recebida:`, {
         hasItems: !!result?.items,
         itemsCount: result?.items?.length || 0
       });
@@ -213,14 +221,14 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       hasMore = false; // TODO: implementar paginação Bitso
       cursor = null;
       
-    } else { // provider === 'bmp'
-      console.log(`🔵 [EXTRATO-SEGURO] Processando dados BMP...`);
-      // Dados BMP no formato original
+    } else { // provider === 'bmp' || provider === 'bmp-531'
+      console.log(`🔵 [EXTRATO-SEGURO] Processando dados ${provider.toUpperCase()}...`);
+      // Dados BMP/BMP-531 no formato original (mesmo formato)
       if (!result.items || !Array.isArray(result.items)) {
-        throw new Error('🚨 Formato de resposta BMP inválido');
+        throw new Error(`🚨 Formato de resposta ${provider.toUpperCase()} inválido`);
       }
       
-      movimentosFormatados = result.items.map(item => formatarMovimentoDoBackend(item));
+      movimentosFormatados = result.items.map(item => formatarMovimentoDoBackend(item, provider));
       hasMore = result.hasMore || false;
       cursor = result.cursor || null;
     }
@@ -273,20 +281,136 @@ const processarDocumento = (documento: string): string => {
 /**
  * Formatar movimento do backend para o formato esperado pelo frontend
  * @param item Item do backend
+ * @param provider Provider específico (opcional, para lógicas específicas)
  * @returns Movimento formatado
  */
-const formatarMovimentoDoBackend = (item: any): MovimentoExtrato => {
-  // Mapear campos do backend para o frontend
-  return {
-    id: item.codigoTransacao || item.id || Math.random().toString(36),
-    dateTime: item.dataHora || item.dtMovimento || item.dateTime || new Date().toLocaleString('pt-BR'),
-    value: Math.abs(parseFloat(item.valor || item.value || item.vlrMovimento || 0)),
-    type: item.tipo || item.type || (parseFloat(item.valor || item.vlrMovimento || 0) >= 0 ? 'CRÉDITO' : 'DÉBITO'),
-    document: processarDocumento(item.documentoFederal || item.documento),
-    client: item.nomeCliente || item.cliente || item.nome || undefined,
-    identified: item.identificado === 'sim' || item.identified === true || item.identified === 'true',
-    code: item.codigoTransacao || item.codigo || item.code || Math.random().toString(36).substr(2, 9).toUpperCase()
+const formatarMovimentoDoBackend = (item: any, provider?: string): MovimentoExtrato => {
+  console.log('🔍 [EXTRATO] Dados recebidos do backend BMP/BMP-531:', item);
+  console.log('🔍 [EXTRATO] Provider:', provider);
+  
+  // ✅ MAPEAMENTO COMPLETO NO FRONTEND - Priorizar BMP-531, fallback BMP
+  
+  // 1️⃣ CLIENTE: Priorizar nome direto, depois extrair do complemento
+  let clienteFormatado = '';
+  
+  if (item.nome) {
+    // BMP-531: Campo 'nome' direto da API
+    clienteFormatado = item.nome;
+    console.log('✅ Cliente encontrado em item.nome:', clienteFormatado);
+  } else if (item.complemento && item.complemento.includes(' - ')) {
+    // BMP-531: Extrair do complemento "***694380*** - Antonio Carlos Nepomuceno Oliveira Filho"
+    const partes = item.complemento.split(' - ');
+    clienteFormatado = partes.slice(1).join(' - '); // Pega tudo após o primeiro " - "
+    console.log('✅ Cliente extraído do complemento:', clienteFormatado);
+  } else if (item.nomeCliente) {
+    // BMP: Campo nomeCliente
+    clienteFormatado = item.nomeCliente;
+    console.log('✅ Cliente encontrado em item.nomeCliente:', clienteFormatado);
+  } else if (item.cliente) {
+    // BMP: Campo cliente
+    clienteFormatado = item.cliente;
+    console.log('✅ Cliente encontrado em item.cliente:', clienteFormatado);
+  } else {
+    clienteFormatado = 'Cliente não identificado';
+    console.log('⚠️ Cliente não encontrado, usando fallback');
+  }
+  
+  // 2️⃣ DOCUMENTO: Priorizar documentoFederal, depois extrair do complemento
+  let documentoFormatado = '';
+  
+  if (item.documentoFederal) {
+    // BMP-531: Campo documentoFederal direto
+    documentoFormatado = item.documentoFederal;
+    console.log('✅ Documento encontrado em item.documentoFederal:', documentoFormatado);
+  } else if (item.complemento && item.complemento.includes('***')) {
+    // BMP-531: Extrair do complemento "***694380*** - Nome"
+    const partes = item.complemento.split(' - ');
+    if (partes[0]) {
+      documentoFormatado = partes[0]; // "***694380***"
+      console.log('✅ Documento extraído do complemento:', documentoFormatado);
+    }
+  } else if (item.documento) {
+    // BMP: Campo documento
+    documentoFormatado = item.documento;
+    console.log('✅ Documento encontrado em item.documento:', documentoFormatado);
+  } else {
+    documentoFormatado = '—';
+    console.log('⚠️ Documento não encontrado, usando fallback');
+  }
+  
+  // 3️⃣ OUTROS CAMPOS
+  const valor = parseFloat(item.vlrMovimento || item.valor || item.value || 0);
+  
+  // 🚨 DETERMINAR TIPO COM ISOLAMENTO TOTAL ENTRE PROVEDORES
+  let tipo: 'DÉBITO' | 'CRÉDITO';
+  
+  if (provider === 'bmp-531' && item.descricaoOperacao) {
+    // 🟣 LÓGICA ESPECÍFICA BMP-531: Usar descricaoOperacao para determinar tipo correto
+    const descricao = item.descricaoOperacao.toUpperCase();
+    
+    if (descricao.includes('RECEBIMENTO') || descricao.includes('RECEBI') || descricao.includes('ENTRADA')) {
+      tipo = 'CRÉDITO';
+      console.log('✅ [BMP-531] Tipo determinado como CRÉDITO baseado em descricaoOperacao:', item.descricaoOperacao);
+    } else if (descricao.includes('ENVIO') || descricao.includes('ENVIA') || descricao.includes('PAGAMENTO') || descricao.includes('SAIDA')) {
+      tipo = 'DÉBITO';
+      console.log('✅ [BMP-531] Tipo determinado como DÉBITO baseado em descricaoOperacao:', item.descricaoOperacao);
+    } else {
+      // Fallback BMP-531: usar tipoLancamento se disponível, senão usar valor
+      if (item.tipoLancamento) {
+        tipo = item.tipoLancamento === 'C' ? 'CRÉDITO' : 'DÉBITO';
+        console.log('✅ [BMP-531] Tipo determinado por tipoLancamento:', item.tipoLancamento, '=> ', tipo);
+      } else {
+        tipo = valor >= 0 ? 'CRÉDITO' : 'DÉBITO';
+        console.log('⚠️ [BMP-531] Tipo determinado por valor (fallback):', valor, '=> ', tipo);
+      }
+    }
+  } else if (provider === 'bmp') {
+    // 🔵 BMP NORMAL: Usar tipo que já vem processado do backend
+    if (item.tipo) {
+      // Backend BMP já processou o tipo corretamente (campo 'tipo', não 'type')
+      tipo = item.tipo;
+      console.log('✅ [BMP] Tipo já processado pelo backend:', item.tipo);
+    } else if (item.tipoLancamento) {
+      tipo = item.tipoLancamento === 'C' ? 'CRÉDITO' : 'DÉBITO';
+      console.log('✅ [BMP] Tipo determinado por tipoLancamento:', item.tipoLancamento, '=> ', tipo);
+    } else {
+      tipo = valor >= 0 ? 'CRÉDITO' : 'DÉBITO';
+      console.log('⚠️ [BMP] Tipo determinado por valor:', valor, '=> ', tipo);
+    }
+  } else {
+    // 🔄 FALLBACK GERAL: Para outros casos
+    if (item.tipoLancamento) {
+      tipo = item.tipoLancamento === 'C' ? 'CRÉDITO' : 'DÉBITO';
+      console.log('✅ [GERAL] Tipo determinado por tipoLancamento:', item.tipoLancamento, '=> ', tipo);
+    } else {
+      tipo = valor >= 0 ? 'CRÉDITO' : 'DÉBITO';
+      console.log('⚠️ [GERAL] Tipo determinado por valor:', valor, '=> ', tipo);
+    }
+  }
+  
+  // 4️⃣ DESCLIENTE: Campo específico BMP-531
+  let descClienteFormatado = '';
+  if (item.descCliente) {
+    // BMP-531: Campo descCliente direto da API
+    descClienteFormatado = item.descCliente;
+    console.log('✅ descCliente encontrado em item.descCliente:', descClienteFormatado);
+  }
+  
+  const resultado = {
+    id: item.codigo || item.codigoTransacao || item.id || Math.random().toString(36),
+    dateTime: item.dtMovimento || item.dataHora || item.dateTime || new Date().toLocaleString('pt-BR'),
+    value: Math.abs(valor),
+    type: tipo,
+    document: documentoFormatado,
+    client: clienteFormatado,
+    identified: item.identificado === 'sim' || item.identified === true || item.identified === 'true' || true,
+    code: item.identificadorOperacao || item.codigoTransacao || item.codigo || item.code || Math.random().toString(36).substr(2, 9).toUpperCase(),
+    descCliente: descClienteFormatado || undefined, // Incluir apenas se existir
+    descricaoOperacao: item.descricaoOperacao || undefined // Campo específico BMP-531
   };
+  
+  console.log('✅ [EXTRATO] Movimento formatado final:', resultado);
+  return resultado;
 };
 
 /**

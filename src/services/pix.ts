@@ -776,6 +776,53 @@ export const consultarChavePixBMP = async (chave: string): Promise<PixKeyConsult
 };
 
 /**
+ * ✅ REGRA 1: Consulta chave PIX específica do BMP-531
+ * @param chave - Chave PIX a ser consultada  
+ * @returns Dados do destinatário da chave via BMP-531
+ */
+export const consultarChavePixBMP531 = async (chave: string): Promise<PixKeyConsultResponse> => {
+  try {
+    console.log('[PIX-SERVICE] ✅ Consultando chave PIX via BMP-531...');
+    
+    // Usar implementação BMP-531 específica
+    return await executarConsultaChavePixBMP531(chave);
+    
+  } catch (error) {
+    console.error('[PIX-SERVICE] ❌ Erro ao consultar chave PIX via BMP-531:', error);
+    
+    let mensagemErro = 'Erro ao consultar chave PIX via BMP-531';
+    
+    if (error instanceof Error) {
+      mensagemErro = error.message;
+    }
+    
+    return {
+      chave: '',
+      tipoChave: 0,
+      nomeCorrentista: '',
+      nomeFantasia: '',
+      tipoPessoa: 0,
+      documentoFederal: '',
+      conta: {
+        conta: '',
+        tipoConta: 0,
+        agencia: '',
+        ispb: null,
+      },
+      banco: {
+        descricao: '',
+        numero: '',
+        ispb: '',
+      },
+      detalhesConsulta: null,
+      ticket: '',
+      sucesso: false,
+      mensagem: mensagemErro,
+    };
+  }
+};
+
+/**
  * ✅ REGRA 1: Consulta chave PIX específica da Bitso
  * @param chave - Chave PIX a ser consultada
  * @returns Resposta explicando limitação da Bitso
@@ -826,6 +873,100 @@ export const consultarChavePixBitso = async (chave: string): Promise<PixKeyConsu
     sucesso: true,
     mensagem: 'Chave PIX reconhecida. Prossiga com o envio (validação será feita pela Bitso).',
   };
+};
+
+/**
+ * ✅ REGRA 1: Implementação interna de consulta PIX via BMP-531
+ * @param chave - Chave PIX a ser consultada
+ * @returns Dados do destinatário da chave
+ */
+const executarConsultaChavePixBMP531 = async (chave: string): Promise<PixKeyConsultResponse> => {
+  try {
+    // Usar endpoint específico do BMP-531
+    const url = `${API_CONFIG.BASE_URL}/bmp-531/pix/consultar-chave`;
+    
+    // Limpar formatação da chave para envio à API
+    const chaveLimpa = limparFormatacaoChave(chave);
+    
+    // Parâmetros para consulta (BMP-531 usa GET com query string)
+    const queryParams = {
+      'chave': chaveLimpa
+    };
+    
+    console.log('[PIX-SERVICE] Consultando chave via BMP-531');
+    
+    // Construir query string
+    const queryString = new URLSearchParams(queryParams).toString();
+    const fullUrl = `${url}?${queryString}`;
+    
+    const response = await fetch(fullUrl, {
+      method: 'GET',
+      headers: getApiHeaders(),
+      signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
+    });
+
+    console.log("Status da resposta BMP-531:", response.status);
+    console.log("Headers da resposta BMP-531:", Object.fromEntries(response.headers.entries()));
+    
+    // Sempre tentar extrair o JSON primeiro, independente do status
+    let result;
+    try {
+      result = await response.json();
+      console.log("Resposta JSON da API BMP-531:", JSON.stringify(result, null, 2));
+    } catch (jsonError) {
+      console.error("Erro ao fazer parse do JSON BMP-531:", jsonError);
+      
+      // Tentar obter o texto da resposta para logs mais detalhados
+      try {
+        const textResponse = await response.text();
+        console.log("Resposta BMP-531 como texto:", textResponse);
+      } catch (textError) {
+        console.error("Erro ao obter resposta BMP-531 como texto:", textError);
+      }
+      
+      // Se não conseguir fazer parse do JSON, retorna erro genérico
+      throw new Error(`Erro HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    // Se não ok, mas temos JSON válido, usar a mensagem do backend
+    if (!response.ok) {
+      throw new Error(result.mensagem || `Erro HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    // Verificar sucesso explícito do BMP-531
+    if (!result.sucesso) {
+      throw new Error(result.mensagem || 'Chave PIX não encontrada no BMP-531');
+    }
+
+    // Formatar resposta padronizada para o frontend
+    return {
+      chave: chaveLimpa,
+      tipoChave: result.tipoChave || 0,
+      nomeCorrentista: result.nomeCorrentista || result.dados?.nomeCorrentista || '',
+      nomeFantasia: result.nomeFantasia || result.dados?.nomeFantasia || '',
+      tipoPessoa: result.tipoPessoa || result.dados?.tipoPessoa || 0,
+      documentoFederal: result.documentoFederal || result.dados?.documentoFederal || '',
+      conta: {
+        conta: result.dados?.conta?.conta || '',
+        tipoConta: result.dados?.conta?.tipoConta || 0,
+        agencia: result.dados?.conta?.agencia || '',
+        ispb: result.dados?.conta?.ispb || null,
+      },
+      banco: {
+        descricao: result.banco || result.dados?.banco?.descricao || 'BMP-531',
+        numero: result.dados?.banco?.numero || '531',
+        ispb: result.dados?.banco?.ispb || '',
+      },
+      detalhesConsulta: result,
+      ticket: result.ticket || '',
+      sucesso: true,
+      mensagem: result.mensagem || 'Chave PIX encontrada via BMP-531',
+    };
+    
+  } catch (error) {
+    console.error("Erro na consulta PIX BMP-531:", error);
+    throw error;
+  }
 };
 
 /**

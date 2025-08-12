@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check } from "lucide-react";
+import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useExtratoSeguro } from "@/hooks/useExtratoSeguro";
 import { validarIntervaloData, formatarDataParaAPI, MovimentoExtrato, ExtratoResponse } from "@/services/extrato";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
+import CompensationModalInteligente from "@/components/CompensationModalInteligente";
 // ✅ ADICIONADO: Importar hook para identificar provedor
 import { useBankFeatures } from "@/hooks/useBankFeatures";
 
@@ -43,12 +44,17 @@ export default function ExtractTable() {
   // Novos estados para filtros de busca
   const [searchName, setSearchName] = useState("");
   const [searchValue, setSearchValue] = useState("");
+  const [searchDescCliente, setSearchDescCliente] = useState(""); // Filtro para descCliente (BMP-531)
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("none");
   const [sortBy, setSortBy] = useState<"value" | "date" | "none">("none");
 
   // Estados para o modal de crédito OTC
   const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
   const [selectedExtractRecord, setSelectedExtractRecord] = useState<MovimentoExtrato | null>(null);
+
+  // Estados para o modal de compensação (BMP-531)
+  const [compensationModalOpen, setCompensationModalOpen] = useState(false);
+  const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<MovimentoExtrato | null>(null);
 
   // ✅ ADICIONADO: Hook para verificar o provedor ativo
   const bankFeatures = useBankFeatures();
@@ -96,6 +102,12 @@ export default function ExtractTable() {
           BMP
         </Badge>
       );
+    } else if (bankFeatures.provider === 'bmp-531') {
+      return (
+        <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-xs font-medium">
+          BMP-531
+        </Badge>
+      );
     }
     return null;
   };
@@ -123,6 +135,14 @@ export default function ExtractTable() {
       }
     }
 
+    // Filtro por descCliente (apenas BMP-531)
+    if (searchDescCliente.trim()) {
+      const searchTerm = searchDescCliente.toLowerCase().trim();
+      filtered = filtered.filter(transaction => 
+        transaction.descCliente?.toLowerCase().includes(searchTerm)
+      );
+    }
+
     // Ordenação
     if (sortBy !== "none" && sortOrder !== "none") {
       filtered.sort((a, b) => {
@@ -145,7 +165,7 @@ export default function ExtractTable() {
     }
 
     return filtered;
-  }, [transactions, searchName, searchValue, sortBy, sortOrder]);
+  }, [transactions, searchName, searchValue, searchDescCliente, sortBy, sortOrder]);
 
   // *** NOVA PAGINAÇÃO FRONTEND ***
   const totalItems = filteredAndSortedTransactions.length;
@@ -198,6 +218,7 @@ export default function ExtractTable() {
     setDateTo(undefined);
     setSearchName("");
     setSearchValue("");
+    setSearchDescCliente(""); // Limpar filtro descCliente
     setSortBy("none");
     setSortOrder("none");
     setCurrentPage(1);
@@ -256,6 +277,23 @@ export default function ExtractTable() {
     
     setCreditOTCModalOpen(false);
     setSelectedExtractRecord(null);
+  };
+
+  // Função para abrir modal de compensação (BMP-531)
+  const handleCompensation = (transaction: MovimentoExtrato, event: React.MouseEvent) => {
+    event.stopPropagation(); // Evitar que abra o modal de detalhes
+    setSelectedCompensationRecord(transaction);
+    setCompensationModalOpen(true);
+  };
+
+  // Função para fechar modal de compensação
+  const handleCloseCompensationModal = (wasSuccessful?: boolean) => {
+    if (wasSuccessful) {
+      toast.success('Compensação processada com sucesso!');
+    }
+    
+    setCompensationModalOpen(false);
+    setSelectedCompensationRecord(null);
   };
 
   const handleRefresh = () => {
@@ -417,8 +455,8 @@ export default function ExtractTable() {
             </div>
           </div>
 
-          {/* Segunda linha - Filtros de busca por nome e valor */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Segunda linha - Filtros de busca por nome, valor e descCliente */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-semibold text-card-foreground">Buscar por nome</label>
               <div className="relative">
@@ -444,6 +482,22 @@ export default function ExtractTable() {
                 />
               </div>
             </div>
+
+            {/* Campo de busca para descCliente - apenas BMP-531 */}
+            {bankFeatures.provider === 'bmp-531' && (
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-card-foreground">Buscar por descCliente</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Ex: Id Conc.: caas436344xU31"
+                    value={searchDescCliente}
+                    onChange={(e) => setSearchDescCliente(e.target.value)}
+                    className="pl-10 h-12 rounded-xl border-border hover:border-blue-500 transition-colors"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <label className="text-sm font-semibold text-card-foreground">Ordenar por</label>
@@ -529,7 +583,7 @@ export default function ExtractTable() {
                 <p className="text-sm text-muted-foreground mt-1">
                   {displayTransactions.length} registros filtrados • {displayTransactions.filter(t => t.type === 'DÉBITO').length} débitos • {displayTransactions.filter(t => t.type === 'CRÉDITO').length} créditos
                   {hasMore && <span className="text-blue-500"> • Mais registros disponíveis</span>}
-                  {(searchName || searchValue || sortBy !== "none") && (
+                  {(searchName || searchValue || searchDescCliente || sortBy !== "none") && (
                     <span className="text-amber-500"> • Filtros ativos</span>
                   )}
                 </p>
@@ -570,6 +624,10 @@ export default function ExtractTable() {
                         <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Tipo</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 min-w-[200px]">Cliente/Banco</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Documento</TableHead>
+                        {/* Coluna descCliente apenas para BMP-531 */}
+                        {bankFeatures.provider === 'bmp-531' && (
+                          <TableHead className="font-semibold text-card-foreground py-3 w-[200px]">descCliente</TableHead>
+                        )}
                         <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Status</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Código</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[120px] text-center">Ações</TableHead>
@@ -651,6 +709,18 @@ export default function ExtractTable() {
                                 transaction.document || "—"
                               )}
                             </TableCell>
+                            {/* Célula descCliente apenas para BMP-531 */}
+                            {bankFeatures.provider === 'bmp-531' && (
+                              <TableCell className="py-3 text-xs text-muted-foreground break-words max-w-[200px]">
+                                {transaction.descCliente ? (
+                                  <span title={transaction.descCliente}>
+                                    {transaction.descCliente}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </TableCell>
+                            )}
                             <TableCell className="py-3">
                               <div className="space-y-1">
                                 {transaction.identified ? (
@@ -688,31 +758,48 @@ export default function ExtractTable() {
                             <TableCell className="py-3">
                               <div className="flex items-center justify-center gap-1">
                                 {transaction.type === 'CRÉDITO' && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => handleCreditToOTC(transaction, e)}
-                                    disabled={isRecordCredited(transaction)}
-                                    className={cn(
-                                      "h-7 px-2 text-xs transition-all",
-                                      isRecordCredited(transaction)
-                                        ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                        : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
-                                    )}
-                                    title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
-                                  >
-                                    {isRecordCredited(transaction) ? (
-                                      <>
-                                        <Check className="h-3 w-3 mr-1" />
-                                        Creditado
-                                      </>
+                                  <>
+                                    {/* Botão Compensar - apenas BMP-531 */}
+                                    {bankFeatures.provider === 'bmp-531' ? (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={(e) => handleCompensation(transaction, e)}
+                                        className="h-7 px-2 text-xs transition-all bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300"
+                                        title="Diagnóstico inteligente + Compensação"
+                                      >
+                                        <DollarSign className="h-3 w-3 mr-1" />
+                                        🧠 Verificar
+                                      </Button>
                                     ) : (
-                                      <>
-                                        <Plus className="h-3 w-3 mr-1" />
-                                        OTC
-                                      </>
+                                      /* Botão OTC - outros provedores */
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={(e) => handleCreditToOTC(transaction, e)}
+                                        disabled={isRecordCredited(transaction)}
+                                        className={cn(
+                                          "h-7 px-2 text-xs transition-all",
+                                          isRecordCredited(transaction)
+                                            ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                            : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
+                                        )}
+                                        title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
+                                      >
+                                        {isRecordCredited(transaction) ? (
+                                          <>
+                                            <Check className="h-3 w-3 mr-1" />
+                                            Creditado
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Plus className="h-3 w-3 mr-1" />
+                                            OTC
+                                          </>
+                                        )}
+                                      </Button>
                                     )}
-                                  </Button>
+                                  </>
                                 )}
                               </div>
                             </TableCell>
@@ -809,31 +896,50 @@ export default function ExtractTable() {
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             {transaction.type === 'CRÉDITO' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => handleCreditToOTC(transaction, e)}
-                                disabled={isRecordCredited(transaction)}
-                                className={cn(
-                                  "h-8 px-2 text-xs transition-all",
-                                  isRecordCredited(transaction)
-                                    ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                    : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                              <>
+                                {/* Botão OTC - outros provedores */}
+                                {bankFeatures.provider !== 'bmp-531' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => handleCreditToOTC(transaction, e)}
+                                    disabled={isRecordCredited(transaction)}
+                                    className={cn(
+                                      "h-8 px-2 text-xs transition-all",
+                                      isRecordCredited(transaction)
+                                        ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                        : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                                    )}
+                                    title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
+                                  >
+                                    {isRecordCredited(transaction) ? (
+                                      <>
+                                        <Check className="h-3 w-3 mr-1" />
+                                        Creditado
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="h-3 w-3 mr-1" />
+                                        OTC
+                                      </>
+                                    )}
+                                  </Button>
                                 )}
-                                title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
-                              >
-                                {isRecordCredited(transaction) ? (
-                                  <>
-                                    <Check className="h-3 w-3 mr-1" />
-                                    Creditado
-                                  </>
-                                ) : (
-                                  <>
-                                    <Plus className="h-3 w-3 mr-1" />
-                                    OTC
-                                  </>
+                                
+                                {/* Botão Compensar - apenas BMP-531 */}
+                                {bankFeatures.provider === 'bmp-531' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => handleCompensation(transaction, e)}
+                                    className="h-8 px-2 text-xs transition-all bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    title="Diagnóstico inteligente + Compensação"
+                                  >
+                                    <DollarSign className="h-3 w-3 mr-1" />
+                                    🧠 Compensar
+                                  </Button>
                                 )}
-                              </Button>
+                              </>
                             )}
                             <Button
                               variant="ghost"
@@ -1233,6 +1339,13 @@ export default function ExtractTable() {
         isOpen={creditOTCModalOpen}
         onClose={handleCloseCreditOTCModal}
         extractRecord={selectedExtractRecord}
+      />
+
+      {/* Modal de Compensação Inteligente - BMP-531 */}
+      <CompensationModalInteligente
+        isOpen={compensationModalOpen}
+        onClose={handleCloseCompensationModal}
+        extractRecord={selectedCompensationRecord}
       />
     </div>
   );

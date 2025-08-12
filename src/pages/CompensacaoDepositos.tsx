@@ -1045,17 +1045,15 @@ function TabelaDepositos({
                                             >
                                                 Detalhes
                                             </Button>
-                                            {deposito.userId === "1" && (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => onEdit(deposito)}
-                                                    className="text-blue-400 hover:text-blue-300"
-                                                >
-                                                    <Edit className="h-4 w-4 mr-1" />
-                                                    Editar
-                                                </Button>
-                                            )}
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => onEdit(deposito)}
+                                                className="text-blue-400 hover:text-blue-300"
+                                            >
+                                                <Edit className="h-4 w-4 mr-1" />
+                                                Editar
+                                            </Button>
                                         </div>
                                     </TableCell>
                                 </TableRow>

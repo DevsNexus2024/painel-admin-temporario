@@ -139,6 +139,52 @@ const BANK_REGISTRY: Record<BankProvider, BankSettings> = {
   },
 
   // ===============================
+  // BMP-531 - BANCO MASTER PAGAMENTOS 531
+  // ===============================
+  [BankProvider.BMP_531]: {
+    provider: BankProvider.BMP_531,
+    name: 'BMP-531',
+    displayName: 'BMP 531 - Pagamentos',
+    environments: {
+      development: {
+        name: 'development',
+        apiUrl: 'http://localhost:3000',
+        timeout: 30000
+      },
+      staging: {
+        name: 'staging',
+        apiUrl: 'https://api-bank.gruponexus.com.br',
+        timeout: 20000
+      },
+      production: {
+        name: 'production',
+        apiUrl: 'https://api-bank.gruponexus.com.br',
+        timeout: 15000
+      }
+    },
+    features: [
+      BankFeature.BALANCE,
+      BankFeature.STATEMENT,
+      BankFeature.PIX_SEND,
+      BankFeature.PIX_RECEIVE,
+      BankFeature.PIX_KEYS,
+      BankFeature.TRANSFER,
+      BankFeature.WEBHOOK
+    ],
+    defaultCredentials: {
+      // BMP-531 usa autenticação similar ao BMP
+    },
+    rateLimit: {
+      requestsPerMinute: 60,
+      requestsPerHour: 1000,
+      burstLimit: 10
+    },
+    customHeaders: {
+      'User-Agent': 'TCR-BaaS-Frontend/1.0'
+    }
+  },
+
+  // ===============================
   // FUTUROS BANCOS (TEMPLATES)
   // ===============================
   [BankProvider.BRADESCO]: {
