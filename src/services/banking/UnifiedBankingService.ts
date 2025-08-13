@@ -135,7 +135,7 @@ export class UnifiedBankingService {
     // 🚨 MAPEAR IDs DO SISTEMA ANTIGO PARA PROVIDERS
     const legacyToProviderMap: Record<string, BankProvider> = {
       'bmp-main': BankProvider.BMP,
-      'bmp-531-main': BankProvider.BMP_531,
+      'bmp-531-ttf': BankProvider.BMP_531, // ✅ TTF SERVICOS DIGITAIS LTDA
       'bitso-crypto': BankProvider.BITSO
     };
     

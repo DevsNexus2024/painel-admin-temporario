@@ -184,7 +184,7 @@ export default function MainLayout() {
                                     <SidebarLink
                                         to="/bmp-531"
                                         icon={<CreditCard className="h-4 w-4" />}
-                                        label="BMP 531"
+                                        label="BMP 531 TCR"
                                     />
                                 </div>
                             </div>

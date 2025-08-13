@@ -1,4 +1,5 @@
 import { API_CONFIG, buildApiUrl, getApiHeaders } from "@/config/api";
+import { logger } from "@/utils/logger";
 
 // ❌ REMOVIDO: import { apiRouter } from "@/pages/payments/apiRouter";
 // 🚨 CRÍTICO: Roteamento isolado para dados financeiros
@@ -100,9 +101,16 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
     }
 
     const provider = filtros.provider;
-    console.log(`🔒 [EXTRATO-SEGURO] Iniciando consulta ISOLADA`);
-    console.log(`🏦 [EXTRATO-SEGURO] Provider EXPLÍCITO: ${provider}`);
-    console.log(`📋 [EXTRATO-SEGURO] Filtros:`, filtros);
+    // ✅ SEGURO: Log sem dados bancários sensíveis
+    logger.info('Iniciando consulta de extrato', {
+      provider: provider,
+      hasFiltros: !!filtros,
+      hasPeriodo: !!(filtros.de && filtros.ate),
+      hasCursor: !!filtros.cursor
+    }, 'ExtratoService');
+    
+    // ✅ APENAS EM DESENVOLVIMENTO: Filtros completos
+    logger.sensitive('Filtros do extrato', filtros, 'ExtratoService');
 
     let result: any;
     let endpoint: string;
@@ -111,11 +119,13 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
     // 🚨 ROTEAMENTO ISOLADO E EXPLÍCITO
     if (provider === 'bmp' || provider === 'bmp-531') {
     if (provider === 'bmp') {
-      console.log(`🔵 [EXTRATO-SEGURO] ===== ROTA BMP EXCLUSIVA =====`);
+      // ✅ SEGURO: Log sem expor rotas
+      logger.debug('Configurando rota BMP', { provider: 'bmp' }, 'ExtratoService');
       baseUrl = API_CONFIG.BASE_URL;
       endpoint = '/internal/account/extrato';
       } else { // provider === 'bmp-531'
-        console.log(`🟣 [EXTRATO-SEGURO] ===== ROTA BMP-531 EXCLUSIVA =====`);
+        // ✅ SEGURO: Log sem expor rotas
+        logger.debug('Configurando rota BMP-531', { provider: 'bmp-531' }, 'ExtratoService');
         baseUrl = API_CONFIG.BASE_URL;
         endpoint = '/bmp-531/account/extrato';
       }
@@ -126,11 +136,28 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       if (filtros.ate) params.end_date = filtros.ate;
       if (filtros.cursor !== undefined) params.cursor = filtros.cursor.toString();
       
+      // ✅ DADOS TTF PARA BMP-531 VIA UNIFIED BANKING SERVICE
+      if (provider === 'bmp-531') {
+        params.agencia = '0001';
+        params.agencia_digito = '8';
+        params.conta = '159';
+        params.conta_digito = '4';
+        params.conta_pgto = '00001594';
+        params.tipo_conta = '3';
+        params.modelo_conta = '1';
+        params.numero_banco = '531';
+      }
+      
       const queryString = new URLSearchParams(params).toString();
       const fullEndpoint = queryString ? `${endpoint}?${queryString}` : endpoint;
       const fullUrl = `${baseUrl}${fullEndpoint}`;
       
-      console.log(`🔵 [EXTRATO-SEGURO] URL ${provider.toUpperCase()}: ${fullUrl}`);
+      // ✅ SEGURO: Log de API sem expor URL completa
+      logger.apiRequest('GET', endpoint, 'ExtratoService');
+      logger.debug('Chamada para extrato preparada', {
+        provider: provider.toUpperCase(),
+        hasQueryParams: !!queryString
+      }, 'ExtratoService');
       
       // Chamada direta e isolada para BMP/BMP-531
       const response = await fetch(fullUrl, {
@@ -152,13 +179,18 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
         throw new Error(`${provider.toUpperCase()} API Error ${response.status}: ${result.message || response.statusText}`);
       }
       
-      console.log(`✅ [EXTRATO-SEGURO] Resposta ${provider.toUpperCase()} recebida:`, {
+      // ✅ SEGURO: Response sem dados sensíveis
+      logger.apiResponse(response.status, 'Extrato recebido com sucesso', 'ExtratoService');
+      logger.info('Dados do extrato processados', {
+        provider: provider.toUpperCase(),
         hasItems: !!result?.items,
-        itemsCount: result?.items?.length || 0
-      });
+        itemsCount: result?.items?.length || 0,
+        success: !!result?.sucesso
+      }, 'ExtratoService');
 
     } else if (provider === 'bitso') {
-      console.log(`🟠 [EXTRATO-SEGURO] ===== ROTA BITSO EXCLUSIVA =====`);
+      // ✅ SEGURO: Log sem expor rotas
+      logger.debug('Configurando rota Bitso', { provider: 'bitso' }, 'ExtratoService');
       baseUrl = `${API_CONFIG.BASE_URL}/api/bitso`;
       endpoint = '/pix/extrato';
       
@@ -285,9 +317,6 @@ const processarDocumento = (documento: string): string => {
  * @returns Movimento formatado
  */
 const formatarMovimentoDoBackend = (item: any, provider?: string): MovimentoExtrato => {
-  console.log('🔍 [EXTRATO] Dados recebidos do backend BMP/BMP-531:', item);
-  console.log('🔍 [EXTRATO] Provider:', provider);
-  
   // ✅ MAPEAMENTO COMPLETO NO FRONTEND - Priorizar BMP-531, fallback BMP
   
   // 1️⃣ CLIENTE: Priorizar nome direto, depois extrair do complemento
@@ -296,23 +325,18 @@ const formatarMovimentoDoBackend = (item: any, provider?: string): MovimentoExtr
   if (item.nome) {
     // BMP-531: Campo 'nome' direto da API
     clienteFormatado = item.nome;
-    console.log('✅ Cliente encontrado em item.nome:', clienteFormatado);
   } else if (item.complemento && item.complemento.includes(' - ')) {
     // BMP-531: Extrair do complemento "***694380*** - Antonio Carlos Nepomuceno Oliveira Filho"
     const partes = item.complemento.split(' - ');
     clienteFormatado = partes.slice(1).join(' - '); // Pega tudo após o primeiro " - "
-    console.log('✅ Cliente extraído do complemento:', clienteFormatado);
   } else if (item.nomeCliente) {
     // BMP: Campo nomeCliente
     clienteFormatado = item.nomeCliente;
-    console.log('✅ Cliente encontrado em item.nomeCliente:', clienteFormatado);
   } else if (item.cliente) {
     // BMP: Campo cliente
     clienteFormatado = item.cliente;
-    console.log('✅ Cliente encontrado em item.cliente:', clienteFormatado);
   } else {
     clienteFormatado = 'Cliente não identificado';
-    console.log('⚠️ Cliente não encontrado, usando fallback');
   }
   
   // 2️⃣ DOCUMENTO: Priorizar documentoFederal, depois extrair do complemento
@@ -321,7 +345,6 @@ const formatarMovimentoDoBackend = (item: any, provider?: string): MovimentoExtr
   if (item.documentoFederal) {
     // BMP-531: Campo documentoFederal direto
     documentoFormatado = item.documentoFederal;
-    console.log('✅ Documento encontrado em item.documentoFederal:', documentoFormatado);
   } else if (item.complemento && item.complemento.includes('***')) {
     // BMP-531: Extrair do complemento "***694380*** - Nome"
     const partes = item.complemento.split(' - ');
@@ -350,18 +373,14 @@ const formatarMovimentoDoBackend = (item: any, provider?: string): MovimentoExtr
     
     if (descricao.includes('RECEBIMENTO') || descricao.includes('RECEBI') || descricao.includes('ENTRADA')) {
       tipo = 'CRÉDITO';
-      console.log('✅ [BMP-531] Tipo determinado como CRÉDITO baseado em descricaoOperacao:', item.descricaoOperacao);
     } else if (descricao.includes('ENVIO') || descricao.includes('ENVIA') || descricao.includes('PAGAMENTO') || descricao.includes('SAIDA')) {
       tipo = 'DÉBITO';
-      console.log('✅ [BMP-531] Tipo determinado como DÉBITO baseado em descricaoOperacao:', item.descricaoOperacao);
     } else {
       // Fallback BMP-531: usar tipoLancamento se disponível, senão usar valor
       if (item.tipoLancamento) {
         tipo = item.tipoLancamento === 'C' ? 'CRÉDITO' : 'DÉBITO';
-        console.log('✅ [BMP-531] Tipo determinado por tipoLancamento:', item.tipoLancamento, '=> ', tipo);
       } else {
         tipo = valor >= 0 ? 'CRÉDITO' : 'DÉBITO';
-        console.log('⚠️ [BMP-531] Tipo determinado por valor (fallback):', valor, '=> ', tipo);
       }
     }
   } else if (provider === 'bmp') {
@@ -369,22 +388,17 @@ const formatarMovimentoDoBackend = (item: any, provider?: string): MovimentoExtr
     if (item.tipo) {
       // Backend BMP já processou o tipo corretamente (campo 'tipo', não 'type')
       tipo = item.tipo;
-      console.log('✅ [BMP] Tipo já processado pelo backend:', item.tipo);
     } else if (item.tipoLancamento) {
       tipo = item.tipoLancamento === 'C' ? 'CRÉDITO' : 'DÉBITO';
-      console.log('✅ [BMP] Tipo determinado por tipoLancamento:', item.tipoLancamento, '=> ', tipo);
     } else {
       tipo = valor >= 0 ? 'CRÉDITO' : 'DÉBITO';
-      console.log('⚠️ [BMP] Tipo determinado por valor:', valor, '=> ', tipo);
     }
   } else {
     // 🔄 FALLBACK GERAL: Para outros casos
     if (item.tipoLancamento) {
       tipo = item.tipoLancamento === 'C' ? 'CRÉDITO' : 'DÉBITO';
-      console.log('✅ [GERAL] Tipo determinado por tipoLancamento:', item.tipoLancamento, '=> ', tipo);
     } else {
       tipo = valor >= 0 ? 'CRÉDITO' : 'DÉBITO';
-      console.log('⚠️ [GERAL] Tipo determinado por valor:', valor, '=> ', tipo);
     }
   }
   
@@ -393,7 +407,6 @@ const formatarMovimentoDoBackend = (item: any, provider?: string): MovimentoExtr
   if (item.descCliente) {
     // BMP-531: Campo descCliente direto da API
     descClienteFormatado = item.descCliente;
-    console.log('✅ descCliente encontrado em item.descCliente:', descClienteFormatado);
   }
   
   const resultado = {
@@ -409,7 +422,6 @@ const formatarMovimentoDoBackend = (item: any, provider?: string): MovimentoExtr
     descricaoOperacao: item.descricaoOperacao || undefined // Campo específico BMP-531
   };
   
-  console.log('✅ [EXTRATO] Movimento formatado final:', resultado);
   return resultado;
 };
 

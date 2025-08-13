@@ -285,4 +285,72 @@ export abstract class BaseBankProvider implements IBankProvider {
   ): Promise<BankResponse<{ qrCode: string; txId: string }>> {
     return this.createErrorResponse('NOT_SUPPORTED', 'QR Code PIX não suportado por este banco');
   }
+
+  /**
+   * 🔐 Função de requisição HTTP com API credentials
+   * ✅ Inclui headers de autenticação obrigatórios
+   */
+  protected async makeRequest(
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    endpoint: string,
+    body?: any,
+    additionalHeaders?: Record<string, string>
+  ): Promise<any> {
+    const baseUrl = this.config.apiUrl || 'https://api-bank.gruponexus.com.br';
+    const url = `${baseUrl}${endpoint}`;
+
+    // ✅ Headers com API credentials para BMP
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'X-API-Key': import.meta.env.VITE_API_KEY_BMP_TCR,
+      'X-API-Secret': import.meta.env.VITE_API_SECRET_BMP_TCR,
+      ...additionalHeaders
+    };
+
+    // ✅ Adicionar token JWT se disponível
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      this.logger.info(`${method} ${endpoint}`, { hasBody: !!body });
+
+      const requestInit: RequestInit = {
+        method,
+        headers,
+        signal: AbortSignal.timeout(30000) // 30 segundos
+      };
+
+      if (body && method !== 'GET') {
+        requestInit.body = JSON.stringify(body);
+      }
+
+      const response = await fetch(url, requestInit);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      this.logger.info(`${method} ${endpoint} - sucesso`, { status: response.status });
+      
+      return data;
+      
+    } catch (error: any) {
+      this.logger.error(`${method} ${endpoint} - erro`, error);
+      
+      if (error.name === 'TimeoutError') {
+        throw new Error('Timeout: A requisição demorou muito para responder');
+      }
+      
+      if (error.name === 'AbortError') {
+        throw new Error('Requisição cancelada');
+      }
+      
+      throw error;
+    }
+  }
 } 

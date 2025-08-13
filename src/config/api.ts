@@ -1,4 +1,5 @@
 import { User } from '@/services/auth';
+import { logger } from '@/utils/logger';
 
 // 🔧 CONFIGURAÇÃO DE AMBIENTE - Altere para 'development' ou 'production'
 const FORCE_ENVIRONMENT: 'development' | 'production' = 'production';
@@ -16,9 +17,12 @@ const DIAGNOSTICO_API_URL = 'https://vps80270.cloudpublic.com.br:8081';
 const getBaseUrl = (): string => {
   const baseUrl = API_URLS[FORCE_ENVIRONMENT];
   
-  console.log(`🔧 Ambiente: ${FORCE_ENVIRONMENT.toUpperCase()} (FORÇADO)`);
-  console.log(`🔧 API Base URL: ${baseUrl}`);
-  console.log(`🔍 API Diagnóstico URL: ${DIAGNOSTICO_API_URL}`);
+  // ✅ SEGURO: Não expõe URLs reais em produção
+  logger.debug('Configuração da API carregada', {
+    environment: FORCE_ENVIRONMENT,
+    hasBaseUrl: !!baseUrl,
+    hasDiagnosticoUrl: !!DIAGNOSTICO_API_URL
+  }, 'APIConfig');
   
   return baseUrl;
 };
@@ -288,7 +292,7 @@ export const createApiRequest = async (
     
     return response;
   } catch (error) {
-    console.error('Erro na requisição:', error);
+    logger.error('Erro na requisição', error, 'APIRequest');
     throw error;
   }
 };
@@ -310,21 +314,22 @@ export const createAdminApiRequest = async (
   };
 
   try {
-    console.log(`🔍 Fazendo requisição de diagnóstico para: ${url}`);
-    console.log(`📋 Headers:`, headers);
-    console.log(`📦 Body:`, options.body);
+    // ✅ SEGURO: Log de API sem expor dados sensíveis
+    logger.apiRequest(options.method || 'POST', endpoint, 'AdminAPI');
+    logger.debug('Requisição preparada', {
+      hasHeaders: !!headers,
+      hasBody: !!options.body,
+      isDiagnosticoOperation
+    }, 'AdminAPI');
     
     const response = await fetch(url, config);
     
-    console.log(`📥 Resposta recebida:`, {
-      status: response.status,
-      statusText: response.statusText,
-      url: response.url
-    });
+    // ✅ SEGURO: Response sem dados sensíveis
+    logger.apiResponse(response.status, response.statusText, 'AdminAPI');
     
     return response;
   } catch (error) {
-    console.error('❌ Erro na requisição admin:', error);
+    logger.error('Erro na requisição admin', error, 'AdminAPI');
     throw error;
   }
 };

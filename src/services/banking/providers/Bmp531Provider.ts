@@ -72,31 +72,34 @@ export class Bmp531Provider extends BaseBankProvider {
    */
   async getBalance(accountId?: string): Promise<BankResponse<StandardBalance>> {
     try {
-      console.log('💰 [BMP-531] getBalance() chamado - consultando saldo BMP-531', { accountId });
-      this.logger.info('Consultando saldo BMP-531', { accountId });
+      // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
+      const dadosBancarios = {
+        agencia: '0001',
+        agencia_digito: '8',
+        conta: '159',
+        conta_digito: '4',
+        conta_pgto: '00001594',
+        tipo_conta: 3,
+        modelo_conta: 1,
+        numero_banco: '531'
+      };
       
-      // ⚠️ DESCOBRIR: Testar diferentes endpoints possíveis para saldo BMP-531
       let response;
       try {
-        response = await this.makeRequest('GET', '/bmp-531/account/saldo');
+        response = await this.makeRequest('GET', '/bmp-531/account/saldo', dadosBancarios);
       } catch (error) {
-        try {
-          response = await this.makeRequest('GET', '/bmp-531/saldo');
-        } catch (error2) {
-          // Se não existir endpoint específico, retornar mock temporário
-          console.warn('⚠️ [BMP-531] Endpoints de saldo não encontrados, usando mock temporário');
-          response = {
-            saldoDisponivel: 0,
-            saldoBloqueado: 0,
-            atualizadoEm: new Date().toISOString()
-          };
-        }
+        // Mock temporário com dados zerados para TTF
+        response = {
+          saldoDisponivel: 0,
+          saldoBloqueado: 0,
+          atualizadoEm: new Date().toISOString()
+        };
       }
       
       // Padronizar resposta do BMP-531
       const standardBalance: StandardBalance = {
         provider: BankProvider.BMP_531,
-        accountId: accountId || 'bmp-531-main',
+        accountId: accountId || 'bmp-531-ttf', // ✅ TTF SERVICOS DIGITAIS LTDA
         currency: 'BRL',
         available: response.saldoDisponivel || 0,
         blocked: response.saldoBloqueado || 0,
@@ -134,6 +137,18 @@ export class Bmp531Provider extends BaseBankProvider {
         return this.createErrorResponse('INVALID_FILTERS', validation.error!);
       }
 
+      // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
+      const dadosBancarios = {
+        agencia: '0001',
+        agencia_digito: '8',
+        conta: '159',
+        conta_digito: '4',
+        conta_pgto: '00001594',
+        tipo_conta: 3,
+        modelo_conta: 1,
+        numero_banco: '531'
+      };
+      
       // Preparar parâmetros para API BMP-531
       const params: any = {};
       if (filters?.limit) params.limit = filters.limit;
@@ -143,15 +158,14 @@ export class Bmp531Provider extends BaseBankProvider {
 
       let response;
       try {
-        response = await this.makeRequest('GET', '/bmp-531/account/extrato', params);
+        // ✅ USAR GET conforme registrado no app.js do backend
+        // Combinar parâmetros de filtros com dados bancários
+        const allParams = { ...params, ...dadosBancarios };
+        response = await this.makeRequest('GET', '/bmp-531/account/extrato', allParams);
       } catch (error) {
-        try {
-          response = await this.makeRequest('GET', '/bmp-531/extrato', params);
-        } catch (error2) {
-          // Se não existir endpoint específico, retornar lista vazia temporariamente
-          console.warn('⚠️ [BMP-531] Endpoints de extrato não encontrados, retornando lista vazia');
-          response = { items: [], next_cursor: null, has_more: false, total: 0 };
-        }
+        // Se não existir endpoint específico, retornar lista vazia temporariamente
+        console.warn('⚠️ [BMP-531] Endpoints de extrato não encontrados, retornando lista vazia');
+        response = { items: [], next_cursor: null, has_more: false, total: 0 };
       }
 
       // Padronizar transações
@@ -159,7 +173,7 @@ export class Bmp531Provider extends BaseBankProvider {
         provider: BankProvider.BMP_531,
         id: item.id || `bmp-531-${Date.now()}-${Math.random()}`,
         externalId: item.external_id,
-        accountId: accountId || 'bmp-531-main',
+        accountId: accountId || 'bmp-531-ttf', // ✅ TTF SERVICOS DIGITAIS LTDA
         amount: this.normalizeAmount(item.value || 0),
         currency: 'BRL',
         type: item.type === 'CRÉDITO' ? TransactionType.CREDIT : TransactionType.DEBIT,
@@ -179,7 +193,7 @@ export class Bmp531Provider extends BaseBankProvider {
 
       const statementResponse: StandardStatementResponse = {
         provider: BankProvider.BMP_531,
-        accountId: accountId || 'bmp-531-main',
+        accountId: accountId || 'bmp-531-ttf', // ✅ TTF SERVICOS DIGITAIS LTDA
         transactions,
         pagination: {
           cursor: response.next_cursor,
@@ -237,7 +251,7 @@ export class Bmp531Provider extends BaseBankProvider {
   /**
    * Faz requisição para API BMP-531
    */
-  private async makeRequest(method: string, endpoint: string, params?: any): Promise<any> {
+  private async makeRequest(method: string, endpoint: string, params?: any, bodyData?: any): Promise<any> {
     await this.applyRateLimit();
 
     let url = `${this.baseUrl}${endpoint}`;
@@ -245,9 +259,24 @@ export class Bmp531Provider extends BaseBankProvider {
 
     // Para GET, adicionar parâmetros na URL
     if (method.toUpperCase() === 'GET' && params) {
-      const searchParams = new URLSearchParams(params);
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          searchParams.append(key, String(value));
+        }
+      });
+      
       url += `?${searchParams.toString()}`;
+      
+      // Se há bodyData para GET, incluir no body mesmo sendo GET (conforme documentação BMP-531)
+      if (bodyData) {
+        body = JSON.stringify(bodyData);
+      }
+    } else if (bodyData) {
+      // ✅ Usar bodyData se fornecido (para dados bancários)
+      body = JSON.stringify(bodyData);
     } else if (params) {
+      // ✅ Fallback para params se não há bodyData
       body = JSON.stringify(params);
     }
 
@@ -323,23 +352,35 @@ export class Bmp531Provider extends BaseBankProvider {
         accountId 
       });
 
-      // Preparar dados para API BMP-531 (conforme documentação do backend)
+      // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
+      const dadosBancarios = {
+        agencia: '0001',
+        agencia_digito: '8',
+        conta: '159',
+        conta_digito: '4',
+        conta_pgto: '00001594',
+        tipo_conta: 3,
+        modelo_conta: 1,
+        numero_banco: '531'
+      };
+
+      // Preparar dados para API BMP-531 PIX
       const requestData = {
         chave: pixData.key,
         valor: pixData.amount,
         descricao: pixData.description || 'Transferência PIX',
-        // ⚠️ BMP-531 pode exigir dados bancários específicos
-        informacoesAdicionais: pixData.description || 'Transferência PIX via BMP-531'
+        informacoesAdicionais: pixData.description || 'Transferência PIX via BMP-531',
+        dadosBancarios: dadosBancarios // ✅ Incluir dados bancários TTF
       };
 
-      const response = await this.makeRequest('POST', 'https://api-bank.gruponexus.com.br/bmp-531/pix/enviar', requestData);
+      const response = await this.makeRequest('POST', '/bmp-531/pix/enviar', {}, requestData);
 
       // Padronizar resposta do BMP-531 para StandardTransaction
       const standardTransaction: StandardTransaction = {
         provider: BankProvider.BMP_531,
         id: response.codigoTransacao || `bmp-531-pix-${Date.now()}`,
         externalId: response.codigoTransacao,
-        accountId: accountId || 'bmp-531-main',
+        accountId: accountId || 'bmp-531-ttf', // ✅ TTF SERVICOS DIGITAIS LTDA
         amount: pixData.amount,
         currency: 'BRL',
         type: TransactionType.DEBIT,
@@ -347,8 +388,7 @@ export class Bmp531Provider extends BaseBankProvider {
         description: `PIX para ${pixData.key}: ${pixData.description || 'Transferência PIX'}`,
         date: new Date().toISOString(),
         counterparty: {
-          account: pixData.key,
-          keyType: pixData.keyType
+          account: pixData.key
         },
         metadata: {
           pixKey: pixData.key,
@@ -377,20 +417,26 @@ export class Bmp531Provider extends BaseBankProvider {
    */
   async getPixKeys(accountId?: string): Promise<BankResponse<any[]>> {
     try {
-      console.log('🔑 [BMP-531] getPixKeys() chamado - listando chaves PIX via BMP-531', { accountId });
-      this.logger.info('Listando chaves PIX via BMP-531', { accountId });
+      // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
+      const dadosBancarios = {
+        agencia: '0001',
+        agencia_digito: '8',
+        conta: '159',
+        conta_digito: '4',
+        conta_pgto: '00001594',
+        tipo_conta: 3,
+        modelo_conta: 1,
+        numero_banco: '531'
+      };
 
       let response;
       try {
-        response = await this.makeRequest('GET', '/bmp-531/pix/chaves/listar');
+        // ✅ Enviar dados bancários para buscar chaves da conta TTF
+        response = await this.makeRequest('GET', '/bmp-531/pix/chaves/listar', dadosBancarios);
       } catch (error) {
-        try {
-          response = await this.makeRequest('GET', '/bmp-531/chaves');
-        } catch (error2) {
-          // Se não existir endpoint específico, retornar lista vazia
-          console.warn('⚠️ [BMP-531] Endpoints de chaves PIX não encontrados, retornando lista vazia');
-          response = { chaves: [] };
-        }
+        // Se não existir endpoint específico, retornar lista vazia
+        console.warn('⚠️ [BMP-531] Endpoints de chaves PIX não encontrados, retornando lista vazia');
+        response = { chaves: [] };
       }
 
       // BMP-531 retorna as chaves no formato adequado
@@ -425,14 +471,26 @@ export class Bmp531Provider extends BaseBankProvider {
       
       this.logger.info('Gerando QR Code PIX via BMP-531', { amount, description, accountId });
 
-      // Dados para QR Code estático (conforme documentação do backend BMP-531)
+      // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
+      const dadosBancarios = {
+        agencia: '0001',
+        agencia_digito: '8',
+        conta: '159',
+        conta_digito: '4',
+        conta_pgto: '00001594',
+        tipo_conta: 3,
+        modelo_conta: 1,
+        numero_banco: '531'
+      };
+
+      // Dados para QR Code estático TTF
       const requestData = {
         valor: amount,
         informacoesAdicionais: description || 'QR Code PIX',
-        // ⚠️ BMP-531 pode exigir dados bancários para QR Code
+        dadosBancarios: dadosBancarios // ✅ Incluir dados bancários TTF
       };
 
-      const response = await this.makeRequest('POST', '/bmp-531/pix/qrcode/estatico', requestData);
+      const response = await this.makeRequest('POST', '/bmp-531/pix/qrcode/estatico', {}, requestData);
 
       return this.createSuccessResponse({
         qrCode: response.qrCode || response.emv || '',

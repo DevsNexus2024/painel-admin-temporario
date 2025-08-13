@@ -1,0 +1,3 @@
+# LOGS - TESTE CHAVES PIX TTF - MAPEAMENTO CORRIGIDO
+
+Aguardando logs do próximo teste com estrutura de dados corrigida...

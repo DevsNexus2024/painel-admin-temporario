@@ -7,6 +7,7 @@
  */
 
 import { API_CONFIG } from "@/config/api";
+import { logger } from "@/utils/logger";
 
 // ==================== CONFIGURAÇÕES ====================
 
@@ -14,6 +15,19 @@ import { API_CONFIG } from "@/config/api";
  * Configuração centralizada de endpoints BMP 531
  * ✅ Usando variáveis de ambiente e documentação oficial
  */
+/**
+ * Headers de autenticação para BMP-531
+ * ✅ Inclui API credentials obrigatórias
+ */
+function getAuthHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'X-API-Key': import.meta.env.VITE_API_KEY_BMP_531_TCR,
+    'X-API-Secret': import.meta.env.VITE_API_SECRET_BMP_531_TCR
+  };
+}
+
 const BMP531_CONFIG = {
   // 🌐 URL base da API do Grupo Nexus
   baseUrl: 'https://api-bank.gruponexus.com.br',
@@ -38,15 +52,16 @@ const BMP531_CONFIG = {
   },
   
   // 🔑 Dados bancários das variáveis de ambiente (Frontend - import.meta.env)
+  // ✅ DADOS DA CONTA TTF (TTF SERVICOS DIGITAIS LTDA)
   dadosBancarios: {
-    agencia: import.meta.env.VITE_AG_BMP_531_TCR || '0001',
-    agencia_digito: import.meta.env.VITE_AG_DG_BMP_531_TCR || '8',
-    conta: import.meta.env.VITE_CONTA_BMP_531_TCR || '157',
-    conta_digito: import.meta.env.VITE_CONTA_DG_BMP_531_TCR || '8',
-    conta_pgto: `0000${import.meta.env.VITE_CONTA_BMP_531_TCR || '157'}${import.meta.env.VITE_CONTA_DG_BMP_531_TCR || '8'}`, // Formatação: 00001578
-    tipo_conta: parseInt(import.meta.env.VITE_TIPO_BMP_531_TCR || '3'),
-    modelo_conta: parseInt(import.meta.env.VITE_MODELO_BMP_531_TCR || '1'),
-    pix_key: import.meta.env.VITE_CHAVE_BMP_531_TCR || 'ca3d35ae-bfb2-409e-9892-53fadd15f4ad'
+    agencia: '0001',
+    agencia_digito: '8', 
+    conta: '159',
+    conta_digito: '4',
+    conta_pgto: '00001594', // TTF Conta Pagamento
+    tipo_conta: 3,
+    modelo_conta: 1,
+    pix_key: import.meta.env.VITE_CHAVE_BMP_531_TTF || 'ca3d35ae-bfb2-409e-9892-53fadd15f4ad'
   },
   
   // 🔐 Token de autenticação
@@ -230,20 +245,27 @@ export interface Bmp531PixChave {
 
 // ==================== UTILITÁRIOS ====================
 
-/**
- * Obtém headers padrão com token de autenticação BMP 531
- */
-function getAuthHeaders(): HeadersInit {
-  return {
-    ...BMP531_CONFIG.defaultHeaders,
-    'X_BMP531_SECRET_TOKEN': BMP531_CONFIG.secretToken,
-  };
-}
+
 
 /**
- * Obtém dados bancários das variáveis de ambiente
+ * Obtém dados bancários dinâmicos 
+ * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'ttf')
  */
-function getDadosBancarios() {
+function getDadosBancarios(accountType: 'tcr' | 'ttf' = 'ttf') {
+  if (accountType === 'tcr') {
+    // Dados da conta TCR (conta antiga/padrão)
+    return {
+      agencia: '0001',
+      agencia_digito: '8',
+      conta: '157', 
+      conta_digito: '8',
+      conta_pgto: '00001578',
+      tipo_conta: 3,
+      modelo_conta: 1,
+    };
+  }
+  
+  // Dados da conta TTF (nova conta padrão)
   return { ...BMP531_CONFIG.dadosBancarios };
 }
 
@@ -256,8 +278,6 @@ async function makeRequest<T>(
 ): Promise<T> {
   const url = `${BMP531_CONFIG.baseUrl}${endpoint}`;
   
-  console.log(`🏦 [BMP531Service] ${options.method || 'GET'} ${url}`);
-  
   try {
     const response = await fetch(url, {
       ...options,
@@ -268,22 +288,15 @@ async function makeRequest<T>(
       signal: AbortSignal.timeout(BMP531_CONFIG.timeout)
     });
 
-    console.log(`🏦 [BMP531Service] Response: ${response.status} ${response.statusText}`);
-
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ [BMP531Service] Erro ${response.status}:`, errorText);
-      
+      const errorText = await response.text();      
       throw new Error(`Erro ${response.status}: ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log(`✅ [BMP531Service] Resposta recebida:`, data);
-    
     return data;
     
   } catch (error: any) {
-    console.error(`❌ [BMP531Service] Erro na requisição:`, error);
     
     if (error.name === 'TimeoutError') {
       throw new Error('Timeout: A requisição demorou muito para responder');
@@ -301,13 +314,21 @@ async function makeRequest<T>(
 
 /**
  * 💰 Consulta saldo da conta BMP 531
+ * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'ttf') 
  */
-export async function getBmp531Saldo(): Promise<Bmp531SaldoResponse> {
-  console.log('💰 [BMP531Service] Consultando saldo...');
+export async function getBmp531Saldo(accountType: 'tcr' | 'ttf' = 'ttf'): Promise<Bmp531SaldoResponse> {
+  // ✅ SEGURO: Log sem dados bancários sensíveis
+  logger.info('Consultando saldo bancário', {
+    accountType: accountType.toUpperCase()
+  }, 'BMP531Service');
+  
+  const dadosBancarios = getDadosBancarios(accountType);
   
   return makeRequest<Bmp531SaldoResponse>(
     BMP531_CONFIG.endpoints.saldo,
-    { method: 'GET' }
+    { 
+      method: 'GET'
+    }
   );
 }
 
@@ -315,14 +336,14 @@ export async function getBmp531Saldo(): Promise<Bmp531SaldoResponse> {
  * 📋 Consulta extrato da conta BMP 531
  * ✅ Sem limite de registros - busca todos os dados disponíveis
  * ✅ Suporte à paginação igual ao gerenciador de contas original
+ * @param filtros - Filtros de data e paginação
+ * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'ttf')
  */
 export async function getBmp531Extrato(filtros?: {
   de?: string;
   ate?: string;
   cursor?: number;
-}): Promise<Bmp531ExtratoResponse> {
-  console.log('📋 [BMP531Service] Consultando extrato BMP-531...');
-  
+}, accountType: 'tcr' | 'ttf' = 'ttf'): Promise<Bmp531ExtratoResponse> {
   let endpoint = BMP531_CONFIG.endpoints.extrato;
   
   // Adicionar parâmetros de filtro se fornecidos
@@ -342,12 +363,14 @@ export async function getBmp531Extrato(filtros?: {
     endpoint += `?${params.toString()}`;
   }
   
+  const dadosBancarios = getDadosBancarios(accountType);
+  
   const resultado = await makeRequest<Bmp531ExtratoResponse>(
     endpoint,
-    { method: 'GET' }
+    { 
+      method: 'GET'
+    }
   );
-  
-  console.log(`✅ [BMP531Service] ${resultado?.items?.length || 0} registros carregados`);
   
   return resultado;
 }
@@ -357,13 +380,17 @@ export async function getBmp531Extrato(filtros?: {
 /**
  * 💸 Envia PIX por chave - BMP 531
  * ✅ Conforme documentação: inclui dadosBancarios automaticamente
+ * @param data - Dados do PIX a enviar
+ * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'ttf')
  */
-export async function enviarPixBmp531(data: Bmp531PixEnviarRequest): Promise<Bmp531PixEnviarResponse> {
-  console.log('💸 [BMP531Service] Enviando PIX...', { 
-    chave: data.chave, 
-    valor: data.valor,
-    descricao: data.descricao 
-  });
+export async function enviarPixBmp531(data: Bmp531PixEnviarRequest, accountType: 'tcr' | 'ttf' = 'ttf'): Promise<Bmp531PixEnviarResponse> {
+  // ✅ SEGURO: Log sem dados sensíveis
+  logger.info('Iniciando transferência PIX', {
+    accountType: accountType.toUpperCase(),
+    hasChave: !!data.chave,
+    hasValor: !!data.valor,
+    hasDescricao: !!data.descricao
+  }, 'BMP531Service');
   
   // ✅ Incluir dados bancários conforme documentação
   const requestBody = {
@@ -372,10 +399,18 @@ export async function enviarPixBmp531(data: Bmp531PixEnviarRequest): Promise<Bmp
     descricao: data.descricao,
     informacoesAdicionais: data.informacoesAdicionais,
     remittanceInformation: data.remittanceInformation,
-    dadosBancarios: getDadosBancarios()
+    dadosBancarios: getDadosBancarios(accountType)
   };
   
-  console.log('💸 [BMP531Service] Request body:', requestBody);
+  // ✅ SEGURO: Request sem dados sensíveis
+  logger.debug('Request PIX preparado', {
+    hasBody: !!requestBody,
+    bodyKeys: Object.keys(requestBody),
+    hasDadosBancarios: !!requestBody.dadosBancarios
+  }, 'BMP531Service');
+  
+  // ✅ APENAS EM DESENVOLVIMENTO: Dados completos
+  logger.sensitive('PIX request completo', { data, requestBody }, 'BMP531Service');
   
   return makeRequest<Bmp531PixEnviarResponse>(
     BMP531_CONFIG.endpoints.pixEnviar,
@@ -391,7 +426,14 @@ export async function enviarPixBmp531(data: Bmp531PixEnviarRequest): Promise<Bmp
  * ✅ Conforme documentação: GET com query parameter
  */
 export async function consultarChavePixBmp531(data: Bmp531PixConsultarChaveRequest): Promise<Bmp531PixConsultarChaveResponse> {
-  console.log('🔍 [BMP531Service] Consultando chave PIX...', data.chave);
+  // ✅ SEGURO: Log sem expor chave PIX
+  logger.info('Consultando chave PIX', {
+    hasChave: !!data.chave,
+    chaveLength: data.chave?.length || 0
+  }, 'BMP531Service');
+  
+  // ✅ APENAS EM DESENVOLVIMENTO: Chave completa
+  logger.sensitive('Chave PIX para consulta', { chave: data.chave }, 'BMP531Service');
   
   // ✅ Usar GET com query parameter conforme documentação
   const endpoint = `${BMP531_CONFIG.endpoints.pixConsultarChave}?chave=${encodeURIComponent(data.chave)}`;
@@ -413,10 +455,15 @@ export async function consultarChavePixBmp531(data: Bmp531PixConsultarChaveReque
  * ✅ Conforme documentação: inclui dadosBancarios automaticamente
  */
 export async function criarChavePixBmp531(data: Bmp531PixChaveCriarRequest): Promise<Bmp531PixChaveCriarResponse> {
-  console.log('➕ [BMP531Service] Criando chave PIX...', { 
+  // ✅ SEGURO: Log sem expor chave PIX
+  logger.info('Criando chave PIX', {
     tipoChave: data.tipoChave,
-    chave: data.chave 
-  });
+    hasChave: !!data.chave,
+    hasCodigoMfa: !!data.codigoMfa
+  }, 'BMP531Service');
+  
+  // ✅ APENAS EM DESENVOLVIMENTO: Dados completos
+  logger.sensitive('Criação de chave PIX', data, 'BMP531Service');
   
   // ✅ Incluir dados bancários conforme documentação
   const requestBody = {
@@ -427,7 +474,11 @@ export async function criarChavePixBmp531(data: Bmp531PixChaveCriarRequest): Pro
     dadosBancarios: getDadosBancarios()
   };
   
-  console.log('➕ [BMP531Service] Request body:', requestBody);
+  // ✅ SEGURO: Request sem dados sensíveis
+  logger.debug('Request criação de chave preparado', {
+    hasBody: !!requestBody,
+    bodyKeys: Object.keys(requestBody)
+  }, 'BMP531Service');
   
   return makeRequest<Bmp531PixChaveCriarResponse>(
     BMP531_CONFIG.endpoints.pixChavesCriar,
@@ -441,12 +492,13 @@ export async function criarChavePixBmp531(data: Bmp531PixChaveCriarRequest): Pro
 /**
  * 📝 Lista chaves PIX cadastradas - BMP 531
  * ✅ Conforme documentação: GET com dadosBancarios no body
+ * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'ttf')
  */
-export async function listarChavesPixBmp531(): Promise<Bmp531PixChavesListarResponse> {
-  console.log('📝 [BMP531Service] Listando chaves PIX...');
+export async function listarChavesPixBmp531(accountType: 'tcr' | 'ttf' = 'ttf'): Promise<Bmp531PixChavesListarResponse> {
+  console.log(`📝 [BMP531Service] Listando chaves PIX da conta ${accountType.toUpperCase()}...`);
   
-  // ✅ Para GET requests, dados bancários devem ir como query parameters
-  const dadosBancarios = getDadosBancarios();
+  // ✅ PADRONIZAR igual ao extrato: Enviar via query parameters
+  const dadosBancarios = getDadosBancarios(accountType);
   const params = new URLSearchParams();
   
   // Adicionar dados bancários como query parameters
@@ -457,12 +509,12 @@ export async function listarChavesPixBmp531(): Promise<Bmp531PixChavesListarResp
   });
   
   const endpoint = `${BMP531_CONFIG.endpoints.pixChavesListar}?${params.toString()}`;
+  console.log(`📝 [BMP531Service] URL TTF:`, endpoint);
   
   return makeRequest<Bmp531PixChavesListarResponse>(
     endpoint,
     {
-      method: 'GET'
-      // ✅ Sem body para GET requests
+      method: 'GET' // ✅ GET com query parameters igual ao extrato
     }
   );
 }
@@ -619,21 +671,30 @@ export function getBmp531EndpointUrl(endpoint: keyof typeof BMP531_CONFIG.endpoi
 /**
  * Serviço principal BMP 531 com todas as funcionalidades
  * ✅ Atualizado com todos os endpoints da documentação
+ * ✅ Suporte para contas TCR e TTF
  */
 export const Bmp531Service = {
-  // Conta
+  // Conta - Compatibilidade (usa TTF por padrão)
   getSaldo: getBmp531Saldo,
   getExtrato: getBmp531Extrato,
   
-  // PIX - Operações
+  // Conta - Com suporte a tipos de conta
+  getSaldoTCR: () => getBmp531Saldo('tcr'),
+  getSaldoTTF: () => getBmp531Saldo('ttf'),
+  getExtratoTCR: (filtros?: any) => getBmp531Extrato(filtros, 'tcr'),
+  getExtratoTTF: (filtros?: any) => getBmp531Extrato(filtros, 'ttf'),
+  
+  // PIX - Operações (compatibilidade)
   enviarPix: enviarPixBmp531,
   consultarChave: consultarChavePixBmp531,
   pagarQrCode: pagarQrCodePixBmp531,
   consultarStatusTransacao: consultarStatusTransacaoPixBmp531,
   
-  // PIX - Chaves
+  // PIX - Chaves (compatibilidade + específicas)
   criarChave: criarChavePixBmp531,
   listarChaves: listarChavesPixBmp531,
+  listarChavesTCR: () => listarChavesPixBmp531('tcr'),
+  listarChavesTTF: () => listarChavesPixBmp531('ttf'),
   
   // PIX - QR Code
   criarQrCodeEstatico: criarQrCodeEstaticoPixBmp531,

@@ -6,7 +6,7 @@
 import { API_CONFIG } from '@/config/api';
 
 // Tipos básicos
-export type Provider = 'bmp' | 'bitso';
+export type Provider = 'bmp' | 'bitso' | 'bmp-531';
 
 export interface Account {
   id: string;
@@ -34,14 +34,14 @@ export const ACCOUNTS: Account[] = [
     }
   },
   {
-    id: 'bmp-531-main',
-    name: 'BMP 531',
+    id: 'bmp-531-ttf',
+    name: 'BMP 531 TTF',
     provider: 'bmp-531',
-    displayName: 'BMP 531 - Pagamentos',
+    displayName: 'BMP 531 TTF - Pagamentos',
     bankInfo: {
       bank: 'Banco 531',
       agency: '0001',
-      account: '531001-0'
+      account: '159-4'
     }
   },
   {

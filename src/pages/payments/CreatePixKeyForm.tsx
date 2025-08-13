@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { criarChavePix, validarChavePix, formatarChavePix } from "@/services/pix";
+import { Bmp531Service } from "@/services/bmp531"; // ✅ ISOLAMENTO: Só para BMP 531 TTF
 
 const createKeySchema = z.object({
   tipoChave: z.enum(["cpf", "cnpj", "email", "telefone", "aleatoria"], {
@@ -38,6 +39,26 @@ export default function CreatePixKeyForm() {
   const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
   const [codigoAutenticacao, setCodigoAutenticacao] = useState<string | null>(null);
   const [etapaAtual, setEtapaAtual] = useState<'INICIAL' | 'AGUARDANDO_MFA' | 'CONCLUIDO'>('INICIAL');
+  
+  // ✅ DETECTAR SE BMP 531 TTF ESTÁ ATIVA
+  const [currentAccount, setCurrentAccount] = useState<any>(null);
+  const isBmp531TTF = currentAccount?.provider === 'bmp-531';
+  
+  // ✅ Verificar conta ativa periodicamente
+  useEffect(() => {
+    const checkAccount = () => {
+      try {
+        const account = (window as any).apiRouter?.getCurrentAccount?.();
+        setCurrentAccount(account);
+      } catch (error) {
+        console.log('ApiRouter não disponível');
+      }
+    };
+    
+    checkAccount();
+    const interval = setInterval(checkAccount, 2000);
+    return () => clearInterval(interval);
+  }, []);
   
   const form = useForm<CreateKeyFormData>({
     resolver: zodResolver(createKeySchema),
@@ -104,7 +125,18 @@ export default function CreatePixKeyForm() {
         requestData.codigoAutenticacao = codigoAutenticacao;
       }
 
-      const response = await criarChavePix(requestData);
+      // ✅ ISOLAMENTO: Usar serviço correto baseado na conta ativa
+      let response;
+      
+      if (isBmp531TTF) {
+        // ✅ ISOLAMENTO: BMP 531 TTF via Bmp531Service
+        console.log('🔑 [CreatePixKey] Usando Bmp531Service para TTF');
+        response = await Bmp531Service.criarChave(requestData);
+      } else {
+        // ✅ ISOLAMENTO: Outras contas via criarChavePix
+        console.log('🔑 [CreatePixKey] Usando criarChavePix para BMP 274/Bitso');
+        response = await criarChavePix(requestData);
+      }
       
       setApiResponse(response);
 

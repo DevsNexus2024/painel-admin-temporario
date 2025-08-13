@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Shield, RefreshCw, Loader2, AlertCircle, Key, Copy, CheckCircle, User, Building2, Mail, Phone, Hash } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,20 +6,81 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { usePixKeys, useRefreshPixKeys } from "@/hooks/usePixKeys";
+import { Bmp531Service } from "@/services/bmp531"; // ✅ ISOLAMENTO: Só para BMP 531 TTF
 
 export default function ListPixKeysForm() {
-  // Usar hook de cache para chaves PIX
+  // ✅ DETECTAR SE BMP 531 TTF ESTÁ ATIVA
+  const [currentAccount, setCurrentAccount] = useState<any>(null);
+  const isBmp531TTF = currentAccount?.provider === 'bmp-531';
+  
+  // ✅ Estado para BMP 531 TTF (isolado)
+  const [bmp531Data, setBmp531Data] = useState<any>(null);
+  const [bmp531Loading, setBmp531Loading] = useState(false);
+  const [bmp531Error, setBmp531Error] = useState<string | null>(null);
+  
+  // ✅ Hook para outras contas (BMP 274, Bitso, etc)
   const { 
     data: responseData, 
     isLoading, 
     error,
   } = usePixKeys({
-    staleTime: 10 * 60 * 1000 // 10 minutos
+    staleTime: 10 * 60 * 1000, // 10 minutos
+    enabled: !isBmp531TTF && currentAccount !== null // ✅ ISOLAMENTO: Só executa para não-BMP-531 E conta definida
   });
+  
+  // ✅ Verificar conta ativa e limpar estados
+  useEffect(() => {
+    const checkAccount = () => {
+      try {
+        const account = (window as any).apiRouter?.getCurrentAccount?.();
+        console.log('🔍 [ListPixKeys] Conta detectada:', account?.provider, account?.name);
+        setCurrentAccount(account);
+        
+        // ✅ ISOLAMENTO: Limpar estados quando troca conta
+        if (account?.provider !== 'bmp-531') {
+          setBmp531Data(null);
+          setBmp531Error(null);
+          setBmp531Loading(false);
+        }
+      } catch (error) {
+        console.log('ApiRouter não disponível');
+      }
+    };
+    
+    checkAccount();
+    const interval = setInterval(checkAccount, 500); // ✅ Verificar mais frequente para isolamento
+    return () => clearInterval(interval);
+  }, []);
+  
+  // ✅ CARREGAR DADOS TTF quando BMP 531 estiver ativa
+  useEffect(() => {
+    if (isBmp531TTF) {
+      const loadBmp531Keys = async () => {
+        setBmp531Loading(true);
+        setBmp531Error(null);
+        try {
+          console.log('🔑 [ListPixKeys] Carregando chaves TTF via Bmp531Service');
+          const result = await Bmp531Service.listarChaves();
+          setBmp531Data(result);
+        } catch (error: any) {
+          console.error('❌ [ListPixKeys] Erro ao carregar chaves TTF:', error);
+          setBmp531Error(error.message);
+        } finally {
+          setBmp531Loading(false);
+        }
+      };
+      
+      loadBmp531Keys();
+    }
+  }, [isBmp531TTF]);
 
   const refreshPixKeys = useRefreshPixKeys();
 
-  const pixKeys = responseData?.chaves || [];
+  // ✅ ISOLAMENTO: Usar dados corretos baseado na conta ativa
+  const finalData = isBmp531TTF ? bmp531Data : responseData;
+  const finalLoading = isBmp531TTF ? bmp531Loading : isLoading;
+  const finalError = isBmp531TTF ? bmp531Error : error;
+  const pixKeys = finalData?.chaves || [];
 
   const handleCopyKey = (chave: string, tipo: string) => {
     navigator.clipboard.writeText(chave);
@@ -29,9 +90,26 @@ export default function ListPixKeysForm() {
     });
   };
 
-  const handleRefresh = () => {
-    refreshPixKeys();
-    toast.info("Atualizando lista de chaves...");
+  const handleRefresh = async () => {
+    if (isBmp531TTF) {
+      // ✅ ISOLAMENTO: Refresh TTF via Bmp531Service
+      setBmp531Loading(true);
+      try {
+        console.log('🔄 [ListPixKeys] Atualizando chaves TTF');
+        const result = await Bmp531Service.listarChaves();
+        setBmp531Data(result);
+        toast.success("Chaves TTF atualizadas!");
+      } catch (error: any) {
+        setBmp531Error(error.message);
+        toast.error("Erro ao atualizar chaves TTF");
+      } finally {
+        setBmp531Loading(false);
+      }
+    } else {
+      // ✅ ISOLAMENTO: Refresh outras contas via hook
+      refreshPixKeys();
+      toast.info("Atualizando lista de chaves...");
+    }
   };
 
   // Obter ícone do tipo de chave
@@ -83,7 +161,7 @@ export default function ListPixKeysForm() {
         <Button
           variant="outline"
           onClick={handleRefresh}
-          disabled={isLoading}
+                        disabled={finalLoading}
           className="rounded-xl"
         >
           <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />

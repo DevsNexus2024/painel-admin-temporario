@@ -126,7 +126,7 @@ export default function TopBarBmp531() {
           </div>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground">BMP 531</h1>
+                                          <h1 className="text-2xl font-bold text-foreground">BMP 531 TCR</h1>
               <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-medium">
                 Banco Master
               </Badge>

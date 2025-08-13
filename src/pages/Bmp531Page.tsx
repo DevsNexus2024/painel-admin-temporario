@@ -23,7 +23,7 @@ export default function Bmp531Page() {
   // BMP 531 sempre tem suporte completo a PIX
   const bankFeatures = {
     provider: 'bmp-531',
-    displayName: 'BMP 531',
+    displayName: 'BMP 531 TCR',
     hasPixKeys: true,
     hasQrCodePayment: true,
     hasExtract: true
