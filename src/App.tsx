@@ -77,9 +77,7 @@ const BankingSystemInitializer = ({ children }: { children: React.ReactNode }) =
   useEffect(() => {
     const initializeBanking = async () => {
       try {
-        console.log('🏦 [APP] Inicializando sistema bancário...');
         await initializeBankingSystem();
-        console.log('✅ [APP] Sistema bancário inicializado com sucesso!');
       } catch (error) {
         console.error('❌ [APP] Erro ao inicializar sistema bancário:', error);
         // Não bloquear a aplicação, mas alertar

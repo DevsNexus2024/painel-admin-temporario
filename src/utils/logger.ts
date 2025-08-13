@@ -20,7 +20,7 @@ interface LogConfig {
  * Configuração de logs baseada em variáveis de ambiente
  */
 const LOG_CONFIG: LogConfig = {
-  level: (import.meta.env.VITE_LOG_LEVEL as LogLevel) || 'error',
+  level: (import.meta.env.VITE_LOG_LEVEL as LogLevel),
   enableInProduction: import.meta.env.VITE_ENABLE_LOGS_PROD === 'true',
   enableSensitiveData: import.meta.env.VITE_ENABLE_SENSITIVE_LOGS === 'true',
   enablePerformanceLogs: import.meta.env.VITE_ENABLE_PERFORMANCE_LOGS === 'true'
@@ -145,7 +145,7 @@ class Logger {
   sensitive(message: string, data?: any, component?: string) {
     if (this.isDevelopment && LOG_CONFIG.enableSensitiveData) {
       const prefix = component ? `[${component}]` : '';
-      console.log(`🔐 ${this.getTimestamp()} ${prefix} [SENSITIVE] ${message}`, data);
+
     }
   }
   
@@ -213,7 +213,7 @@ export const usePerformanceTimer = (operation: string, component?: string) => {
  */
 export const devLog = (message: string, data?: any) => {
   if (import.meta.env.DEV) {
-    console.log(`🔧 [DEV] ${message}`, data);
+
   }
 };
 

@@ -71,9 +71,7 @@ export function useBankFeatures(): BankFeaturesState {
             };
           }
         } catch (apiError) {
-          if (process.env.NODE_ENV === 'development') {
-            console.log('🏦 [useBankFeatures] ApiRouter não disponível');
-          }
+          // ApiRouter não disponível
         }
       }
       
@@ -150,16 +148,11 @@ export function useBankFeatures(): BankFeaturesState {
 
       // ✅ LOGS APENAS EM DESENVOLVIMENTO E APENAS QUANDO MUDOU
       if (process.env.NODE_ENV === 'development') {
-        console.log(`🏦 [useBankFeatures] Features atualizadas para ${activeAccount.displayName}:`, {
-          provider: activeAccount.provider,
-          hasQrCodePayment,
-          hasPixKeys: hasPixKeysManagement,
-          features: features
-        });
+
       }
 
     } catch (error) {
-      console.error('🏦 [useBankFeatures] Erro ao atualizar features:', error);
+
       setFeaturesState(prev => ({
         ...prev,
         isLoading: false

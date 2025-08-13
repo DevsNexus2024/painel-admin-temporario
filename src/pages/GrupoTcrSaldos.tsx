@@ -31,7 +31,7 @@ export default function GrupoTcrSaldos() {
     // Verificar se temos dados em cache e se não forçou refresh
     const now = Date.now();
     if (!forceRefresh && usersCacheData && (now - usersCacheTimestamp) < CACHE_DURATION) {
-      console.log('📋 [GRUPO-TCR] Usando dados do cache');
+
       setAllUsers(usersCacheData);
       applyFilterAndSort(usersCacheData, nomeFiltro, ordenacao);
       return;
@@ -40,7 +40,7 @@ export default function GrupoTcrSaldos() {
     setIsLoadingAll(true);
     setLoading(true);
     try {
-      console.log('🔍 [GRUPO-TCR] Carregando TODOS os usuários da API...');
+
       
       let allUsersList: UsuarioSaldo[] = [];
       let currentPage = 1;
@@ -48,7 +48,7 @@ export default function GrupoTcrSaldos() {
       
       // Carregar todas as páginas
       while (hasMorePages) {
-        console.log(`📄 [GRUPO-TCR] Carregando página ${currentPage}...`);
+
         
         const params = {
           pagina: currentPage,
@@ -75,7 +75,7 @@ export default function GrupoTcrSaldos() {
         }
       }
       
-      console.log(`✅ [GRUPO-TCR] Carregados ${allUsersList.length} usuários no total`);
+
       
       // Atualizar cache
       usersCacheData = allUsersList;

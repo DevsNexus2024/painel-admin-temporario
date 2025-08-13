@@ -110,7 +110,7 @@ export const useCreateClient = () => {
       }
     },
     onError: (error) => {
-      console.error('Erro ao criar cliente:', error);
+
       toast.error('Erro de conexão ao cadastrar cliente');
     },
   });
@@ -135,7 +135,7 @@ export const useUpdateClient = () => {
       }
     },
     onError: (error) => {
-      console.error('Erro ao atualizar cliente:', error);
+
       toast.error('Erro de conexão ao atualizar cliente');
     },
   });
@@ -160,7 +160,7 @@ export const useAddGroupToClient = () => {
       }
     },
     onError: (error) => {
-      console.error('Erro ao vincular grupo:', error);
+
       toast.error('Erro de conexão ao vincular grupo');
     },
   });
@@ -184,7 +184,7 @@ export const useUpdateGroupFee = () => {
       }
     },
     onError: (error) => {
-      console.error('Erro ao atualizar taxa:', error);
+
       toast.error('Erro de conexão ao atualizar taxa');
     },
   });
@@ -206,7 +206,7 @@ export const useRemoveGroup = () => {
       }
     },
     onError: (error) => {
-      console.error('Erro ao remover grupo:', error);
+
       toast.error('Erro de conexão ao remover grupo');
     },
   });
@@ -231,7 +231,7 @@ export const useSyncGroups = () => {
       }
     },
     onError: (error) => {
-      console.error('Erro na sincronização:', error);
+
       toast.error('Erro de conexão durante a sincronização');
     },
   });

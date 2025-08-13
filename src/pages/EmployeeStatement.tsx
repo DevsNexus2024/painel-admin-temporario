@@ -102,18 +102,18 @@ const EmployeeStatement: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      console.log('📊 EmployeeStatement: Buscando extrato de funcionário...');
+
       
       const response = await api.get('/api/otc/employee/statement');
       
       if (response.data.sucesso) {
         setData(response.data.dados);
-        console.log('✅ EmployeeStatement: Dados recebidos:', response.data.dados);
+
       } else {
         throw new Error(response.data.mensagem || 'Erro ao carregar extrato');
       }
     } catch (error: any) {
-      console.error('❌ EmployeeStatement: Erro ao buscar extrato:', error);
+
       setError(error.response?.data?.mensagem || error.message || 'Erro ao carregar dados');
       toast.error('Erro ao carregar extrato');
     } finally {

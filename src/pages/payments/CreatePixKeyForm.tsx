@@ -174,7 +174,7 @@ export default function CreatePixKeyForm() {
         });
       }
     } catch (error) {
-      console.error("Erro ao criar chave PIX:", error);
+
       
       const errorMessage = error instanceof Error ? error.message : "Erro inesperado";
       

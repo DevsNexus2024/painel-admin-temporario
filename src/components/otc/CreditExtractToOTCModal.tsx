@@ -103,15 +103,15 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         code = extractRecord.code;
       }
       
-      console.log('🔍 Verificando duplicação:', { externalId, provider, code });
+      // console.log('🔍 Verificando duplicação:', { externalId, provider, code });
       
       const result = await otcService.checkExtractDuplicate(externalId, provider, code);
       
       if (result.data.isDuplicate) {
         setDuplicateInfo(result.data.operation);
-        console.log('🚫 Duplicação encontrada:', result.data.operation);
+        // console.log('🚫 Duplicação encontrada:', result.data.operation);
       } else {
-        console.log('✅ Nenhuma duplicação encontrada');
+        // console.log('✅ Nenhuma duplicação encontrada');
       }
       
     } catch (error) {
@@ -229,7 +229,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         reference_date: extractRecord.dateTime
       };
 
-      console.log('🚀 [CreditExtractToOTCModal] Enviando dados para backend:', operationData);
+      // console.log('🚀 [CreditExtractToOTCModal] Enviando dados para backend:', operationData);
 
       await createOperation(operationData);
       

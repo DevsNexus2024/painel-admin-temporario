@@ -109,7 +109,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
       hideReversals: newFilters.hideReversals !== undefined ? newFilters.hideReversals : filters.hideReversals
     };
     
-    console.log('[ADMIN-MODAL] Atualizando filtros:', {
+    // console.log('[ADMIN-MODAL] Atualizando filtros:', {
       filtrosAnteriores: filters,
       novosFiltros: newFilters,
       filtrosFinais: updatedFilters
@@ -314,7 +314,7 @@ const OTCStatementModal: React.FC<OTCStatementModalProps> = ({
         defaultReason = `Estorno de operação BRL: ${transactionToReverse.type} de ${otcService.formatCurrency(transactionToReverse.amount)} realizada em ${otcService.formatDate(transactionToReverse.date)}`;
       }
       
-      console.log('[FRONTEND] Enviando reversão:', {
+      // console.log('[FRONTEND] Enviando reversão:', {
         transactionId: transactionToReverse.id,
         reason: defaultReason,
         isUsdOperation,

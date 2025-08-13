@@ -58,10 +58,7 @@ export abstract class BaseBankProvider implements IBankProvider {
       error: (message: string, data?: any) => this.log('error', message, data)
     };
 
-    this.logger.info(`Provider ${this.provider} inicializado`, {
-      features: this.features,
-      hasCredentials: this.isConfigured()
-    });
+    // Provider inicializado
   }
 
   // ===============================
@@ -136,13 +133,13 @@ export abstract class BaseBankProvider implements IBankProvider {
 
     switch (level) {
       case 'info':
-        console.log(`[${this.provider.toUpperCase()}] ${message}`, data || '');
+        // Logs de info removidos para reduzir ruído no console
         break;
       case 'warn':
-        console.warn(`[${this.provider.toUpperCase()}] ⚠️ ${message}`, data || '');
+
         break;
       case 'error':
-        console.error(`[${this.provider.toUpperCase()}] ❌ ${message}`, data || '');
+
         break;
     }
   }
@@ -296,7 +293,7 @@ export abstract class BaseBankProvider implements IBankProvider {
     body?: any,
     additionalHeaders?: Record<string, string>
   ): Promise<any> {
-    const baseUrl = this.config.apiUrl || 'https://api-bank.gruponexus.com.br';
+    const baseUrl = this.config.apiUrl || import.meta.env.VITE_API_BASE_URL;
     const url = `${baseUrl}${endpoint}`;
 
     // ✅ Headers com API credentials para BMP

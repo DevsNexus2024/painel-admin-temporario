@@ -43,8 +43,6 @@ const Login: React.FC = () => {
 
   // Handler do submit unificado
   const onSubmit = async (data: LoginFormData) => {
-    console.log('🔐 Login unificado para:', data.email);
-    
     const success = await login({ 
       email: data.email, 
       password: data.password 
@@ -57,34 +55,25 @@ const Login: React.FC = () => {
           // Buscar usuário atualizado do storage
           const storedUser = authService.getCurrentUser();
           if (storedUser) {
-            console.log('🔍 Login: Verificando tipo do usuário:', storedUser.id);
-            
             const userTypeResult = await userTypeService.checkUserType(storedUser);
-            
-            console.log('🔍 Login: Resultado da verificação de tipo:', userTypeResult);
             
             if (userTypeResult.isOTC) {
               // Se é usuário OTC, redirecionar para extrato OTC
-              console.log('🔄 Usuário OTC logado, redirecionando para /client-statement');
               navigate('/client-statement', { replace: true });
             } else if (userTypeResult.isAdmin) {
               // Se é admin, redirecionar para dashboard principal
-              console.log('🔄 Admin logado, redirecionando para dashboard');
               const targetRoute = from === '/' || from === '/login' ? '/' : from;
               navigate(targetRoute, { replace: true });
             } else {
               // Fallback - assumir admin
-              console.log('🔄 Tipo não identificado, assumindo admin e redirecionando para dashboard');
               navigate('/', { replace: true });
             }
           } else {
-            console.warn('⚠️ Login: Usuário não encontrado no storage após login');
             navigate('/', { replace: true });
           }
         } catch (error) {
           console.error('❌ Login: Erro ao verificar tipo de usuário:', error);
           // Em caso de erro, redirecionar para dashboard por segurança
-          console.log('🔄 Erro na verificação, redirecionando para dashboard');
           navigate('/', { replace: true });
         }
       }, 300); // Aumentar timeout para garantir que a API responda

@@ -12,17 +12,17 @@ export default function PendingTable() {
   const [transactions] = useState<PendingTransaction[]>(mockPendingTransactions);
 
   const handleReconsult = (transaction: PendingTransaction) => {
-    console.log("Reconsultar:", transaction);
+
     toast.info("Reconsultando transação...");
   };
 
   const handleMarkResolved = (transaction: PendingTransaction) => {
-    console.log("Marcar como resolvido:", transaction);
+
     toast.success("Transação marcada como resolvida!");
   };
 
   const handleRepeat = (transaction: PendingTransaction) => {
-    console.log("Repetir transação:", transaction);
+
     toast.info("Preparando nova transação...");
   };
 

@@ -241,8 +241,7 @@ const BotCotacao: React.FC = () => {
       
       if (response?.sucesso) {
         const groups = response.data?.items || [];
-        console.log('📱 Grupos WhatsApp carregados da API:', groups.length);
-        console.log('📊 Total no servidor:', response.data?.total || 0);
+
         
         setWhatsappGroups(groups);
         
@@ -283,8 +282,7 @@ const BotCotacao: React.FC = () => {
       // Carregar TODOS os grupos cadastrados (sem limitação de paginação)
       const response = await botCotacaoService.getRegisteredGroups({}, { page: 1, limit: 100. });
       if (response?.sucesso) {
-        console.log('📋 Grupos cadastrados carregados da API:', response.data?.items?.length || 0);
-        console.log('📊 Total no servidor:', response.data?.total || 0);
+
         
         setRegisteredGroups(response.data?.items || []);
         
@@ -501,25 +499,20 @@ const BotCotacao: React.FC = () => {
   // Debug: Logs para identificar inconsistência
   React.useEffect(() => {
     if (whatsappGroups.length > 0 && registeredGroups.length > 0) {
-      console.log('🔍 DEBUG - Análise de Sincronização:');
-      console.log('📱 Grupos WhatsApp carregados:', whatsappGroups.length);
-      console.log('📋 Grupos cadastrados:', registeredGroups.length);
+
       
       // Verificar possíveis IDs inconsistentes
       const registeredIds = registeredGroups.map(rg => rg.whatsapp_group_id);
       const whatsappIds = whatsappGroups.map(wg => wg.id);
       
-      console.log('🆔 IDs registrados no banco:', registeredIds);
-      console.log('🆔 IDs dos grupos WhatsApp:', whatsappIds);
+
       
       // Análise detalhada: quais IDs estão em cada lista
       const idsNoWhatsAppMasNaoBanco = whatsappIds.filter(id => !registeredIds.includes(id));
       const idsNoBancoMasNaoWhatsApp = registeredIds.filter(id => !whatsappIds.includes(id));
       const idsEmAmbos = whatsappIds.filter(id => registeredIds.includes(id));
       
-      console.log('🔵 Grupos só no WhatsApp (não cadastrados):', idsNoWhatsAppMasNaoBanco.length, idsNoWhatsAppMasNaoBanco);
-      console.log('🔴 Grupos só no banco (não no WhatsApp):', idsNoBancoMasNaoWhatsApp.length, idsNoBancoMasNaoWhatsApp);
-      console.log('🟢 Grupos em ambos (sincronizados):', idsEmAmbos.length, idsEmAmbos);
+
       
       // Grupos que aparecem como "não cadastrados" mas podem estar no banco
       const suspiciousGroups = whatsappGroups.filter(wg => {
@@ -530,10 +523,7 @@ const BotCotacao: React.FC = () => {
             rg.whatsapp_group_name.toLowerCase() === wg.name.toLowerCase()
           );
           if (nameMatch) {
-            console.log(`⚠️ SUSPEITO - Grupo "${wg.name}":
-              - ID WhatsApp: ${wg.id}
-              - ID no banco: ${nameMatch.whatsapp_group_id}
-              - Cliente: ${nameMatch.client_name}`);
+
             return true;
           }
         }
@@ -541,17 +531,16 @@ const BotCotacao: React.FC = () => {
       });
       
       if (suspiciousGroups.length > 0) {
-        console.log('🚨 Encontrados', suspiciousGroups.length, 'grupos com possível inconsistência de ID');
+
       } else {
-        console.log('✅ Nenhuma inconsistência de ID detectada');
+
       }
       
       // Verificar se o número de grupos "não cadastrados" está correto
       const calculatedUnregistered = whatsappGroups.filter(wg => 
         !registeredGroups.some(rg => rg.whatsapp_group_id === wg.id)
       );
-      console.log('📊 Grupos não cadastrados calculados:', calculatedUnregistered.length);
-      console.log('📋 Primeiros 5 grupos não cadastrados:', calculatedUnregistered.slice(0, 5).map(g => ({ id: g.id, name: g.name })));
+
     }
   }, [whatsappGroups, registeredGroups]);
 
@@ -635,7 +624,7 @@ const BotCotacao: React.FC = () => {
       if (response.sucesso || response.statusCode === 207) {
         const data = response.data;
         
-        console.log('📝 Resultado do cadastro em lote:', data);
+
         
         toast({
           title: 'Sucesso',
@@ -656,7 +645,7 @@ const BotCotacao: React.FC = () => {
         setBulkAddForm({ id_otc_user: '', fee_percentual_padrao: 0 });
         
         // Forçar recarregamento completo dos dados
-        console.log('🔄 Forçando recarregamento completo dos dados...');
+
         await Promise.all([
           loadRegisteredGroups(),
           loadWhatsAppGroups(), // Recarregar também os grupos WhatsApp
@@ -761,9 +750,7 @@ const BotCotacao: React.FC = () => {
             </Button>
             <Button
               onClick={() => {
-                console.log('🔍 DIAGNÓSTICO MANUAL - Analisando inconsistências...');
-                console.log('📱 Grupos WhatsApp:', whatsappGroups);
-                console.log('📋 Grupos Cadastrados:', registeredGroups);
+
                 
                 // Análise detalhada
                 const problematicos = [];

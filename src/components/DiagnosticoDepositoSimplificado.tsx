@@ -119,8 +119,8 @@ export default function DiagnosticoDepositoSimplificado({ idDeposito, onRefresh 
       const data = await response.json();
       
       // Log para debug - ver estrutura nova da resposta
-      console.log("📥 Resposta simplificada do backend:", data);
-      console.log("📊 Estrutura simplificada:", data.response);
+      // console.log("📥 Resposta simplificada do backend:", data);
+      // console.log("📊 Estrutura simplificada:", data.response);
       
       setDiagnostico(data.response);
       

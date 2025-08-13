@@ -45,7 +45,7 @@ export const useExtrato = (options: UseExtratoOptions = {}) => {
       
       return 'no-account';
     } catch (error) {
-      console.warn('[useExtrato] Erro ao obter conta ativa, usando fallback');
+
       return 'fallback-bmp-main';
     }
   });
@@ -59,12 +59,7 @@ export const useExtrato = (options: UseExtratoOptions = {}) => {
         if (activeAccount) {
           const newKey = `${activeAccount.id}-${activeAccount.provider}`;
           if (newKey !== accountKey) {
-            console.log('🔄 [useExtrato-SEGURO] Detectada mudança de conta (NOVA ARQUITETURA):', {
-              anterior: accountKey,
-              atual: newKey,
-              conta: activeAccount.displayName,
-              provider: activeAccount.provider
-            });
+
             setAccountKey(newKey);
             return;
           }
@@ -76,17 +71,12 @@ export const useExtrato = (options: UseExtratoOptions = {}) => {
           const currentAccount = apiRouter.getCurrentAccount();
           const fallbackKey = `${currentAccount.id}-${currentAccount.provider}`;
           if (fallbackKey !== accountKey) {
-            console.log('🔄 [useExtrato-SEGURO] Detectada mudança de conta (FALLBACK):', {
-              anterior: accountKey,
-              atual: fallbackKey,
-              conta: currentAccount.displayName,
-              provider: currentAccount.provider
-            });
+
             setAccountKey(fallbackKey);
           }
         }
       } catch (error) {
-        console.error('[useExtrato] Erro ao verificar mudança de conta:', error);
+
       }
     };
 
@@ -102,7 +92,7 @@ export const useExtrato = (options: UseExtratoOptions = {}) => {
       // 1. Tentar nova arquitetura primeiro
       const activeAccount = unifiedBankingService.getActiveAccount();
       if (activeAccount && (activeAccount.provider === 'bmp' || activeAccount.provider === 'bmp-531' || activeAccount.provider === 'bitso')) {
-        console.log(`🔒 [useExtrato-SEGURO] Provider da NOVA ARQUITETURA: ${activeAccount.provider}`);
+
         return activeAccount.provider as 'bmp' | 'bmp-531' | 'bitso';
       }
 
@@ -111,31 +101,31 @@ export const useExtrato = (options: UseExtratoOptions = {}) => {
       if (apiRouter) {
         const currentAccount = apiRouter.getCurrentAccount();
         if (currentAccount.provider === 'bmp' || currentAccount.provider === 'bmp-531' || currentAccount.provider === 'bitso') {
-          console.log(`🔒 [useExtrato-SEGURO] Provider do SISTEMA ANTIGO: ${currentAccount.provider}`);
+
           return currentAccount.provider as 'bmp' | 'bmp-531' | 'bitso';
         }
       }
 
       // 3. Último recurso: extrair do accountKey
       if (accountKey.includes('bmp-531')) {
-        console.log(`🔒 [useExtrato-SEGURO] Provider do ACCOUNT KEY: bmp-531`);
+
         return 'bmp-531';
       }
       if (accountKey.includes('bmp')) {
-        console.log(`🔒 [useExtrato-SEGURO] Provider do ACCOUNT KEY: bmp`);
+
         return 'bmp';
       }
       if (accountKey.includes('bitso')) {
-        console.log(`🔒 [useExtrato-SEGURO] Provider do ACCOUNT KEY: bitso`);
+
         return 'bitso';
       }
 
       // 4. Padrão seguro: BMP
-      console.warn(`⚠️ [useExtrato-SEGURO] Nenhum provider detectado, usando BMP como padrão`);
+
       return 'bmp';
       
     } catch (error) {
-      console.error('🚨 [useExtrato-SEGURO] Erro ao obter provider, usando BMP:', error);
+
       return 'bmp';
     }
   };
@@ -151,12 +141,7 @@ export const useExtrato = (options: UseExtratoOptions = {}) => {
         provider // 🚨 SEMPRE incluir provider explícito
       };
       
-      console.log('🔥 [useExtrato-SEGURO] Executando consultarExtrato ULTRA-SEGURO:', {
-        accountKey,
-        provider: provider,
-        filtros: filtrosComProvider,
-        timestamp: new Date().toISOString()
-      });
+
       
       return consultarExtrato(filtrosComProvider);
     },

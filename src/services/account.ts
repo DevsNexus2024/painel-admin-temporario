@@ -16,9 +16,7 @@ export const consultarSaldo = async (): Promise<SaldoResponse> => {
   try {
     const url = buildApiUrl(API_CONFIG.ENDPOINTS.ACCOUNT.SALDO);
     
-    console.log("=== CONSULTANDO SALDO ===");
-    console.log("URL:", url);
-    console.log("Headers:", getApiHeaders());
+
     
     const response = await fetch(url, {
       method: 'GET',
@@ -26,12 +24,11 @@ export const consultarSaldo = async (): Promise<SaldoResponse> => {
       signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
     });
 
-    console.log("Status da resposta:", response.status);
-    console.log("Headers da resposta:", Object.fromEntries(response.headers.entries()));
+
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Resposta de erro:", errorText);
+
       
       let errorData;
       try {
@@ -44,17 +41,14 @@ export const consultarSaldo = async (): Promise<SaldoResponse> => {
     }
 
     const responseText = await response.text();
-    console.log("Resposta bruta:", responseText);
+
     
     const result: SaldoResponse = JSON.parse(responseText);
-    console.log("Dados do saldo parseados:", result);
-    console.log("========================");
+
 
     return result;
   } catch (error) {
-    console.error("=== ERRO AO CONSULTAR SALDO ===");
-    console.error("Erro:", error);
-    console.error("===============================");
+
     
     let mensagemErro = 'Erro desconhecido ao consultar saldo';
     

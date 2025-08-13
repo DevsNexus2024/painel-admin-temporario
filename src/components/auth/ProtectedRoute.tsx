@@ -50,11 +50,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         return;
       }
 
-      console.log('🔍 ProtectedRoute: Verificando tipo de usuário...', {
-        requireAdmin,
-        requireEmployee,
-        currentPath
-      });
+      // Verificando tipo de usuário
       
       try {
         const userTypeResult = await userTypeService.checkUserType(user);
@@ -69,21 +65,14 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
           type 
         });
         
-        console.log('🔍 ProtectedRoute: Resultado da verificação:', {
-          isOTC,
-          isEmployee,
-          isAdmin: userTypeResult.isAdmin,
-          type: userTypeResult.type,
-          hasOTCClient: !!userTypeResult.otcClient,
-          hasOTCAccess: !!userTypeResult.otcAccess
-        });
+        // Resultado da verificação obtido
         
         if (requireAdmin && (isOTC || isEmployee)) {
-          console.log('⚠️ ProtectedRoute: Usuário não-admin tentando acessar área admin - redirecionando');
+
         }
         
         if (requireEmployee && !isEmployee) {
-          console.log('⚠️ ProtectedRoute: Usuário não-funcionário tentando acessar área de funcionário');
+
         }
         
       } catch (error) {
@@ -95,17 +84,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     checkUserType();
   }, [isAuthenticated, user, requireAdmin, requireEmployee, location.pathname]);
 
-  console.log('🛡️ ProtectedRoute:', {
-    pathname: location.pathname,
-    isAuthenticated,
-    isLoading,
-    redirectTo,
-    state: location.state
-  });
+  // Verificação de acesso
 
   // Mostrar loading enquanto verifica autenticação ou tipo de usuário
   if (isLoading || userTypeCheck.loading) {
-    console.log('⏳ ProtectedRoute: Verificando autenticação...');
+
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -118,8 +101,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   // Se não estiver autenticado, redirecionar para login
   if (!isAuthenticated) {
-    console.log('🔒 ProtectedRoute: Usuário não autenticado, redirecionando para:', redirectTo);
-    console.log('💾 Salvando rota atual para redirecionamento:', location.pathname);
+    // Usuário não autenticado, redirecionando
     // Salvar a rota atual para redirecionar após login
     return (
       <Navigate 
@@ -132,19 +114,19 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   // Verificar se é usuário OTC tentando acessar área admin
   if (isAuthenticated && requireAdmin && userTypeCheck.isOTC) {
-    console.log('🚫 ProtectedRoute: Usuário OTC tentando acessar área admin, redirecionando para /client-statement');
+
     return <Navigate to="/client-statement" replace />;
   }
 
   // Verificar se é usuário funcionário tentando acessar área admin
   if (isAuthenticated && requireAdmin && userTypeCheck.isEmployee) {
-    console.log('🚫 ProtectedRoute: Funcionário OTC tentando acessar área admin, redirecionando para /employee-statement');
+
     return <Navigate to="/employee-statement" replace />;
   }
 
   // Verificar se é usuário não-funcionário tentando acessar área de funcionário
   if (isAuthenticated && requireEmployee && !userTypeCheck.isEmployee) {
-    console.log('🚫 ProtectedRoute: Usuário não-funcionário tentando acessar área de funcionário, redirecionando baseado no tipo');
+
     
     // Redirecionar baseado no tipo de usuário
     if (userTypeCheck.isOTC) {
@@ -154,7 +136,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     }
   }
 
-  console.log('✅ ProtectedRoute: Usuário autenticado e autorizado, renderizando conteúdo');
+
   // Se estiver autenticado e autorizado, renderizar filhos
   return <>{children}</>;
 };

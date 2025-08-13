@@ -98,7 +98,7 @@ export default function CreatePixKeyFormBmp531() {
         requestData.chave = data.chave;
       }
 
-      console.log("🔑 [CreatePixKeyFormBmp531] Criando chave PIX BMP-531:", requestData);
+
 
       // ✅ Usar serviço BMP-531 específico com dados bancários corretos
       const result = await Bmp531Service.criarChave(requestData);
@@ -129,7 +129,7 @@ export default function CreatePixKeyFormBmp531() {
           form.reset();
         }
       } else {
-        console.error("❌ [CreatePixKeyFormBmp531] Falha ao criar chave:", result);
+
         
         toast.error("Falha ao criar chave PIX", {
           description: result.mensagem || "Erro desconhecido",
@@ -138,7 +138,7 @@ export default function CreatePixKeyFormBmp531() {
         });
       }
     } catch (error) {
-      console.error("❌ [CreatePixKeyFormBmp531] Erro ao criar chave PIX:", error);
+
       
       const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
       

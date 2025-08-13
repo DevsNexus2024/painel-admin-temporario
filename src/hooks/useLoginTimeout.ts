@@ -53,14 +53,14 @@ export const useLoginTimeout = (options: LoginTimeoutOptions = {}): LoginTimeout
 
 
     if (isInactive) {
-      console.log('🚪 [LoginTimeout] Usuário inativo, fazendo logout...');
+
       onTimeout?.();
       return;
     }
 
     // Mostrar aviso se estiver próximo do timeout
     if (timeRemaining <= LOGIN_TIMEOUT_CONFIG.WARNING_MINUTES && !warningTriggeredRef.current) {
-      console.log('⚠️ [LoginTimeout] Mostrando aviso de timeout:', timeRemaining);
+
       warningTriggeredRef.current = true;
       onWarning?.(timeRemaining);
     }

@@ -1,7 +1,7 @@
 import { toast } from "sonner";
 
-const BASE_URL = 'https://vps80270.cloudpublic.com.br:8081';
-const AUTH_HEADER = 'ISRVdeWTZ5jYFKJQytjH9ZylF1ZrwhTdrrdKY4uFqXm041XIL3aVjCwojSH1EeYbUOQjPx0aO';
+const BASE_URL = import.meta.env.VITE_DIAGNOSTICO_API_URL;
+const AUTH_HEADER = import.meta.env.VITE_ADMIN_TOKEN;
 
 export interface UsuarioSaldo {
   id_usuario: number;
@@ -75,7 +75,7 @@ export class TcrSaldosService {
         ? `${BASE_URL}/v1/usuarios/saldos-publico?${queryString}`
         : `${BASE_URL}/v1/usuarios/saldos-publico`;
 
-      console.log('🔍 [TCR-SALDOS] Fazendo requisição para:', fullUrl);
+
 
       const response = await fetch(fullUrl, {
         method: 'GET',
@@ -87,16 +87,16 @@ export class TcrSaldosService {
       });
 
       const data = await response.json();
-      console.log('📦 [TCR-SALDOS] Resposta recebida:', data);
+
 
       if (!response.ok) {
-        console.error('❌ [TCR-SALDOS] Erro HTTP:', response.status, data);
+
         throw new Error(data?.erro || data?.mensagem || `Erro HTTP ${response.status}`);
       }
       
       return data as UsuariosSaldosResponse;
     } catch (error) {
-      console.error('❌ [TCR-SALDOS] Erro ao listar usuários/saldos:', error);
+
       throw error;
     }
   }
@@ -109,7 +109,7 @@ export class TcrSaldosService {
     }
 
     try {
-      console.log('🔍 [TCR-SALDOS] Consultando saldo BRBTC para conta:', contaBRBTC);
+
       
       const response = await fetch(`${BASE_URL}/brbtc/v1/saldo-publico`, {
         method: 'GET',
@@ -121,18 +121,16 @@ export class TcrSaldosService {
         signal: AbortSignal.timeout(30000)
       });
 
-      console.log('📦 [TCR-SALDOS] Status da resposta:', response.status);
       const data = await response.json();
-      console.log('📦 [TCR-SALDOS] Dados da conferência:', data);
 
       if (!response.ok) {
-        console.error('❌ [TCR-SALDOS] Erro HTTP na conferência:', response.status, data);
+
         throw new Error(data?.erro || data?.mensagem || `Erro HTTP ${response.status}`);
       }
       
       return data as SaldoPublicoResponse;
     } catch (error) {
-      console.error('❌ [TCR-SALDOS] Erro ao consultar saldo público BRBTC:', error);
+
       throw error;
     }
   }

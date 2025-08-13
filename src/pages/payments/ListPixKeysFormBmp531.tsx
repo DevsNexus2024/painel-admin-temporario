@@ -40,13 +40,12 @@ export default function ListPixKeysFormBmp531() {
       setIsLoading(true);
       setError(null);
       
-      console.log("🔑 [ListPixKeysFormBmp531] Carregando chaves PIX BMP-531...");
+
       
       // ✅ Usar serviço BMP-531 específico com dados bancários corretos
       const result = await Bmp531Service.listarChaves();
       
-      console.log("🔍 [ListPixKeysFormBmp531] Resposta da API:", result);
-      console.log("🔍 [ListPixKeysFormBmp531] Estrutura estatisticas:", result?.estatisticas);
+
       
       // ✅ Verificar se a resposta tem a estrutura esperada
       if (result && typeof result === 'object') {
@@ -68,7 +67,7 @@ export default function ListPixKeysFormBmp531() {
         setError("Resposta da API em formato inesperado");
       }
     } catch (error) {
-      console.error("❌ [ListPixKeysFormBmp531] Erro ao carregar chaves:", error);
+
       
       const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
       setError(errorMessage);

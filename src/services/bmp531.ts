@@ -29,8 +29,8 @@ function getAuthHeaders() {
 }
 
 const BMP531_CONFIG = {
-  // 🌐 URL base da API do Grupo Nexus
-  baseUrl: 'https://api-bank.gruponexus.com.br',
+  // 🌐 URL base da API - vem do .env
+  baseUrl: import.meta.env.VITE_API_BASE_URL,
   
   endpoints: {
     // Conta e Saldo
@@ -51,21 +51,20 @@ const BMP531_CONFIG = {
     pixQrCodeEstatico: '/bmp-531/pix/qrcode/estatico',
   },
   
-  // 🔑 Dados bancários das variáveis de ambiente (Frontend - import.meta.env)
-  // ✅ DADOS DA CONTA TTF (TTF SERVICOS DIGITAIS LTDA)
+  // 🔑 Dados bancários das variáveis de ambiente - TODOS do .env
   dadosBancarios: {
-    agencia: '0001',
-    agencia_digito: '8', 
-    conta: '159',
-    conta_digito: '4',
-    conta_pgto: '00001594', // TTF Conta Pagamento
-    tipo_conta: 3,
-    modelo_conta: 1,
-    pix_key: import.meta.env.VITE_CHAVE_BMP_531_TTF || 'ca3d35ae-bfb2-409e-9892-53fadd15f4ad'
+    agencia: import.meta.env.VITE_BMP_AGENCIA_TTF,
+    agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO_TTF,
+    conta: import.meta.env.VITE_BMP_CONTA_TTF,
+    conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO_TTF,
+    conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO_TTF,
+    tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA_TTF, 10),
+    modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA_TTF, 10),
+    pix_key: import.meta.env.VITE_CHAVE_BMP_531_TTF
   },
   
   // 🔐 Token de autenticação
-  secretToken: import.meta.env.VITE_X_BMP531_SECRET_TOKEN || 'a7f8d9c2e4b6a1f3e8d7c9b2f5a8e1d4c7b9f2e5a8d1c4f7b9e2d5a8c1f4e7b9d2',
+  secretToken: import.meta.env.VITE_X_BMP531_SECRET_TOKEN,
   
   // Timeout padrão para requisições BMP 531
   timeout: 30000, // 30 segundos
@@ -253,15 +252,15 @@ export interface Bmp531PixChave {
  */
 function getDadosBancarios(accountType: 'tcr' | 'ttf' = 'ttf') {
   if (accountType === 'tcr') {
-    // Dados da conta TCR (conta antiga/padrão)
+    // Dados da conta TCR - vem do .env
     return {
-      agencia: '0001',
-      agencia_digito: '8',
-      conta: '157', 
-      conta_digito: '8',
-      conta_pgto: '00001578',
-      tipo_conta: 3,
-      modelo_conta: 1,
+      agencia: import.meta.env.VITE_BMP_AGENCIA_TCR,
+      agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO_TCR,
+      conta: import.meta.env.VITE_BMP_CONTA_TCR,
+      conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO_TCR,
+      conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO_TCR,
+      tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA_TCR, 10),
+      modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA_TCR, 10),
     };
   }
   
@@ -495,7 +494,7 @@ export async function criarChavePixBmp531(data: Bmp531PixChaveCriarRequest): Pro
  * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'ttf')
  */
 export async function listarChavesPixBmp531(accountType: 'tcr' | 'ttf' = 'ttf'): Promise<Bmp531PixChavesListarResponse> {
-  console.log(`📝 [BMP531Service] Listando chaves PIX da conta ${accountType.toUpperCase()}...`);
+
   
   // ✅ PADRONIZAR igual ao extrato: Enviar via query parameters
   const dadosBancarios = getDadosBancarios(accountType);
@@ -509,7 +508,7 @@ export async function listarChavesPixBmp531(accountType: 'tcr' | 'ttf' = 'ttf'):
   });
   
   const endpoint = `${BMP531_CONFIG.endpoints.pixChavesListar}?${params.toString()}`;
-  console.log(`📝 [BMP531Service] URL TTF:`, endpoint);
+
   
   return makeRequest<Bmp531PixChavesListarResponse>(
     endpoint,
@@ -530,10 +529,7 @@ export async function pagarQrCodePixBmp531(data: {
   valor?: number;
   descricao?: string;
 }): Promise<Bmp531PixEnviarResponse> {
-  console.log('📱 [BMP531Service] Pagando QR Code PIX (Copia e Cola)...', { 
-    emv: data.emv.substring(0, 50) + '...', 
-    valor: data.valor 
-  });
+
   
   // ✅ Usar endpoint correto e incluir dados bancários
   const requestBody = {
@@ -543,7 +539,7 @@ export async function pagarQrCodePixBmp531(data: {
     dadosBancarios: getDadosBancarios()
   };
   
-  console.log('📱 [BMP531Service] Request body:', requestBody);
+  // console.log('📱 [BMP531Service] Request body:', requestBody);
   
   return makeRequest<Bmp531PixEnviarResponse>(
     BMP531_CONFIG.endpoints.pixPagarCopiaCola,
@@ -570,10 +566,7 @@ export async function criarQrCodeEstaticoPixBmp531(data: {
   dados?: any;
   mensagem: string;
 }> {
-  console.log('📊 [BMP531Service] Criando QR Code Estático...', { 
-    chave: data.chave,
-    valor: data.valor 
-  });
+  // console.log('📊 [BMP531Service] Criando QR Code Estático...');
   
   // ✅ Incluir dados bancários conforme documentação
   const requestBody = {
@@ -584,7 +577,7 @@ export async function criarQrCodeEstaticoPixBmp531(data: {
     dadosBancarios: getDadosBancarios()
   };
   
-  console.log('📊 [BMP531Service] Request body:', requestBody);
+  // console.log('📊 [BMP531Service] Request body:', requestBody);
   
   return makeRequest<{
     sucesso: boolean;
@@ -616,7 +609,7 @@ export async function consultarStatusTransacaoPixBmp531(codigoTransacao: string)
   };
   mensagem: string;
 }> {
-  console.log('🔍 [BMP531Service] Consultando status da transação...', codigoTransacao);
+  // console.log('🔍 [BMP531Service] Consultando status da transação...', codigoTransacao);
   
   const endpoint = `${BMP531_CONFIG.endpoints.pixStatusTransacao}/${codigoTransacao}`;
   
@@ -656,7 +649,7 @@ export function getBmp531Config() {
  */
 export function setBmp531Timeout(timeout: number) {
   (BMP531_CONFIG as any).timeout = timeout;
-  console.log(`🔧 [BMP531Service] Timeout atualizado para: ${timeout}ms`);
+  // console.log(`🔧 [BMP531Service] Timeout atualizado para: ${timeout}ms`);
 }
 
 /**

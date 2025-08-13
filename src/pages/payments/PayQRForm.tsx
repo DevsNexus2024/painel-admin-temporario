@@ -168,7 +168,7 @@ export default function PayQRForm() {
   };
 
   const simulateScanQR = () => {
-    const mockCode = "00020126580014BR.GOV.BCB.PIX0136a629532e-7b34-4c85-b5e9-48c81a2c3e7d520400005303986540510.005802BR5923JOSE DA SILVA SANTOS6009SAO PAULO61080550905062070503***6304231830394BR.GOV.BCB.PIX2572pix-qr.mercadopago.com/instore/o/v2/3a4b5c6d7e8f9g0h63040D3E";
+    const mockCode = import.meta.env.VITE_PIX_MOCK_QR_CODE;
     form.setValue('emvCode', mockCode);
     toast.success("QR Code simulado escaneado!");
   };

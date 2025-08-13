@@ -214,7 +214,7 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
       
       toast.success('PDF gerado com sucesso!');
     } catch (error) {
-      console.error('Erro ao gerar PDF:', error);
+      // console.error('Erro ao gerar PDF:', error);
       toast.error('Erro ao gerar PDF');
     } finally {
       setExportingPDF(false);
@@ -245,20 +245,20 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
       hideReversals: newFilters.hideReversals !== undefined ? newFilters.hideReversals : filters.hideReversals
     };
     
-    console.log('[ADMIN-STATEMENT] Atualizando filtros:', {
-      filtrosAnteriores: filters,
-      novosFiltros: newFilters,
-      filtrosFinais: updatedFilters
-    });
+    // console.log('[ADMIN-STATEMENT] Atualizando filtros:', {
+    //   filtrosAnteriores: filters,
+    //   novosFiltros: newFilters,
+    //   filtrosFinais: updatedFilters
+    // });
 
     // Log especial para filtros de data
     if (newFilters.dateFrom || newFilters.dateTo) {
-      console.log('[ADMIN-STATEMENT] Filtros de data sendo aplicados:', {
-        dateFrom: updatedFilters.dateFrom,
-        dateTo: updatedFilters.dateTo,
-        dateFromReadable: updatedFilters.dateFrom ? new Date(updatedFilters.dateFrom).toString() : 'N/A',
-        dateToReadable: updatedFilters.dateTo ? new Date(updatedFilters.dateTo).toString() : 'N/A'
-      });
+      // console.log('[ADMIN-STATEMENT] Filtros de data sendo aplicados:', {
+      //   dateFrom: updatedFilters.dateFrom,
+      //   dateTo: updatedFilters.dateTo,
+      //   dateFromReadable: updatedFilters.dateFrom ? new Date(updatedFilters.dateFrom).toString() : 'N/A',
+      //   dateToReadable: updatedFilters.dateTo ? new Date(updatedFilters.dateTo).toString() : 'N/A'
+      // });
     }
     
     setFilters(updatedFilters);
@@ -272,37 +272,37 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
       // Para inputs do tipo date, a string vem no formato YYYY-MM-DD
       const [year, month, day] = dateString.split('-');
       
-      console.log('[DEBUG] Convertendo data:', {
-        dateString,
-        isEndDate,
-        year: parseInt(year),
-        month: parseInt(month) - 1, // JS month is 0-based
-        day: parseInt(day)
-      });
+      // console.log('[DEBUG] Convertendo data:', {
+      //   dateString,
+      //   isEndDate,
+      //   year: parseInt(year),
+      //   month: parseInt(month) - 1, // JS month is 0-based
+      //   day: parseInt(day)
+      // });
       
       if (isEndDate) {
         // Para data final: YYYY-MM-DD 23:59:59 (mesma lógica do cliente)
         const fimData = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), 23, 59, 59);
         const isoString = fimData.toISOString();
-        console.log('[DEBUG] Data final criada:', {
-          dataLocal: fimData.toString(),
-          dataISO: isoString,
-          timezone: fimData.getTimezoneOffset()
-        });
+        // console.log('[DEBUG] Data final criada:', {
+        //   dataLocal: fimData.toString(),
+        //   dataISO: isoString,
+        //   timezone: fimData.getTimezoneOffset()
+        // });
         return isoString;
       } else {
         // Para data inicial: YYYY-MM-DD 00:00:00 (mesma lógica do cliente)
         const inicioData = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
         const isoString = inicioData.toISOString();
-        console.log('[DEBUG] Data inicial criada:', {
-          dataLocal: inicioData.toString(),
-          dataISO: isoString,
-          timezone: inicioData.getTimezoneOffset()
-        });
+        // console.log('[DEBUG] Data inicial criada:', {
+        //   dataLocal: inicioData.toString(),
+        //   dataISO: isoString,
+        //   timezone: inicioData.getTimezoneOffset()
+        // });
         return isoString;
       }
     } catch (error) {
-      console.error('Erro ao converter data:', dateString, error);
+      // console.error('Erro ao converter data:', dateString, error);
       return '';
     }
   };
@@ -310,14 +310,14 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
   // Função para atualizar filtro de data inicial
   const handleDateFromChange = (dateString: string) => {
     const isoDate = convertDateToISO(dateString, false);
-    console.log('[ADMIN-STATEMENT] Data inicial alterada:', { dateString, isoDate });
+    // console.log('[ADMIN-STATEMENT] Data inicial alterada:', { dateString, isoDate });
     updateFilters({ dateFrom: isoDate });
   };
 
   // Função para atualizar filtro de data final
   const handleDateToChange = (dateString: string) => {
     const isoDate = convertDateToISO(dateString, true);
-    console.log('[ADMIN-STATEMENT] Data final alterada:', { dateString, isoDate });
+    // console.log('[ADMIN-STATEMENT] Data final alterada:', { dateString, isoDate });
     updateFilters({ dateTo: isoDate });
   };
 
@@ -335,16 +335,16 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
       
       const localDateString = `${year}-${month}-${day}`;
       
-      console.log('[DEBUG] Convertendo ISO para local:', {
-        isoString,
-        originalDate: date.toString(),
-        localDate: localDate.toString(),
-        resultString: localDateString
-      });
+      // console.log('[DEBUG] Convertendo ISO para local:', {
+      //   isoString,
+      //   originalDate: date.toString(),
+      //   localDate: localDate.toString(),
+      //   resultString: localDateString
+      // });
       
       return localDateString;
     } catch (error) {
-      console.error('Erro ao converter ISO para data local:', isoString, error);
+      // console.error('Erro ao converter ISO para data local:', isoString, error);
       return '';
     }
   };
@@ -421,10 +421,10 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
     // Se houver filtros diretos sendo usados, aplicar imediatamente
     // mas apenas se não há outros filtros de data ativos
     if ((filters.dateFrom || filters.dateTo) && !showOnlyToday && !searchDate.trim()) {
-      console.log('[ADMIN-STATEMENT] Aplicando filtros diretos de data:', {
-        dateFrom: filters.dateFrom,
-        dateTo: filters.dateTo
-      });
+      // console.log('[ADMIN-STATEMENT] Aplicando filtros diretos de data:', {
+      //   dateFrom: filters.dateFrom,
+      //   dateTo: filters.dateTo
+      // });
       // Os filtros já estão no estado, apenas logar para debug
     }
   }, [filters.dateFrom, filters.dateTo, clientId, showOnlyToday, searchDate]);
@@ -436,16 +436,7 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
     let filtered = [...statement.transacoes];
     
     // Debug: Verificar se manual_operation está vindo nas transações
-    console.log('[ADMIN-STATEMENT] Transações recebidas:', statement.transacoes.map(tx => ({
-      id: tx.id,
-      type: tx.type,
-      manual_operation: tx.manual_operation,
-      has_manual_operation: !!tx.manual_operation?.id,
-      is_reversed_or_reversal: tx.manual_operation?.is_reversed_or_reversal,
-      should_show_button: ['manual_credit', 'manual_debit', 'manual_adjustment'].includes(tx.type) && 
-                         !!tx.manual_operation?.id && 
-                         !tx.manual_operation?.is_reversed_or_reversal
-    })));
+
 
     // Filtro por nome/documento
     if (searchName.trim()) {
@@ -509,11 +500,11 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
         
         // Log apenas para as primeiras comparações para não poluir
         if (Math.random() < 0.1) {
-          console.log('[ADMIN-STATEMENT] Ordenação DEBUG:', {
-            a: formatForDebug(a),
-            b: formatForDebug(b),
-            comparison: timestampB - timestampA
-          });
+          // console.log('[ADMIN-STATEMENT] Ordenação DEBUG:', {
+          //   a: formatForDebug(a),
+          //   b: formatForDebug(b),
+          //   comparison: timestampB - timestampA
+          // });
         }
       }
       
@@ -562,11 +553,11 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
 
     setIsReversing(true);
     try {
-      console.log('[ADMIN-STATEMENT] Enviando reversão:', {
-        operationId: transactionToReverse.manual_operation.id,
-        transactionId: transactionToReverse.id,
-        reason: reversalReason.trim()
-      });
+      // console.log('[ADMIN-STATEMENT] Enviando reversão:', {
+      //   operationId: transactionToReverse.manual_operation.id,
+      //   transactionId: transactionToReverse.id,
+      //   reason: reversalReason.trim()
+      // });
       
       await otcService.reverseOperation(transactionToReverse.manual_operation.id, reversalReason.trim());
       
@@ -578,7 +569,7 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
       refetch();
       
     } catch (error: any) {
-      console.error('Erro ao reverter operação:', error);
+      // console.error('Erro ao reverter operação:', error);
       
       // Capturar mensagem específica da API
       let errorMessage = 'Erro ao reverter operação';
@@ -968,11 +959,11 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                   variant="outline"
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                   onClick={() => {
-                    console.log('[ADMIN-STATEMENT] Tentativa de estorno:', {
-                      transactionId: transaction.id,
-                      type: transaction.type,
-                      manual_operation: transaction.manual_operation
-                    });
+                    // console.log('[ADMIN-STATEMENT] Tentativa de estorno:', {
+                    //   transactionId: transaction.id,
+                    //   type: transaction.type,
+                    //   manual_operation: transaction.manual_operation
+                    // });
                     if (transaction.manual_operation?.id) {
                       openReversalModal(transaction);
                     } else {

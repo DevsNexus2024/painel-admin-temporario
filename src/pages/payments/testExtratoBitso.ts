@@ -18,23 +18,23 @@ class TestExtratoBitso implements TesteExtratoBitso {
    * Teste 1: Conectividade básica
    */
   async testeConectividade(): Promise<void> {
-    console.log('🧪 [TESTE-EXTRATO-BITSO] 1. Testando conectividade...');
+    // console.log('🧪 [TESTE-EXTRATO-BITSO] 1. Testando conectividade...');
     
     try {
       // Primeiro verificar se consegue trocar para Bitso
       await apiRouter.switchAccount('bitso-crypto');
-      console.log('✅ Conta Bitso ativada');
+      // console.log('✅ Conta Bitso ativada');
       
       // Verificar se extrato está disponível
       const hasExtrato = apiRouter.hasFeature('extrato');
-      console.log(`✅ Feature extrato disponível: ${hasExtrato}`);
+      // console.log(`✅ Feature extrato disponível: ${hasExtrato}`);
       
       if (!hasExtrato) {
         throw new Error('Feature extrato não disponível para Bitso');
       }
       
     } catch (error) {
-      console.error('❌ Erro na conectividade:', error);
+      // console.error('❌ Erro na conectividade:', error);
       throw error;
     }
   }
@@ -43,12 +43,12 @@ class TestExtratoBitso implements TesteExtratoBitso {
    * Teste 2: Extrato básico
    */
   async testeExtrato(): Promise<void> {
-    console.log('🧪 [TESTE-EXTRATO-BITSO] 2. Testando extrato básico...');
+    // console.log('🧪 [TESTE-EXTRATO-BITSO] 2. Testando extrato básico...');
     
     try {
       const extrato = await apiRouter.getExtrato();
       
-      console.log('✅ Extrato obtido:', {
+      // console.log('✅ Extrato obtido:', {
         transacoes: extrato.transacoes?.length || 'N/A',
         total: extrato.total,
         provider: extrato.provider,
@@ -66,13 +66,13 @@ class TestExtratoBitso implements TesteExtratoBitso {
       
       // Log das primeiras transações para debug
       if (extrato.transacoes.length > 0) {
-        console.log('📋 Primeiras transações:', extrato.transacoes.slice(0, 3));
+        // console.log('📋 Primeiras transações:', extrato.transacoes.slice(0, 3));
       } else {
-        console.log('📭 Nenhuma transação encontrada (conta vazia ou sem credenciais)');
+        // console.log('📭 Nenhuma transação encontrada (conta vazia ou sem credenciais)');
       }
       
     } catch (error) {
-      console.error('❌ Erro no teste de extrato:', error);
+      // console.error('❌ Erro no teste de extrato:', error);
       throw error;
     }
   }
@@ -81,7 +81,7 @@ class TestExtratoBitso implements TesteExtratoBitso {
    * Teste 3: Extrato com parâmetros
    */
   async testeExtratoComParametros(): Promise<void> {
-    console.log('🧪 [TESTE-EXTRATO-BITSO] 3. Testando extrato com parâmetros...');
+    // console.log('🧪 [TESTE-EXTRATO-BITSO] 3. Testando extrato com parâmetros...');
     
     try {
       const params = {
@@ -91,7 +91,7 @@ class TestExtratoBitso implements TesteExtratoBitso {
       
       const extrato = await apiRouter.getExtrato(params);
       
-      console.log('✅ Extrato com parâmetros obtido:', {
+      // console.log('✅ Extrato com parâmetros obtido:', {
         parametros: params,
         transacoes: extrato.transacoes?.length || 'N/A',
         total: extrato.total,
@@ -104,7 +104,7 @@ class TestExtratoBitso implements TesteExtratoBitso {
       }
       
     } catch (error) {
-      console.error('❌ Erro no teste com parâmetros:', error);
+      // console.error('❌ Erro no teste com parâmetros:', error);
       throw error;
     }
   }
@@ -113,22 +113,22 @@ class TestExtratoBitso implements TesteExtratoBitso {
    * Executa todos os testes em sequência
    */
   async executarTodosTestes(): Promise<void> {
-    console.log('🚀 [TESTE-EXTRATO-BITSO] Iniciando bateria de testes...\n');
+    // console.log('🚀 [TESTE-EXTRATO-BITSO] Iniciando bateria de testes...\n');
     
     try {
       await this.testeConectividade();
-      console.log('');
+      // console.log('');
       
       await this.testeExtrato();
-      console.log('');
+      // console.log('');
       
       await this.testeExtratoComParametros();
-      console.log('');
+      // console.log('');
       
-      console.log('🎉 [TESTE-EXTRATO-BITSO] Todos os testes passaram!');
+      // console.log('🎉 [TESTE-EXTRATO-BITSO] Todos os testes passaram!');
       
     } catch (error) {
-      console.error('💥 [TESTE-EXTRATO-BITSO] Falha nos testes:', error);
+      // console.error('💥 [TESTE-EXTRATO-BITSO] Falha nos testes:', error);
       throw error;
     }
   }
@@ -168,10 +168,10 @@ export const testeBitsoExtrato = {
    * Usage: testeBitsoExtrato.parametros({ limit: '10' })
    */
   async parametros(params: Record<string, string> = { limit: '10' }) {
-    console.log('🧪 [TESTE-EXTRATO-BITSO] Teste com parâmetros customizados...');
+    // console.log('🧪 [TESTE-EXTRATO-BITSO] Teste com parâmetros customizados...');
     await apiRouter.switchAccount('bitso-crypto');
     const extrato = await apiRouter.getExtrato(params);
-    console.log('✅ Resultado:', { 
+    // console.log('✅ Resultado:', { 
       parametros: params,
       transacoes: extrato.transacoes?.length,
       provider: extrato.provider 

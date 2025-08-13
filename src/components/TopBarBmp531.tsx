@@ -16,16 +16,16 @@ export default function TopBarBmp531() {
     setError(null);
     
     try {
-      console.log("🏦 [TopBarBmp531] Carregando saldo BMP 531...");
+
       
       // ✅ Usar serviço centralizado BMP 531
       const data = await Bmp531Service.getSaldo();
       
-      console.log("✅ [TopBarBmp531] Saldo BMP 531 carregado:", data);
+
       setSaldoData(data);
       
     } catch (error: any) {
-      console.error("❌ [TopBarBmp531] Erro ao carregar saldo BMP 531:", error);
+
       setError(error.message || "Erro ao carregar saldo");
       
       toast.error("Erro ao carregar saldo", {
@@ -38,7 +38,7 @@ export default function TopBarBmp531() {
   };
 
   const handleRefresh = async () => {
-    console.log("🔄 [TopBarBmp531] Atualizando saldo BMP 531...");
+
     await loadSaldoBmp531();
     
     toast.success("Saldo atualizado!", {

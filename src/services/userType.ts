@@ -52,22 +52,11 @@ export class UserTypeService {
    */
   async checkUserType(user: { id: string | number; email: string; name?: string }): Promise<UserTypeResult> {
     try {
-      console.log('🔍 UserTypeService: Verificando tipo para usuário via API:', user.id, user.email);
-      
       // Fazer chamada para a API do backend
       const response = await authService.getUserType();
       
       if (response.sucesso && response.data) {
         const { type, isAdmin, isOTCClient, isOTCEmployee, otcClient, hasOTCRole, otcAccess } = response.data;
-        
-        console.log('✅ UserTypeService: Tipo obtido da API:', {
-          type,
-          isAdmin,
-          isOTCClient,
-          isOTCEmployee,
-          hasOTCClient: !!otcClient,
-          hasOTCAccess: !!otcAccess
-        });
         
         return {
           type,
@@ -79,7 +68,7 @@ export class UserTypeService {
           otcAccess
         };
       } else {
-        console.warn('⚠️ UserTypeService: Resposta inválida da API, assumindo admin');
+        // console.warn('⚠️ UserTypeService: Resposta inválida da API, assumindo admin');
         return {
           type: 'admin',
           isOTC: false,
@@ -87,7 +76,7 @@ export class UserTypeService {
         };
       }
     } catch (error) {
-      console.error('❌ UserTypeService: Erro ao verificar tipo do usuário via API:', error);
+      // console.error('❌ UserTypeService: Erro ao verificar tipo do usuário via API:', error);
       // Em caso de erro, assumir como admin para não bloquear acesso
       return {
         type: 'admin',

@@ -45,8 +45,8 @@ export default function DepositReport() {
   const exportToCSV = () => {
     if (!data?.response.usuarios) return;
 
-    console.log('📄 EXPORTANDO CSV - Total de usuários:', data.response.usuarios.length);
-    console.log('📄 PRIMEIRO USUÁRIO PARA EXPORT:', data.response.usuarios[0]);
+    // console.log('📄 EXPORTANDO CSV - Total de usuários:', data.response.usuarios.length);
+    // console.log('📄 PRIMEIRO USUÁRIO PARA EXPORT:', data.response.usuarios[0]);
 
     const headers = [
       'ID Usuário',

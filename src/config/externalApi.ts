@@ -7,7 +7,7 @@
  */
 export const EXTERNAL_API_CONFIG = {
   // 🌐 URL base da API externa
-  BASE_URL: 'https://vps80270.cloudpublic.com.br:8081',
+  BASE_URL: import.meta.env.VITE_DIAGNOSTICO_API_URL,
   
   // 📍 Endpoints disponíveis
   ENDPOINTS: {
@@ -16,7 +16,7 @@ export const EXTERNAL_API_CONFIG = {
   },
   
   // 🔑 API Key (configurada no DigitalOcean App Platform)
-  API_KEY: import.meta.env.VITE_EXTERNAL_API_KEY || '70c4f678ae3f869d364f7cb50e7676b5fbcd55a3dd70bf8a8b19a68da9541d5a',
+  API_KEY: import.meta.env.VITE_EXTERNAL_API_KEY,
   
   // ⚙️ Configurações gerais
   TIMEOUT: 30000, // 30 segundos
@@ -115,10 +115,10 @@ export const testarApiExterna = async (): Promise<boolean> => {
     const response = await callExternalApi(EXTERNAL_API_CONFIG.ENDPOINTS.STATUS_API);
     
     if (response.sucesso) {
-      console.log('✅ API Externa funcionando:', response.mensagem);
+
       return true;
     } else {
-      console.error('❌ API Externa com problemas:', response.mensagem);
+
       return false;
     }
   } catch (error) {
@@ -127,35 +127,3 @@ export const testarApiExterna = async (): Promise<boolean> => {
   }
 };
 
-// ===============================================
-// 📝 EXEMPLO DE USO:
-// ===============================================
-/*
-CONFIGURAÇÃO NO DIGITALOCEAN APP PLATFORM:
-==========================================
-// ✅ Configuração correta (prefixo VITE_ obrigatório):
-VITE_EXTERNAL_API_KEY = senhaSecretaApiExt
-
-EXEMPLO DE CÓDIGO:
-==================
-import { callExternalApi, EXTERNAL_API_CONFIG, AtualizarDepositoRequest } from './config/externalApi';
-
-// Atualizar depósito
-const atualizarDeposito = async (dados: AtualizarDepositoRequest) => {
-  try {
-    const result = await callExternalApi(
-      EXTERNAL_API_CONFIG.ENDPOINTS.ATUALIZAR_DEPOSITO,
-      {
-        method: 'POST',
-        body: JSON.stringify(dados)
-      }
-    );
-    
-    console.log('✅ Depósito atualizado:', result);
-    return result;
-  } catch (error) {
-    console.error('❌ Erro:', error);
-    throw error;
-  }
-};
-*/ 

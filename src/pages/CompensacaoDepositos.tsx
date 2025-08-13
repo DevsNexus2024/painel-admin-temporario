@@ -205,9 +205,9 @@ const toastStyles = {
 
 // Função de serviço para buscar dados da API - Modificada para aceitar datas opcionais
 async function buscarDepositosComErro(startDate?: string, endDate?: string): Promise<Deposito[]> {
-    const API_URL = 'https://vps80270.cloudpublic.com.br:8081/depositos/consultar-erros';
-    const ACCOUNT_NUMBER = '8734873'; // Fixo por enquanto
-    const SECRET_HEADER = '70c4f678ae3f869d364f7cb50e7676b5fbcd55a3dd70bf8a8b19a68da9541d5a';
+    const API_URL = `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/depositos/consultar-erros`;
+    const ACCOUNT_NUMBER = import.meta.env.VITE_ACCOUNT_NUMBER_B8_TCR;
+    const SECRET_HEADER = import.meta.env.VITE_EXTERNAL_API_KEY;
     const ENTERPRISE_HEADER = 'tcr';
 
     const url = new URL(API_URL);
@@ -221,7 +221,7 @@ async function buscarDepositosComErro(startDate?: string, endDate?: string): Pro
     }
 
     try {
-        console.log("Buscando depósitos com URL:", url.toString());
+
         const response = await fetch(url.toString(), {
             method: 'GET',
             headers: {
@@ -233,7 +233,7 @@ async function buscarDepositosComErro(startDate?: string, endDate?: string): Pro
 
         if (!response.ok) {
             const errorData = await response.text();
-            console.error("Erro na resposta da API:", response.status, errorData);
+            // console.error("Erro na resposta da API:", response.status, "Detalhes omitidos por segurança");
             throw new Error(`Erro ao buscar depósitos: ${response.statusText}`);
         }
 
@@ -243,7 +243,7 @@ async function buscarDepositosComErro(startDate?: string, endDate?: string): Pro
         // Debug removido por performance
 
         if (!data.sucesso) {
-            console.error("API retornou erro:", data.mensagem);
+            // console.error("API retornou erro:", data.mensagem);
             throw new Error(data.mensagem || "API retornou sucesso=false");
         }
 
@@ -253,14 +253,14 @@ async function buscarDepositosComErro(startDate?: string, endDate?: string): Pro
             if (['processing', 'error', 'finished'].includes(apiDep.status_deposito)) {
                 status = apiDep.status_deposito as DepositoStatus;
             } else if (apiDep.status_deposito) {
-                console.warn(`Status de depósito não reconhecido: ${apiDep.status_deposito}`);
+
             }
 
             let step: Deposito['step'] = 'unknown_step';
             if (['01newdeposit', '02internal_transfer_b8cash', '03bolsao_deposit', '04internal_transfer_caas'].includes(apiDep.step)) {
                 step = apiDep.step as ProcessStep;
             } else if (apiDep.step) {
-                console.warn(`Step de depósito não reconhecido: ${apiDep.step}`);
+
             }
 
             const createdAtTimestamp = new Date(apiDep.createdAt || apiDep.created_at).getTime();
@@ -334,7 +334,7 @@ async function buscarDepositosComErro(startDate?: string, endDate?: string): Pro
         return todosRegistros;
 
     } catch (error) {
-        console.error("Falha ao buscar ou processar depósitos:", error);
+        // console.error("Falha ao buscar ou processar depósitos:", error);
         if (error instanceof Error) {
             toast.error(`Erro ao buscar depósitos: ${error.message}`, {
                 style: toastStyles.error
@@ -932,8 +932,7 @@ function TabelaDepositos({
     const [selectedDeposit, setSelectedDeposit] = useState<Deposito | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
 
-    // Log para verificar os dados recebidos pela tabela
-    console.log("Dados recebidos por TabelaDepositos:", depositos);
+    // Dados recebidos pela tabela
 
     const handleViewDetails = (deposito: Deposito) => {
         setSelectedDeposit(deposito);
@@ -990,7 +989,7 @@ function TabelaDepositos({
                     <TableBody>
                         {depositos.map((deposito, index) => {
                             // Log para cada item antes de renderizar
-                            console.log(`Renderizando item ${index}:`, deposito);
+
 
                             let formattedValor = "R$ 0,00";
                             try {
@@ -1002,10 +1001,10 @@ function TabelaDepositos({
                                         currency: 'BRL'
                                     }).format(amountValue);
                                 } else {
-                                    console.warn(`Valor inválido para formatar no depósito ${deposito.id}:`, deposito.amount);
+                                    // console.warn(`Valor inválido para formatar no depósito ${deposito.id}:`, deposito.amount);
                                 }
                             } catch (error) {
-                                console.error(`Erro ao formatar valor do depósito ${deposito.id}:`, error);
+                                // console.error(`Erro ao formatar valor do depósito ${deposito.id}:`, error);
                             }
 
                             let formattedData = "Data inválida";
@@ -1014,14 +1013,14 @@ function TabelaDepositos({
                                 if (typeof deposito.createdAt === 'number' && !isNaN(deposito.createdAt)) {
                                     formattedData = new Date(deposito.createdAt).toLocaleDateString('pt-BR');
                                 } else {
-                                    console.warn(`Timestamp inválido para formatar no depósito ${deposito.id}:`, deposito.createdAt);
+                                    // console.warn(`Timestamp inválido para formatar no depósito ${deposito.id}:`, deposito.createdAt);
                                 }
                             } catch (error) {
-                                console.error(`Erro ao formatar data do depósito ${deposito.id}:`, error);
+                                // console.error(`Erro ao formatar data do depósito ${deposito.id}:`, error);
                             }
 
                             // Log antes de chamar os Badges
-                            console.log(` > Status para Badge: ${deposito.status}, Step para Badge: ${deposito.step}`);
+                            // console.log(` > Status para Badge: ${deposito.status}, Step para Badge: ${deposito.step}`);
 
                             return (
                                 <TableRow key={deposito.id} className={`border-b border-[#333] ${index % 2 === 0 ? 'bg-[#1a1a1a]' : 'bg-[#141414]'}`}>
@@ -1099,13 +1098,13 @@ function TabelaDepositos({
                                                     if (payload && typeof payload.createdTimestamp !== 'undefined') {
                                                         specificTimestamp = payload.createdTimestamp;
                                                     } else {
-                                                        console.warn("Timestamp não encontrado no webhook_payload", payload);
+                                                        // console.warn("Timestamp não encontrado no webhook_payload", payload);
                                                     }
                                                 } catch (e) {
-                                                    console.error("Erro ao fazer parse do webhook_payload:", e);
+                                                    // console.error("Erro ao fazer parse do webhook_payload:", e);
                                                 }
                                             } else {
-                                                console.warn("webhook_payload está vazio ou nulo");
+                                                // console.warn("webhook_payload está vazio ou nulo");
                                             }
                                         }
 
@@ -1294,9 +1293,7 @@ export default function CompensacaoDepositos() {
     const [isSavingEdicao, setIsSavingEdicao] = useState(false);
 
     // Log para verificar o estado principal de depósitos
-    useEffect(() => {
-        console.log("Estado 'depositos' atualizado:", depositos);
-    }, [depositos]);
+    // Log de estado removido para reduzir ruído no console
 
     // Calcular estatísticas dos depósitos
     const depositosStats = {
@@ -1334,10 +1331,7 @@ export default function CompensacaoDepositos() {
 
             return true;
         });
-        // Log para depuração da filtragem por critérios
-        console.log("Filtros Ativos (Criteria):", { searchTerm, statusFilter, stepFilter });
-        console.log("Itens ANTES da filtragem por critérios:", depositosToFilter.length);
-        console.log("Itens DEPOIS da filtragem por critérios:", filtered.length);
+        // Aplicar filtros
         return filtered;
     };
 
@@ -1352,16 +1346,15 @@ export default function CompensacaoDepositos() {
                 const isInDateRange = dep.createdAt >= inicioDia && dep.createdAt <= fimDia;
                 return isInDateRange;
             });
-            console.log(`Itens após filtro de data: ${dadosAposFiltroData.length}`);
+
         } else {
             dadosAposFiltroData = [...depositos];
-            console.log("Nenhum filtro de data aplicado.");
+
         }
 
         // Aplicar filtros adicionais
         const dadosFiltradosFinal = filterDepositosByCriteria(dadosAposFiltroData);
-        console.log(`Itens após filtros manuais (status, step, busca): ${dadosFiltradosFinal.length}`);
-        console.log("--- useEffect: Filtragem Concluída ---");
+        // Filtragem concluída
 
         setFilteredDepositos(dadosFiltradosFinal);
 
@@ -1385,8 +1378,8 @@ export default function CompensacaoDepositos() {
 
         setReprocessando(true);
 
-        const API_URL = 'https://vps80270.cloudpublic.com.br:8081/depositos/compensar';
-        const SECRET_HEADER = '70c4f678ae3f869d364f7cb50e7676b5fbcd55a3dd70bf8a8b19a68da9541d5a';
+        const API_URL = `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/depositos/compensar`;
+        const SECRET_HEADER = import.meta.env.VITE_EXTERNAL_API_KEY;
 
         try {
             const depositoIdNum = parseInt(depositoId, 10);
@@ -1406,12 +1399,12 @@ export default function CompensacaoDepositos() {
             const responseData = await response.json();
 
             if (!response.ok) {
-                console.error(`Erro HTTP ${response.status} ao compensar depósito.`);
+
                 throw new Error(`Erro HTTP ${response.status}`);
             }
 
             if (!responseData.sucesso) {
-                console.error("Erro geral da API ao compensar depósito:", responseData);
+
                 throw new Error(responseData.mensagem || "Erro geral retornado pela API.");
             }
 
@@ -1420,15 +1413,14 @@ export default function CompensacaoDepositos() {
                 (d: { id_deposito: number }) => d.id_deposito === depositoIdNum
             );
 
-            console.log("Buscando detalhe para ID:", depositoIdNum);
-            console.log("Detalhe encontrado:", detalhe); // Agora 'detalhe' está definido
+
 
             if (!detalhe) {
-                console.error("Não foi possível encontrar os detalhes para o depósito processado:", responseData);
+
                 throw new Error("Resposta da API inesperada (detalhes não encontrados).");
             }
 
-            console.log("Verificando sucesso do detalhe:", detalhe.sucesso); // 'detalhe' está definido
+
 
             if (detalhe.sucesso) {
                 toast.success(detalhe.mensagem || 'Depósito compensado com sucesso!', {
@@ -1436,14 +1428,14 @@ export default function CompensacaoDepositos() {
                 });
                 await fetchDepositos();
             } else {
-                console.error("Falha na compensação do depósito específico:", detalhe);
+                // console.error("Falha na compensação do depósito específico:", detalhe);
                 toast.error(detalhe.mensagem || 'Falha ao compensar o depósito.', {
                     style: toastStyles.error
                 });
             }
 
         } catch (error) {
-            console.error("Erro ao chamar API de compensação:", error);
+            // console.error("Erro ao chamar API de compensação:", error);
             const errorMessage = error instanceof Error ? error.message : "Ocorreu um erro desconhecido";
             toast.error(`Erro ao reprocessar: ${errorMessage}`, {
                 style: toastStyles.error
@@ -1506,9 +1498,9 @@ export default function CompensacaoDepositos() {
             const formatDateToAPI = (date: Date) => format(date, "yyyy-MM-dd");
             startDateAPI = formatDateToAPI(startDateFilter);
             endDateAPI = formatDateToAPI(endDateFilter);
-            console.log(`Enviando para API com datas - startDate: ${startDateAPI}, endDate: ${endDateAPI}`);
+
         } else {
-            console.log("Enviando para API sem parâmetros de data.");
+
         }
 
         try {
@@ -1551,15 +1543,10 @@ export default function CompensacaoDepositos() {
         setIsSavingEdicao(true);
 
         try {
-            console.log('🔄 Atualizando depósito via API externa:', {
-                id: depositoId,
-                usuario: novoUserId,
-                status: novoStatus,
-                etapa: novaEtapa
-            });
+
 
             // ✅ VERSÃO SUPER SIMPLES - SEM HEADERS ESPECIAIS
-            const response = await fetch('https://vps80270.cloudpublic.com.br:8081/api/externos/depositos/atualizar', {
+            const response = await fetch(`${import.meta.env.VITE_DIAGNOSTICO_API_URL}/api/externos/depositos/atualizar`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1576,7 +1563,7 @@ export default function CompensacaoDepositos() {
             });
 
             const data = await response.json();
-            console.log('✅ Resposta:', data);
+
 
             // ✅ VERIFICAÇÃO DA RESPOSTA
             if (!response.ok) {
@@ -1604,13 +1591,13 @@ export default function CompensacaoDepositos() {
             setDepositos(depositosAtualizados);
             handleCloseEdicaoModal();
 
-            console.log('✅ Depósito atualizado com sucesso:', data);
+
             toast.success('✅ Depósito atualizado com sucesso!', {
                 style: toastStyles.success
             });
 
         } catch (error) {
-            console.error('❌ Erro ao salvar alterações do depósito:', error);
+            // console.error('❌ Erro ao salvar alterações do depósito:', error);
             const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
             
             toast.error(`❌ Erro ao salvar alterações: ${errorMessage}`, {

@@ -107,7 +107,7 @@ export default function SendByKeyForm() {
         // Não mostrar toast de erro para não incomodar o usuário
       }
     } catch (error) {
-      console.error('[SEND-PIX] ❌ Erro ao consultar chave:', error);
+
       setKeyConsultData(null);
     } finally {
       setIsConsultingKey(false);

@@ -43,7 +43,7 @@ export class Bmp531Provider extends BaseBankProvider {
    */
   async healthCheck(): Promise<BankResponse<{ status: string; latency: number }>> {
     try {
-      console.log('🩺 [BMP-531] Health check iniciado (teste de conectividade)');
+
       const startTime = Date.now();
       
       // Tenta usar endpoint de PIX para testar conectividade
@@ -52,7 +52,7 @@ export class Bmp531Provider extends BaseBankProvider {
         await this.makeRequest('GET', '/bmp-531/status');
       } catch (error) {
         // Se não existir endpoint status, tentar endpoint conhecido
-        console.log('🩺 [BMP-531] Endpoint /status não existe, testando conectividade básica');
+
       }
       
       const latency = Date.now() - startTime;
@@ -74,14 +74,14 @@ export class Bmp531Provider extends BaseBankProvider {
     try {
       // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
       const dadosBancarios = {
-        agencia: '0001',
-        agencia_digito: '8',
-        conta: '159',
-        conta_digito: '4',
-        conta_pgto: '00001594',
-        tipo_conta: 3,
-        modelo_conta: 1,
-        numero_banco: '531'
+        agencia: import.meta.env.VITE_BMP_AGENCIA_TTF,
+        agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO_TTF,
+        conta: import.meta.env.VITE_BMP_CONTA_TTF,
+        conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO_TTF,
+        conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO_TTF,
+        tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA_TTF, 10),
+        modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA_TTF, 10),
+        numero_banco: import.meta.env.VITE_BMP_531_BANCO
       };
       
       let response;
@@ -116,7 +116,10 @@ export class Bmp531Provider extends BaseBankProvider {
       return this.createSuccessResponse(standardBalance);
       
     } catch (error) {
-      this.logger.error('Erro ao consultar saldo BMP-531', error);
+      this.logger.error('Erro ao consultar saldo BMP-531', { 
+        message: error?.message || 'Erro desconhecido',
+        name: error?.name || 'Unknown'
+      });
       return this.handleError(error);
     }
   }
@@ -129,7 +132,10 @@ export class Bmp531Provider extends BaseBankProvider {
     accountId?: string
   ): Promise<BankResponse<StandardStatementResponse>> {
     try {
-      this.logger.info('Consultando extrato BMP-531', { filters, accountId });
+      this.logger.info('Consultando extrato BMP-531', { 
+        hasFilters: !!filters, 
+        hasAccountId: !!accountId 
+      });
 
       // Validar filtros
       const validation = this.validateFilters(filters || {});
@@ -139,14 +145,14 @@ export class Bmp531Provider extends BaseBankProvider {
 
       // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
       const dadosBancarios = {
-        agencia: '0001',
-        agencia_digito: '8',
-        conta: '159',
-        conta_digito: '4',
-        conta_pgto: '00001594',
-        tipo_conta: 3,
-        modelo_conta: 1,
-        numero_banco: '531'
+        agencia: import.meta.env.VITE_BMP_AGENCIA,
+        agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO,
+        conta: import.meta.env.VITE_BMP_CONTA,
+        conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO,
+        conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO,
+        tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA, 10),
+        modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA, 10),
+        numero_banco: import.meta.env.VITE_BMP_531_BANCO
       };
       
       // Preparar parâmetros para API BMP-531
@@ -164,7 +170,7 @@ export class Bmp531Provider extends BaseBankProvider {
         response = await this.makeRequest('GET', '/bmp-531/account/extrato', allParams);
       } catch (error) {
         // Se não existir endpoint específico, retornar lista vazia temporariamente
-        console.warn('⚠️ [BMP-531] Endpoints de extrato não encontrados, retornando lista vazia');
+
         response = { items: [], next_cursor: null, has_more: false, total: 0 };
       }
 
@@ -236,7 +242,10 @@ export class Bmp531Provider extends BaseBankProvider {
     accountId?: string
   ): Promise<BankResponse<StandardTransaction>> {
     try {
-      this.logger.info('Buscando transação específica BMP-531', { transactionId, accountId });
+      this.logger.info('Buscando transação específica BMP-531', { 
+        hasTransactionId: !!transactionId, 
+        hasAccountId: !!accountId 
+      });
       
       // BMP-531 pode não ter endpoint específico para transação única
       // Usar extrato com filtro por ID seria a implementação aqui
@@ -251,7 +260,7 @@ export class Bmp531Provider extends BaseBankProvider {
   /**
    * Faz requisição para API BMP-531
    */
-  private async makeRequest(method: string, endpoint: string, params?: any, bodyData?: any): Promise<any> {
+  protected async makeRequest(method: string, endpoint: string, params?: any, bodyData?: any): Promise<any> {
     await this.applyRateLimit();
 
     let url = `${this.baseUrl}${endpoint}`;
@@ -340,11 +349,7 @@ export class Bmp531Provider extends BaseBankProvider {
     keyType?: string;
   }, accountId?: string): Promise<BankResponse<StandardTransaction>> {
     try {
-      console.log('🚀 [BMP-531] sendPix() chamado - enviando PIX via BMP-531', { 
-        key: pixData.key, 
-        amount: pixData.amount,
-        accountId 
-      });
+
       
       this.logger.info('Enviando PIX via BMP-531', { 
         amount: pixData.amount,
@@ -354,14 +359,14 @@ export class Bmp531Provider extends BaseBankProvider {
 
       // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
       const dadosBancarios = {
-        agencia: '0001',
-        agencia_digito: '8',
-        conta: '159',
-        conta_digito: '4',
-        conta_pgto: '00001594',
-        tipo_conta: 3,
-        modelo_conta: 1,
-        numero_banco: '531'
+        agencia: import.meta.env.VITE_BMP_AGENCIA,
+        agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO,
+        conta: import.meta.env.VITE_BMP_CONTA,
+        conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO,
+        conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO,
+        tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA, 10),
+        modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA, 10),
+        numero_banco: import.meta.env.VITE_BMP_531_BANCO
       };
 
       // Preparar dados para API BMP-531 PIX
@@ -419,14 +424,14 @@ export class Bmp531Provider extends BaseBankProvider {
     try {
       // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
       const dadosBancarios = {
-        agencia: '0001',
-        agencia_digito: '8',
-        conta: '159',
-        conta_digito: '4',
-        conta_pgto: '00001594',
-        tipo_conta: 3,
-        modelo_conta: 1,
-        numero_banco: '531'
+        agencia: import.meta.env.VITE_BMP_AGENCIA,
+        agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO,
+        conta: import.meta.env.VITE_BMP_CONTA,
+        conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO,
+        conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO,
+        tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA, 10),
+        modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA, 10),
+        numero_banco: import.meta.env.VITE_BMP_531_BANCO
       };
 
       let response;
@@ -435,7 +440,7 @@ export class Bmp531Provider extends BaseBankProvider {
         response = await this.makeRequest('GET', '/bmp-531/pix/chaves/listar', dadosBancarios);
       } catch (error) {
         // Se não existir endpoint específico, retornar lista vazia
-        console.warn('⚠️ [BMP-531] Endpoints de chaves PIX não encontrados, retornando lista vazia');
+
         response = { chaves: [] };
       }
 
@@ -463,24 +468,24 @@ export class Bmp531Provider extends BaseBankProvider {
     accountId?: string
   ): Promise<BankResponse<{ qrCode: string; txId: string }>> {
     try {
-      console.log('📱 [BMP-531] generatePixQR() chamado - gerando QR Code via BMP-531', { 
-        amount, 
-        description,
-        accountId 
-      });
+
       
-      this.logger.info('Gerando QR Code PIX via BMP-531', { amount, description, accountId });
+      this.logger.info('Gerando QR Code PIX via BMP-531', { 
+        amount, 
+        hasDescription: !!description, 
+        hasAccountId: !!accountId 
+      });
 
       // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
       const dadosBancarios = {
-        agencia: '0001',
-        agencia_digito: '8',
-        conta: '159',
-        conta_digito: '4',
-        conta_pgto: '00001594',
-        tipo_conta: 3,
-        modelo_conta: 1,
-        numero_banco: '531'
+        agencia: import.meta.env.VITE_BMP_AGENCIA,
+        agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO,
+        conta: import.meta.env.VITE_BMP_CONTA,
+        conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO,
+        conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO,
+        tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA, 10),
+        modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA, 10),
+        numero_banco: import.meta.env.VITE_BMP_531_BANCO
       };
 
       // Dados para QR Code estático TTF

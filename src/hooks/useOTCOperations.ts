@@ -41,7 +41,7 @@ export function useOTCOperations(params: OTCOperationsParams = {}) {
   const createOperationMutation = useMutation({
     mutationFn: (operationData: CreateOTCOperationRequest) => otcService.createOperation(operationData),
     onSuccess: (data) => {
-      console.log('[OTC-OPERATIONS] Operação criada:', data.data?.operation_type);
+
       
       // Invalidar cache das operações, clientes, statement e balances
       queryClient.invalidateQueries({ queryKey: [OTC_OPERATIONS_QUERY_KEY] });
@@ -70,10 +70,7 @@ export function useOTCOperations(params: OTCOperationsParams = {}) {
       });
     },
     onError: (error: any) => {
-      console.error('[OTC-OPERATIONS] ===== ERRO NA OPERAÇÃO =====');
-      console.error('[OTC-OPERATIONS] Erro completo:', error);
-      console.error('[OTC-OPERATIONS] Response data:', error.response?.data);
-      console.error('[OTC-OPERATIONS] Status:', error.response?.status);
+
       
       toast.error('Erro ao executar operação OTC', {
         description: error.response?.data?.message || error.message || 'Falha na operação'

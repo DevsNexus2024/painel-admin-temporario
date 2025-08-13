@@ -30,8 +30,8 @@ export interface CompensationResponse {
  * Serviço para consumir API de compensação de depósitos e movimentações
  */
 export class CompensationService {
-  private static readonly API_URL = 'https://vps80270.cloudpublic.com.br:8081/compensa_depositos_movimentacoes';
-  private static readonly AUTH_HEADER = 'ISRVdeWTZ5jYFKJQytjH9ZylF1ZrwhTdrrdKY4uFqXm041XIL3aVjCwojSH1EeYbUOQjPx0aO';
+  private static readonly API_URL = `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/compensa_depositos_movimentacoes`;
+  private static readonly AUTH_HEADER = import.meta.env.VITE_ADMIN_TOKEN;
 
   /**
    * Criar compensação de depósito
@@ -40,7 +40,7 @@ export class CompensationService {
    */
   static async createCompensation(data: CompensationData): Promise<CompensationResponse> {
     try {
-      console.log('🔵 [COMPENSATION] Enviando compensação:', data);
+
 
       const response = await fetch(this.API_URL, {
         method: 'POST',
@@ -54,15 +54,15 @@ export class CompensationService {
       const responseData: CompensationResponse = await response.json();
 
       if (!response.ok) {
-        console.error('❌ [COMPENSATION] Erro na API:', responseData);
+
         throw new Error(responseData.erro || responseData.mensagem || 'Erro desconhecido');
       }
 
-      console.log('✅ [COMPENSATION] Compensação criada com sucesso:', responseData);
+
       return responseData;
 
     } catch (error) {
-      console.error('❌ [COMPENSATION] Erro ao criar compensação:', error);
+
       throw error;
     }
   }

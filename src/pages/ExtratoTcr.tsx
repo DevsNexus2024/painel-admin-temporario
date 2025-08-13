@@ -37,14 +37,11 @@ export default function ExtratoTcr() {
     const backendTotalCount = data?.response?.totalTransactions;
     const displayedCount = transactions.length;
 
-    // Log para debug - quantos registros foram retornados
-    console.log(`[ExtratoTcr] Transações exibidas: ${displayedCount}`);
-    console.log(`[ExtratoTcr] Total do backend: ${backendTotalCount}`);
-    console.log(`[ExtratoTcr] Data da API completa:`, data);
+    // Dados carregados
 
     // Usar o contador do backend se disponível, senão usar o length das transações exibidas
     const transactionCount = backendTotalCount || displayedCount;
-    console.log(`[ExtratoTcr] Contador final usado: ${transactionCount}`);
+
 
     // Calcular saldos e estatísticas
     const calculateStats = () => {
@@ -96,7 +93,7 @@ export default function ExtratoTcr() {
         setIsLoadingSaldo(true);
         setSaldoApi(null);
         try {
-            const response = await fetch(`https://vps80270.cloudpublic.com.br/api/b8cash/consultarSaldo?accountNumber=${values.accountNumber}`, {
+            const response = await fetch(`${import.meta.env.VITE_DIAGNOSTICO_API_URL}/api/b8cash/consultarSaldo?accountNumber=${values.accountNumber}`, {
                 headers: {
                     'x-api-enterprise': 'tcr'
                 }
@@ -119,7 +116,7 @@ export default function ExtratoTcr() {
                 const availableBalance = parseFloat(availableBalanceString);
 
                 if (isNaN(availableBalance)) {
-                    console.error("Falha ao converter saldo para número. Valor recebido:", availableBalanceString);
+
                     setSaldoApi('Inválido'); // Indica valor inválido na UI
                 } else {
                     setSaldoApi(formatCurrency(availableBalance));
@@ -129,7 +126,7 @@ export default function ExtratoTcr() {
             }
 
         } catch (e) {
-            console.error("Erro ao buscar saldo:", e);
+
             setSaldoApi(null);
         } finally {
             setIsLoadingSaldo(false);

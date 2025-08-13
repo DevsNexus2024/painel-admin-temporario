@@ -67,13 +67,13 @@ export default function SendByKeyFormBmp531() {
     setIsConsultingKey(true);
     
     try {
-      console.log("🔍 [SendByKeyFormBmp531] Consultando chave PIX BMP 531:", chave);
+
       
       // ✅ Usar serviço centralizado BMP 531
       const data = await Bmp531Service.consultarChave({ chave });
       
       if (data.sucesso && data.dadosChave) {
-        console.log("✅ [SendByKeyFormBmp531] Chave PIX consultada com sucesso:", data.dadosChave);
+
         setKeyConsultData(data.dadosChave);
         
         toast.success("Chave PIX encontrada!", {
@@ -91,7 +91,7 @@ export default function SendByKeyFormBmp531() {
       }
       
     } catch (error: any) {
-      console.error("❌ [SendByKeyFormBmp531] Erro ao consultar chave PIX:", error);
+
       setKeyConsultData(null);
       
       toast.error("Erro ao consultar chave PIX", {

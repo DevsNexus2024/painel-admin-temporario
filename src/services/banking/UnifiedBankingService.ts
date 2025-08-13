@@ -41,7 +41,6 @@ export class UnifiedBankingService {
   private isInitialized = false;
 
   private constructor() {
-    console.log('[UNIFIED-BANKING] Serviço iniciado');
   }
 
   /**
@@ -60,35 +59,30 @@ export class UnifiedBankingService {
   public async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
-    console.log('[UNIFIED-BANKING] Inicializando serviço...');
+
 
     try {
       // 🚨 PRESERVAR CONTA ATIVA ANTES DE REINICIALIZAR
       const currentAccounts = this.getAvailableAccounts();
       const activeAccountId = currentAccounts.find(acc => acc.isActive)?.id;
       
-      if (activeAccountId) {
-        console.log(`[UNIFIED-BANKING] 🔒 Preservando conta ativa: ${activeAccountId}`);
-      }
+      // Preservar conta ativa se existir
       
       // Auto-registra providers padrão (BMP, Bitso)
       await bankManager.autoRegisterDefaultProviders();
       
       // 🚨 RESTAURAR CONTA ATIVA SE HAVIA UMA SELECIONADA
       if (activeAccountId) {
-        console.log(`[UNIFIED-BANKING] 🔄 Restaurando conta ativa: ${activeAccountId}`);
         this.setActiveAccount(activeAccountId);
       }
       
       // 🚨 REMOVER HEALTH CHECK DURANTE PIX - evita consultas desnecessárias
       // Health check pode ser feito separadamente se necessário
-      console.log('[UNIFIED-BANKING] Health check omitido durante inicialização');
       
       this.isInitialized = true;
-      console.log('[UNIFIED-BANKING] ✅ Serviço inicializado com sucesso');
       
     } catch (error) {
-      console.error('[UNIFIED-BANKING] ❌ Erro na inicialização:', error);
+      // console.error('[UNIFIED-BANKING] ❌ Erro na inicialização:', error);
       throw error;
     }
   }
@@ -130,7 +124,6 @@ export class UnifiedBankingService {
    * Define a conta ativa
    */
   public setActiveAccount(accountId: string): boolean {
-    console.log(`[UNIFIED-BANKING] Tentando ativar conta: ${accountId}`);
     
     // 🚨 MAPEAR IDs DO SISTEMA ANTIGO PARA PROVIDERS
     const legacyToProviderMap: Record<string, BankProvider> = {
@@ -142,19 +135,19 @@ export class UnifiedBankingService {
     const provider = legacyToProviderMap[accountId];
     
     if (!provider) {
-      console.error(`[UNIFIED-BANKING] ID de conta não mapeado: ${accountId}`);
-      console.log(`[UNIFIED-BANKING] IDs suportados:`, Object.keys(legacyToProviderMap));
+      // console.error(`[UNIFIED-BANKING] ID de conta não mapeado: ${accountId}`);
+      // console.log(`[UNIFIED-BANKING] IDs suportados:`, Object.keys(legacyToProviderMap));
       return false;
     }
     
-    console.log(`[UNIFIED-BANKING] Mapeando ${accountId} → ${provider}`);
+
     
     const success = bankManager.setActiveProvider(provider);
     
     if (success) {
-      console.log(`[UNIFIED-BANKING] Conta ativa: ${accountId} (${provider})`);
+      // Conta ativada com sucesso
     } else {
-      console.error(`[UNIFIED-BANKING] Falha ao ativar provider: ${provider}`);
+      // console.error(`[UNIFIED-BANKING] Falha ao ativar provider: ${provider}`);
     }
     
     return success;
@@ -189,7 +182,7 @@ export class UnifiedBankingService {
       throw new Error(`[${providerName.toUpperCase()}] ${errorMsg}`);
     }
 
-    console.log(`[UNIFIED-BANKING] Saldo obtido: ${result.data?.provider} - R$ ${result.data?.available}`);
+
     return result.data!;
   }
 
@@ -207,7 +200,7 @@ export class UnifiedBankingService {
       throw new Error(`[${providerName.toUpperCase()}] Extrato: ${errorMsg}`);
     }
 
-    console.log(`[UNIFIED-BANKING] Extrato obtido: ${result.data?.provider} - ${result.data?.transactions.length} transações`);
+
     return result.data!;
   }
 
@@ -289,7 +282,7 @@ export class UnifiedBankingService {
       throw new Error(`[${activeProvider.provider.toUpperCase()}] Conta não suporta envio PIX. Verifique se está usando uma conta bancária com funcionalidades PIX habilitadas.`);
     }
 
-    console.log(`[UNIFIED-BANKING] 🚀 Enviando PIX via provider ativo: ${activeProvider.provider}`);
+
 
     const result = await activeProvider.sendPix(pixData);
     
@@ -299,7 +292,7 @@ export class UnifiedBankingService {
       throw new Error(`[${providerName.toUpperCase()}] PIX: ${errorMsg} (Chave: ${pixData.key}, Valor: R$ ${pixData.amount.toFixed(2)})`);
     }
 
-    console.log(`[UNIFIED-BANKING] PIX enviado: ${result.data?.provider} - R$ ${result.data?.amount}`);
+
     return result.data!;
   }
 
@@ -325,7 +318,7 @@ export class UnifiedBankingService {
       throw new Error(result.error?.message || 'Erro ao consultar chaves PIX');
     }
 
-    console.log(`[UNIFIED-BANKING] Chaves PIX obtidas: ${result.data?.length} chaves`);
+
     return result.data!;
   }
 
@@ -351,7 +344,7 @@ export class UnifiedBankingService {
       throw new Error(result.error?.message || 'Erro ao gerar QR Code PIX');
     }
 
-    console.log(`[UNIFIED-BANKING] QR Code gerado: ${result.data?.txId}`);
+
     return result.data!;
   }
 
@@ -387,7 +380,7 @@ export class UnifiedBankingService {
       throw new Error(result.error?.message || 'Erro ao criar QR Code dinâmico');
     }
 
-    console.log(`[UNIFIED-BANKING] QR Code dinâmico Bitso criado: ${result.data?.txId}`);
+
     return result.data!;
   }
 
@@ -418,7 +411,7 @@ export class UnifiedBankingService {
       throw new Error(result.error?.message || 'Erro ao criar QR Code estático');
     }
 
-    console.log(`[UNIFIED-BANKING] QR Code estático Bitso criado: ${result.data?.txId}`);
+
     return result.data!;
   }
 
@@ -501,9 +494,9 @@ export class UnifiedBankingService {
     
     try {
       bankManager.registerProviderByType(provider, credentials);
-      console.log(`[UNIFIED-BANKING] ✅ Banco ${provider} adicionado com sucesso`);
+
     } catch (error) {
-      console.error(`[UNIFIED-BANKING] ❌ Erro ao adicionar banco ${provider}:`, error);
+      // console.error(`[UNIFIED-BANKING] ❌ Erro ao adicionar banco ${provider}:`, error);
       throw error;
     }
   }
@@ -513,7 +506,7 @@ export class UnifiedBankingService {
    */
   public removeBank(provider: BankProvider): void {
     bankManager.unregisterProvider(provider);
-    console.log(`[UNIFIED-BANKING] 🗑️ Banco ${provider} removido`);
+
   }
 
   /**
@@ -521,34 +514,30 @@ export class UnifiedBankingService {
    */
   public syncWithLegacySystem(): void {
     try {
-      console.log('[UNIFIED-BANKING] Sincronizando com sistema legado...');
+
       
       // Verificar se apiRouter existe
       const apiRouter = (window as any).apiRouter;
       if (!apiRouter || !apiRouter.getCurrentAccount) {
-        console.warn('[UNIFIED-BANKING] Sistema legado não disponível');
+        // console.warn('[UNIFIED-BANKING] Sistema legado não disponível');
         return;
       }
       
       const legacyAccount = apiRouter.getCurrentAccount();
-      console.log('[UNIFIED-BANKING] Conta legada detectada:', {
-        id: legacyAccount.id,
-        provider: legacyAccount.provider,
-        displayName: legacyAccount.displayName
-      });
+
       
       // Usar diretamente o ID da conta legada (já está no formato correto)
-      console.log(`[UNIFIED-BANKING] Sincronizando conta legada: ${legacyAccount.id}`);
+
       const success = this.setActiveAccount(legacyAccount.id);
       
       if (success) {
-        console.log(`[UNIFIED-BANKING] ✅ Sincronização concluída: ${legacyAccount.id} → ${legacyAccount.provider}`);
+        // Sincronização concluída
       } else {
-        console.warn(`[UNIFIED-BANKING] ⚠️ Falha na sincronização da conta: ${legacyAccount.id}`);
+        // console.warn(`[UNIFIED-BANKING] ⚠️ Falha na sincronização da conta: ${legacyAccount.id}`);
       }
       
     } catch (error) {
-      console.error('[UNIFIED-BANKING] Erro na sincronização com sistema legado:', error);
+      // console.error('[UNIFIED-BANKING] Erro na sincronização com sistema legado:', error);
     }
   }
 
@@ -590,7 +579,7 @@ export const unifiedBankingService = UnifiedBankingService.getInstance();
  */
 export const initializeBankingSystem = async (): Promise<void> => {
   try {
-    console.log('[INIT] 🏦 Inicializando sistema bancário unificado...');
+
     
     await unifiedBankingService.initialize();
     
@@ -599,9 +588,9 @@ export const initializeBankingSystem = async (): Promise<void> => {
       unifiedBankingService.syncWithLegacySystem();
     }, 1000); // Aguardar apiRouter estar disponível
     
-    console.log('[INIT] ✅ Sistema bancário inicializado com sucesso!');
+
   } catch (error) {
-    console.error('[INIT] ❌ Erro na inicialização:', error);
+    // console.error('[INIT] ❌ Erro na inicialização:', error);
     throw error;
   }
 };

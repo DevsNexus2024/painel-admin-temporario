@@ -151,7 +151,7 @@ export default function ExtractTableBmp531() {
     setTotalLoaded(0);
     
     try {
-      console.log("🏦 [ExtractTableBmp531] Carregando transações BMP 531...");
+
       
       let allTransactionsList: Bmp531Movimento[] = [];
       let currentCursor = 0;
@@ -186,7 +186,7 @@ export default function ExtractTableBmp531() {
         setTotalLoaded(allTransactionsList.length);
       }
       
-      console.log(`✅ [ExtractTableBmp531] ${allTransactionsList.length} transações carregadas`);
+
       
       setAllTransactions(allTransactionsList);
       setTotalLoaded(allTransactionsList.length);
@@ -209,7 +209,7 @@ export default function ExtractTableBmp531() {
       });
       
     } catch (error: any) {
-      console.error("❌ [ExtractTableBmp531] Erro ao carregar extrato BMP 531:", error);
+
       setError(error.message || "Erro ao carregar extrato");
       
       toast.error("Erro ao carregar extrato", {

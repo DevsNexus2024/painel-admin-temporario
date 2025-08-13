@@ -33,7 +33,7 @@ export default function ListPixKeysForm() {
     const checkAccount = () => {
       try {
         const account = (window as any).apiRouter?.getCurrentAccount?.();
-        console.log('🔍 [ListPixKeys] Conta detectada:', account?.provider, account?.name);
+
         setCurrentAccount(account);
         
         // ✅ ISOLAMENTO: Limpar estados quando troca conta
@@ -59,11 +59,11 @@ export default function ListPixKeysForm() {
         setBmp531Loading(true);
         setBmp531Error(null);
         try {
-          console.log('🔑 [ListPixKeys] Carregando chaves TTF via Bmp531Service');
+
           const result = await Bmp531Service.listarChaves();
           setBmp531Data(result);
         } catch (error: any) {
-          console.error('❌ [ListPixKeys] Erro ao carregar chaves TTF:', error);
+
           setBmp531Error(error.message);
         } finally {
           setBmp531Loading(false);
@@ -95,7 +95,7 @@ export default function ListPixKeysForm() {
       // ✅ ISOLAMENTO: Refresh TTF via Bmp531Service
       setBmp531Loading(true);
       try {
-        console.log('🔄 [ListPixKeys] Atualizando chaves TTF');
+
         const result = await Bmp531Service.listarChaves();
         setBmp531Data(result);
         toast.success("Chaves TTF atualizadas!");

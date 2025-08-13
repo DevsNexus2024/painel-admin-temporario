@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 
 // Base URL específica para o relatório de depósitos
-const RELATORIO_BASE_URL = 'https://vps80270.cloudpublic.com.br:8081';
+const RELATORIO_BASE_URL = import.meta.env.VITE_DIAGNOSTICO_API_URL;
 
 export interface DepositReportFilters {
   whitelabel?: 'EMX' | 'TCR' | 'TODOS';
@@ -93,10 +93,7 @@ export const useDepositReport = () => {
 
       const url = `${RELATORIO_BASE_URL}/relatorio/depositos-whitelabel?${params.toString()}`;
       
-      console.log('🔍 Buscando relatório de depósitos:', {
-        url,
-        filters
-      });
+
 
       const response = await fetch(url, {
         method: 'GET',
@@ -114,34 +111,14 @@ export const useDepositReport = () => {
 
       const result: DepositReportResponse = await response.json();
       
-      console.log('🔍 RESPOSTA COMPLETA DA API:', JSON.stringify(result, null, 2));
       
-      console.log('📊 DADOS ESTRUTURADOS:');
-      console.log('- Resumo:', result.response?.resumo);
-      console.log('- Total usuários:', result.response?.usuarios?.length);
-      console.log('- Primeiro usuário:', result.response?.usuarios?.[0]);
-      console.log('- Metadados:', result.response?.metadados);
       
-      // Verificar campos específicos do primeiro usuário
-      if (result.response?.usuarios?.[0]) {
-        const firstUser = result.response.usuarios[0];
-        console.log('👤 PRIMEIRO USUÁRIO - CAMPOS INDIVIDUAIS:');
-        console.log('- ID:', firstUser.id_usuario);
-        console.log('- Nome:', firstUser.nome);
-        console.log('- Documento:', firstUser.documento);
-        console.log('- Email:', firstUser.email);
-        console.log('- ID Brasil Bitcoin:', firstUser.id_brasil_bitcoin);
-        console.log('- Whitelabel:', firstUser.whitelabel);
-        console.log('- Total depositado:', firstUser.total_depositado);
-        console.log('- Quantidade depósitos:', firstUser.quantidade_depositos);
-        console.log('- Primeiro depósito:', firstUser.primeiro_deposito);
-        console.log('- Último depósito:', firstUser.ultimo_deposito);
-      }
+      // Dados carregados com sucesso
 
       setData(result);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro ao carregar relatório';
-      console.error('❌ Erro ao buscar relatório:', error);
+
       setError(errorMessage);
     } finally {
       setIsLoading(false);

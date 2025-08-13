@@ -130,7 +130,7 @@ export interface QRCodeReadResponse {
  */
 export const enviarPixPorChave = async (data: PixTransferRequest): Promise<PixTransferResponse> => {
   try {
-    console.log('[PIX-SERVICE] ✅ Enviando PIX via roteamento unificado...');
+    // console.log('[PIX-SERVICE] ✅ Enviando PIX via roteamento unificado...');
     
     // ✅ REGRA 3: USAR ROTEAMENTO UNIFICADO - detecta conta ativa automaticamente
     const standardTransaction = await sendPix({
@@ -140,11 +140,11 @@ export const enviarPixPorChave = async (data: PixTransferRequest): Promise<PixTr
       // keyType será detectado automaticamente pelo provider ativo
     });
 
-    console.log('[PIX-SERVICE] ✅ PIX enviado via roteamento unificado:', {
-      provider: standardTransaction.provider,
-      id: standardTransaction.id,
-      status: standardTransaction.status
-    });
+    // console.log('[PIX-SERVICE] ✅ PIX enviado via roteamento unificado:', {
+    //   provider: standardTransaction.provider,
+    //   id: standardTransaction.id,
+    //   status: standardTransaction.status
+    // });
 
     // Converter StandardTransaction para PixTransferResponse
     return {
@@ -155,7 +155,7 @@ export const enviarPixPorChave = async (data: PixTransferRequest): Promise<PixTr
     };
 
   } catch (error) {
-    console.error('[PIX-SERVICE] ❌ Erro ao enviar PIX via roteamento unificado:', error);
+    // console.error('[PIX-SERVICE] ❌ Erro ao enviar PIX via roteamento unificado:', error);
     
     let mensagemErro = 'Erro ao enviar PIX';
     
@@ -201,7 +201,7 @@ export const pagarComQRCode = async (data: PixQRCodeRequest): Promise<PixTransfe
       try {
         const textResponse = await response.text();
       } catch (textError) {
-        console.error("Erro ao obter resposta como texto:", textError);
+        // console.error("Erro ao obter resposta como texto:", textError);
       }
       
       // Se não conseguir fazer parse do JSON, retorna erro genérico
@@ -254,7 +254,7 @@ export const pagarComQRCode = async (data: PixQRCodeRequest): Promise<PixTransfe
         mensagemErro = `Erro HTTP ${response.status}: ${response.statusText}`;
       }
       
-      console.log("Mensagem de erro extraída:", mensagemErro);
+      // console.log("Mensagem de erro extraída:", mensagemErro);
       
       return {
         sucesso: false,
@@ -265,7 +265,7 @@ export const pagarComQRCode = async (data: PixQRCodeRequest): Promise<PixTransfe
     // Se tudo ok, retornar resultado
     return result;
   } catch (error) {
-    console.error("Erro ao pagar via QR Code:", error);
+    // console.error("Erro ao pagar via QR Code:", error);
     
     let mensagemErro = 'Erro desconhecido ao processar pagamento via QR Code';
     
@@ -279,7 +279,7 @@ export const pagarComQRCode = async (data: PixQRCodeRequest): Promise<PixTransfe
       }
     }
     
-    console.log("Mensagem de erro final (catch):", mensagemErro);
+    // console.log("Mensagem de erro final (catch):", mensagemErro);
     
     // Retorna resposta de erro padronizada
     return {
@@ -318,12 +318,12 @@ export const validarCodigoEMV = (emvCode: string): boolean => {
     return false;
   }
   
-  console.log('[EMV-VALIDATION] Código validado:', { 
-    length: cleanCode.length, 
-    hasPixIdentifier, 
-    hasEmvFormat,
-    valid: true 
-  });
+  // console.log('[EMV-VALIDATION] Código validado:', { 
+  //   length: cleanCode.length, 
+  //   hasPixIdentifier, 
+  //   hasEmvFormat,
+  //   valid: true 
+  // });
   
   return true;
 };
@@ -444,23 +444,23 @@ export const criarChavePix = async (data: PixCreateKeyRequest): Promise<PixCreat
       signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
     });
 
-    console.log("Status da resposta:", response.status);
-    console.log("Headers da resposta:", Object.fromEntries(response.headers.entries()));
+
+
     
     // Sempre tentar extrair o JSON primeiro, independente do status
     let result;
     try {
       result = await response.json();
-      console.log("Resposta JSON da API:", JSON.stringify(result, null, 2));
+
     } catch (jsonError) {
-      console.error("Erro ao fazer parse do JSON:", jsonError);
+      // console.error("Erro ao fazer parse do JSON:", jsonError);
       
       // Tentar obter o texto da resposta para logs mais detalhados
       try {
         const textResponse = await response.text();
-        console.log("Resposta como texto:", textResponse);
+        // console.log("Resposta como texto:", textResponse);
       } catch (textError) {
-        console.error("Erro ao obter resposta como texto:", textError);
+        // console.error("Erro ao obter resposta como texto:", textError);
       }
       
       // Se não conseguir fazer parse do JSON, retorna erro genérico
@@ -469,7 +469,7 @@ export const criarChavePix = async (data: PixCreateKeyRequest): Promise<PixCreat
 
     // Se não ok, mas temos JSON válido, usar a mensagem do backend
     if (!response.ok) {
-      console.log("Resposta não OK. Extraindo mensagem de erro...");
+      // console.log("Resposta não OK. Extraindo mensagem de erro...");
       
       // Tentar extrair a mensagem de erro de diferentes formatos possíveis
       let mensagemErro = '';
@@ -515,7 +515,7 @@ export const criarChavePix = async (data: PixCreateKeyRequest): Promise<PixCreat
         mensagemErro = `Erro HTTP ${response.status}: ${response.statusText}`;
       }
       
-      console.log("Mensagem de erro extraída:", mensagemErro);
+      // console.log("Mensagem de erro extraída:", mensagemErro);
       
       return {
         sucesso: false,
@@ -525,10 +525,10 @@ export const criarChavePix = async (data: PixCreateKeyRequest): Promise<PixCreat
     }
 
     // Se tudo ok, retornar resultado
-    console.log("Resposta de sucesso. Resultado:", result);
+
     return result;
   } catch (error) {
-    console.error("Erro ao criar chave PIX:", error);
+    // console.error("Erro ao criar chave PIX:", error);
     
     let mensagemErro = 'Erro desconhecido ao criar chave PIX';
     
@@ -542,7 +542,7 @@ export const criarChavePix = async (data: PixCreateKeyRequest): Promise<PixCreat
       }
     }
     
-    console.log("Mensagem de erro final (catch):", mensagemErro);
+    // console.log("Mensagem de erro final (catch):", mensagemErro);
     
     // Retorna resposta de erro padronizada
     return {
@@ -561,7 +561,7 @@ export const listarChavesPix = async (): Promise<PixKeysListResponse> => {
   try {
     const url = buildApiUrl(API_CONFIG.ENDPOINTS.PIX.CHAVES_LISTAR);
     
-    console.log("Listando chaves PIX para:", url);
+
     
     const response = await fetch(url, {
       method: 'GET',
@@ -569,23 +569,23 @@ export const listarChavesPix = async (): Promise<PixKeysListResponse> => {
       signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
     });
 
-    console.log("Status da resposta:", response.status);
-    console.log("Headers da resposta:", Object.fromEntries(response.headers.entries()));
+
+
     
     // Sempre tentar extrair o JSON primeiro, independente do status
     let result;
     try {
       result = await response.json();
-      console.log("Resposta JSON da API:", JSON.stringify(result, null, 2));
+
     } catch (jsonError) {
-      console.error("Erro ao fazer parse do JSON:", jsonError);
+      // console.error("Erro ao fazer parse do JSON:", jsonError);
       
       // Tentar obter o texto da resposta para logs mais detalhados
       try {
         const textResponse = await response.text();
-        console.log("Resposta como texto:", textResponse);
+        // console.log("Resposta como texto:", textResponse);
       } catch (textError) {
-        console.error("Erro ao obter resposta como texto:", textError);
+        // console.error("Erro ao obter resposta como texto:", textError);
       }
       
       // Se não conseguir fazer parse do JSON, retorna erro genérico
@@ -594,7 +594,7 @@ export const listarChavesPix = async (): Promise<PixKeysListResponse> => {
 
     // Se não ok, mas temos JSON válido, usar a mensagem do backend
     if (!response.ok) {
-      console.log("Resposta não OK. Extraindo mensagem de erro...");
+      // console.log("Resposta não OK. Extraindo mensagem de erro...");
       
       // Tentar extrair a mensagem de erro de diferentes formatos possíveis
       let mensagemErro = '';
@@ -640,7 +640,7 @@ export const listarChavesPix = async (): Promise<PixKeysListResponse> => {
         mensagemErro = `Erro HTTP ${response.status}: ${response.statusText}`;
       }
       
-      console.log("Mensagem de erro extraída:", mensagemErro);
+      // console.log("Mensagem de erro extraída:", mensagemErro);
       
       return {
         sucesso: false,
@@ -661,10 +661,10 @@ export const listarChavesPix = async (): Promise<PixKeysListResponse> => {
     }
 
     // Se tudo ok, retornar resultado
-    console.log("Resposta de sucesso. Resultado:", result);
+
     return result;
   } catch (error) {
-    console.error("Erro ao listar chaves PIX:", error);
+    // console.error("Erro ao listar chaves PIX:", error);
     
     let mensagemErro = 'Erro desconhecido ao listar chaves PIX';
     
@@ -678,7 +678,7 @@ export const listarChavesPix = async (): Promise<PixKeysListResponse> => {
       }
     }
     
-    console.log("Mensagem de erro final (catch):", mensagemErro);
+    // console.log("Mensagem de erro final (catch):", mensagemErro);
     
     // Retorna resposta de erro padronizada
     return {
@@ -735,13 +735,13 @@ const limparFormatacaoChave = (chave: string): string => {
  */
 export const consultarChavePixBMP = async (chave: string): Promise<PixKeyConsultResponse> => {
   try {
-    console.log('[PIX-SERVICE] ✅ Consultando chave PIX via BMP...');
+    // console.log('[PIX-SERVICE] ✅ Consultando chave PIX via BMP...');
     
     // Usar implementação BMP que já existe abaixo
     return await executarConsultaChavePixBMP(chave);
     
   } catch (error) {
-    console.error('[PIX-SERVICE] ❌ Erro ao consultar chave PIX via BMP:', error);
+    // console.error('[PIX-SERVICE] ❌ Erro ao consultar chave PIX via BMP:', error);
     
     let mensagemErro = 'Erro ao consultar chave PIX via BMP';
     
@@ -782,13 +782,13 @@ export const consultarChavePixBMP = async (chave: string): Promise<PixKeyConsult
  */
 export const consultarChavePixBMP531 = async (chave: string): Promise<PixKeyConsultResponse> => {
   try {
-    console.log('[PIX-SERVICE] ✅ Consultando chave PIX via BMP-531...');
+    // console.log('[PIX-SERVICE] ✅ Consultando chave PIX via BMP-531...');
     
     // Usar implementação BMP-531 específica
     return await executarConsultaChavePixBMP531(chave);
     
   } catch (error) {
-    console.error('[PIX-SERVICE] ❌ Erro ao consultar chave PIX via BMP-531:', error);
+    // console.error('[PIX-SERVICE] ❌ Erro ao consultar chave PIX via BMP-531:', error);
     
     let mensagemErro = 'Erro ao consultar chave PIX via BMP-531';
     
@@ -828,8 +828,8 @@ export const consultarChavePixBMP531 = async (chave: string): Promise<PixKeyCons
  * @returns Resposta explicando limitação da Bitso
  */
 export const consultarChavePixBitso = async (chave: string): Promise<PixKeyConsultResponse> => {
-  console.log('[PIX-SERVICE] ✅ Consultando chave PIX via Bitso...');
-  console.log('[PIX-SERVICE] ⚠️ Bitso não suporta consulta prévia de chave PIX');
+  // console.log('[PIX-SERVICE] ✅ Consultando chave PIX via Bitso...');
+  // console.log('[PIX-SERVICE] ⚠️ Bitso não suporta consulta prévia de chave PIX');
   
   // Limpar formatação da chave 
   const chaveLimpa = limparFormatacaoChave(chave);
@@ -893,7 +893,7 @@ const executarConsultaChavePixBMP531 = async (chave: string): Promise<PixKeyCons
       'chave': chaveLimpa
     };
     
-    console.log('[PIX-SERVICE] Consultando chave via BMP-531');
+    // console.log('[PIX-SERVICE] Consultando chave via BMP-531');
     
     // Construir query string
     const queryString = new URLSearchParams(queryParams).toString();
@@ -905,23 +905,23 @@ const executarConsultaChavePixBMP531 = async (chave: string): Promise<PixKeyCons
       signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
     });
 
-    console.log("Status da resposta BMP-531:", response.status);
-    console.log("Headers da resposta BMP-531:", Object.fromEntries(response.headers.entries()));
+
+
     
     // Sempre tentar extrair o JSON primeiro, independente do status
     let result;
     try {
       result = await response.json();
-      console.log("Resposta JSON da API BMP-531:", JSON.stringify(result, null, 2));
+
     } catch (jsonError) {
-      console.error("Erro ao fazer parse do JSON BMP-531:", jsonError);
+      // console.error("Erro ao fazer parse do JSON BMP-531:", jsonError);
       
       // Tentar obter o texto da resposta para logs mais detalhados
       try {
         const textResponse = await response.text();
-        console.log("Resposta BMP-531 como texto:", textResponse);
+        // console.log("Resposta BMP-531 como texto:", textResponse);
       } catch (textError) {
-        console.error("Erro ao obter resposta BMP-531 como texto:", textError);
+        // console.error("Erro ao obter resposta BMP-531 como texto:", textError);
       }
       
       // Se não conseguir fazer parse do JSON, retorna erro genérico
@@ -964,7 +964,7 @@ const executarConsultaChavePixBMP531 = async (chave: string): Promise<PixKeyCons
     };
     
   } catch (error) {
-    console.error("Erro na consulta PIX BMP-531:", error);
+    // console.error("Erro na consulta PIX BMP-531:", error);
     throw error;
   }
 };
@@ -986,7 +986,7 @@ const executarConsultaChavePixBMP = async (chave: string): Promise<PixKeyConsult
       'chave': chaveLimpa
     };
     
-    console.log('[PIX-SERVICE] Consultando chave via BMP');
+    // console.log('[PIX-SERVICE] Consultando chave via BMP');
     
     // Construir query string
     const queryString = new URLSearchParams(queryParams).toString();
@@ -998,23 +998,23 @@ const executarConsultaChavePixBMP = async (chave: string): Promise<PixKeyConsult
       signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
     });
 
-    console.log("Status da resposta:", response.status);
-    console.log("Headers da resposta:", Object.fromEntries(response.headers.entries()));
+
+
     
     // Sempre tentar extrair o JSON primeiro, independente do status
     let result;
     try {
       result = await response.json();
-      console.log("Resposta JSON da API:", JSON.stringify(result, null, 2));
+
     } catch (jsonError) {
-      console.error("Erro ao fazer parse do JSON:", jsonError);
+      // console.error("Erro ao fazer parse do JSON:", jsonError);
       
       // Tentar obter o texto da resposta para logs mais detalhados
       try {
         const textResponse = await response.text();
-        console.log("Resposta como texto:", textResponse);
+        // console.log("Resposta como texto:", textResponse);
       } catch (textError) {
-        console.error("Erro ao obter resposta como texto:", textError);
+        // console.error("Erro ao obter resposta como texto:", textError);
       }
       
       // Se não conseguir fazer parse do JSON, retorna erro genérico
@@ -1023,7 +1023,7 @@ const executarConsultaChavePixBMP = async (chave: string): Promise<PixKeyConsult
 
     // Se não ok, mas temos JSON válido, usar a mensagem do backend
     if (!response.ok) {
-      console.log("Resposta não OK. Extraindo mensagem de erro...");
+      // console.log("Resposta não OK. Extraindo mensagem de erro...");
       
       // Tentar extrair a mensagem de erro de diferentes formatos possíveis
       let mensagemErro = '';
@@ -1069,7 +1069,7 @@ const executarConsultaChavePixBMP = async (chave: string): Promise<PixKeyConsult
         mensagemErro = `Erro HTTP ${response.status}: ${response.statusText}`;
       }
       
-      console.log("Mensagem de erro extraída:", mensagemErro);
+      // console.log("Mensagem de erro extraída:", mensagemErro);
       
       return {
         chave: '',
@@ -1097,10 +1097,10 @@ const executarConsultaChavePixBMP = async (chave: string): Promise<PixKeyConsult
     }
 
     // Se tudo ok, retornar resultado
-    console.log("Resposta de sucesso. Resultado:", result);
+
     return result;
   } catch (error) {
-    console.error("Erro ao consultar chave PIX:", error);
+    // console.error("Erro ao consultar chave PIX:", error);
     
     let mensagemErro = 'Erro desconhecido ao consultar chave PIX';
     
@@ -1114,7 +1114,7 @@ const executarConsultaChavePixBMP = async (chave: string): Promise<PixKeyConsult
       }
     }
     
-    console.log("Mensagem de erro final (catch):", mensagemErro);
+    // console.log("Mensagem de erro final (catch):", mensagemErro);
     
     // Retorna resposta de erro padronizada
     return {
@@ -1157,8 +1157,8 @@ export const lerQRCodePix = async (emvCode: string): Promise<QRCodeReadResponse>
       'emv': emvCode
     };
     
-    console.log("Lendo QR code PIX para:", url);
-    console.log("Parâmetros:", queryParams);
+    // console.log("Lendo QR code PIX para:", url);
+    // console.log("Parâmetros:", queryParams);
     
     // Construir query string
     const queryString = new URLSearchParams(queryParams).toString();
@@ -1170,23 +1170,23 @@ export const lerQRCodePix = async (emvCode: string): Promise<QRCodeReadResponse>
       signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
     });
 
-    console.log("Status da resposta:", response.status);
-    console.log("Headers da resposta:", Object.fromEntries(response.headers.entries()));
+
+
     
     // Sempre tentar extrair o JSON primeiro, independente do status
     let result;
     try {
       result = await response.json();
-      console.log("Resposta JSON da API:", JSON.stringify(result, null, 2));
+
     } catch (jsonError) {
-      console.error("Erro ao fazer parse do JSON:", jsonError);
+      // console.error("Erro ao fazer parse do JSON:", jsonError);
       
       // Tentar obter o texto da resposta para logs mais detalhados
       try {
         const textResponse = await response.text();
-        console.log("Resposta como texto:", textResponse);
+        // console.log("Resposta como texto:", textResponse);
       } catch (textError) {
-        console.error("Erro ao obter resposta como texto:", textError);
+        // console.error("Erro ao obter resposta como texto:", textError);
       }
       
       // Se não conseguir fazer parse do JSON, retorna erro genérico
@@ -1195,7 +1195,7 @@ export const lerQRCodePix = async (emvCode: string): Promise<QRCodeReadResponse>
 
     // Se não ok, mas temos JSON válido, usar a mensagem do backend
     if (!response.ok) {
-      console.log("Resposta não OK. Extraindo mensagem de erro...");
+      // console.log("Resposta não OK. Extraindo mensagem de erro...");
       
       // Tentar extrair a mensagem de erro de diferentes formatos possíveis
       let mensagemErro = '';
@@ -1241,7 +1241,7 @@ export const lerQRCodePix = async (emvCode: string): Promise<QRCodeReadResponse>
         mensagemErro = `Erro HTTP ${response.status}: ${response.statusText}`;
       }
       
-      console.log("Mensagem de erro extraída:", mensagemErro);
+      // console.log("Mensagem de erro extraída:", mensagemErro);
       
       return {
         tipoQRCode: '',
@@ -1264,10 +1264,10 @@ export const lerQRCodePix = async (emvCode: string): Promise<QRCodeReadResponse>
     }
 
     // Se tudo ok, retornar resultado
-    console.log("Resposta de sucesso. Resultado:", result);
+
     return result;
   } catch (error) {
-    console.error("Erro ao ler QR code PIX:", error);
+    // console.error("Erro ao ler QR code PIX:", error);
     
     let mensagemErro = 'Erro desconhecido ao ler QR code PIX';
     
@@ -1281,7 +1281,7 @@ export const lerQRCodePix = async (emvCode: string): Promise<QRCodeReadResponse>
       }
     }
     
-    console.log("Mensagem de erro final (catch):", mensagemErro);
+    // console.log("Mensagem de erro final (catch):", mensagemErro);
     
     // Retorna resposta de erro padronizada
     return {

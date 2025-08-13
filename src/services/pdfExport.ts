@@ -257,10 +257,10 @@ export class PDFExportService {
       const fileName = `extrato-tcr-${data.searchParams.accountNumber}-${dateRange}.pdf`;
       this.doc.save(fileName);
       
-      console.log('✅ PDF exportado com sucesso:', fileName);
+      // console.log('✅ PDF exportado com sucesso:', fileName);
       
     } catch (error) {
-      console.error('❌ Erro ao exportar PDF:', error);
+      // console.error('❌ Erro ao exportar PDF:', error);
       throw error;
     }
   }

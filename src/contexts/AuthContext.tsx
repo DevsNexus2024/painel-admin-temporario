@@ -39,7 +39,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
    * Logout de usuário (função separada para reutilizar)
    */
   const performLogout = () => {
-    console.log('🚪 AuthProvider: Realizando logout');
     authService.logout();
     setUser(null);
     toast.info('Sua sessão expirou. Faça login novamente.');
@@ -68,14 +67,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
    */
   const checkUserType = async (userData: User) => {
     try {
-      console.log('🔍 AuthProvider: Verificando tipo de usuário...');
       const isOTC = await userTypeService.isOTCUser(userData);
-      
-      if (isOTC) {
-        console.log('ℹ️ AuthProvider: Usuário identificado como OTC');
-      } else {
-        console.log('ℹ️ AuthProvider: Usuário identificado como Admin');
-      }
       return isOTC;
     } catch (error) {
       console.error('❌ AuthProvider: Erro ao verificar tipo de usuário:', error);
@@ -89,57 +81,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        console.log('🚀 AuthProvider: Inicializando autenticação...');
-        
         // Verificar se há usuário no storage
         const storedUser = authService.getCurrentUser();
         const token = authService.getCurrentToken();
 
-        console.log('🔍 AuthProvider: Verificando dados no storage:', {
-          hasStoredUser: !!storedUser,
-          hasToken: !!token
-        });
-
         if (storedUser && token) {
-          console.log('✅ AuthProvider: Dados encontrados no storage, verificando timeout...');
-          
           // Verificar se a sessão não expirou por inatividade
           if (LAST_ACTIVITY_STORAGE.isInactive()) {
-            console.log('⏰ AuthProvider: Sessão expirou por inatividade, fazendo logout');
             authService.logout();
             setUser(null);
             toast.info('Sua sessão expirou por inatividade. Faça login novamente.');
             return;
           }
           
-          console.log('✅ AuthProvider: Sessão ativa, buscando perfil atualizado...');
-          
           // Tentar buscar perfil atualizado
           const profileResult = await authService.getProfile();
           
-          console.log('🔍 AuthProvider: Resultado do perfil:', profileResult);
-          
           if (profileResult.sucesso && profileResult.data) {
-            console.log('✅ AuthProvider: Perfil atualizado com sucesso');
             setUser(profileResult.data);
             
             // Apenas verificar tipo de usuário (sem redirecionamento automático)
             await checkUserType(profileResult.data);
           } else {
-            console.log('❌ AuthProvider: Token inválido, limpando dados');
             // Token inválido, limpar dados
             authService.logout();
             setUser(null);
           }
-        } else {
-          console.log('ℹ️ AuthProvider: Nenhum dado no storage, usuário não logado');
         }
       } catch (error) {
         console.error('❌ AuthProvider: Erro ao inicializar autenticação:', error);
         authService.logout();
         setUser(null);
       } finally {
-        console.log('🏁 AuthProvider: Inicialização concluída');
         setIsLoading(false);
       }
     };
@@ -152,29 +125,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
    */
   const login = async (credentials: LoginCredentials): Promise<boolean> => {
     try {
-      console.log('🔐 AuthProvider: Iniciando login para:', credentials.email);
       setIsLoading(true);
       
       const result = await authService.login(credentials);
       
-      console.log('🔐 AuthProvider: Resposta do serviço:', result);
-      
       if (result.sucesso && result.data) {
-        console.log('✅ AuthProvider: Login bem-sucedido');
         setUser(result.data.user);
         toast.success('Login realizado com sucesso!');
         
         // Apenas verificar tipo de usuário (redirecionamento fica por conta das rotas)
         await checkUserType(result.data.user);
         
-        // Aguardar um pouco para garantir que o estado foi atualizado
-        setTimeout(() => {
-          console.log('🔄 AuthProvider: Estado do usuário atualizado');
-        }, 50);
-        
         return true;
       } else {
-        console.log('❌ AuthProvider: Login falhou:', result.mensagem);
         toast.error(result.mensagem || 'Erro no login');
         return false;
       }
@@ -217,7 +180,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
    * Logout de usuário (manual)
    */
   const logout = () => {
-    console.log('🚪 AuthProvider: Logout manual');
     authService.logout();
     setUser(null);
     toast.info('Logout realizado com sucesso');

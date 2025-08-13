@@ -310,7 +310,7 @@ const ClientStatement: React.FC = () => {
         throw new Error('Usuário não identificado. Faça login novamente.');
       }
 
-      console.log('Buscando cliente OTC para usuário:', user.id, user.email);
+
       
       // Buscar cliente OTC vinculado ao usuário logado
       const clientsResponse = await otcService.getClients({ 
@@ -329,11 +329,7 @@ const ClientStatement: React.FC = () => {
       });
 
       if (!client) {
-        console.log('Clientes encontrados:', clientsResponse.data.clientes.map(c => ({
-          id: c.id,
-          name: c.name,
-          user: c.user
-        })));
+
         
         throw new Error(`Você não possui acesso a nenhum cliente OTC. Usuário: ${user.email} (ID: ${user.id})`);
       }
@@ -375,7 +371,7 @@ const ClientStatement: React.FC = () => {
         statementParams.dateTo = filters.dateTo;
       }
 
-      console.log('Buscando extrato com filtros:', statementParams);
+
 
       // Buscar extrato específico do cliente com filtros
       const statementResponse = await otcService.getClientStatement(clientId, statementParams);
@@ -433,7 +429,7 @@ const ClientStatement: React.FC = () => {
       setCheckedItems(initialChecked);
       
     } catch (err) {
-      console.error('Erro ao buscar extrato:', err);
+
       setError(err instanceof Error ? err.message : 'Erro de conexão com o servidor');
     } finally {
       setLoading(false);
@@ -466,7 +462,7 @@ const ClientStatement: React.FC = () => {
           dateFilters.dateFrom = inicioData.toISOString();
           dateFilters.dateTo = fimData.toISOString();
         } catch (error) {
-          console.warn('Erro ao parsear data de filtro:', searchDate);
+
           // Se houver erro no parse, buscar sem filtro de data
           dateFilters = {};
         }
@@ -501,7 +497,7 @@ const ClientStatement: React.FC = () => {
           dateFilters.dateFrom = inicioData.toISOString();
           dateFilters.dateTo = fimData.toISOString();
         } catch (error) {
-          console.warn('Erro ao parsear data de filtro:', searchDate);
+
           dateFilters = {};
         }
       }

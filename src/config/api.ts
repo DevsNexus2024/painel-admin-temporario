@@ -1,30 +1,49 @@
 import { User } from '@/services/auth';
 import { logger } from '@/utils/logger';
 
-// 🔧 CONFIGURAÇÃO DE AMBIENTE - Altere para 'development' ou 'production'
-const FORCE_ENVIRONMENT: 'development' | 'production' = 'production';
+// 🔧 CONFIGURAÇÃO DE AMBIENTE - Determinada por variáveis de ambiente
+const getCurrentEnvironment = (): 'development' | 'production' => {
+  // Prioridade: VITE_APP_ENVIRONMENT > NODE_ENV > modo do Vite
+  const envVar = import.meta.env.VITE_APP_ENVIRONMENT;
+  if (envVar === 'development' || envVar === 'production') {
+    return envVar;
+  }
+  
+  // Fallback para modo do Vite
+  return import.meta.env.PROD ? 'production' : 'development';
+};
 
-// URLs para cada ambiente
-const API_URLS = {
-  development: 'http://localhost:3000',
-  production: 'https://api-bank.gruponexus.com.br'
-} as const;
-
-// URL específica para APIs de diagnóstico
-const DIAGNOSTICO_API_URL = 'https://vps80270.cloudpublic.com.br:8081';
+const CURRENT_ENVIRONMENT = getCurrentEnvironment();
 
 // Função para determinar URL base
 const getBaseUrl = (): string => {
-  const baseUrl = API_URLS[FORCE_ENVIRONMENT];
+  // Usar variável específica se definida
+  const customUrl = import.meta.env.VITE_API_BASE_URL;
+  if (customUrl) {
+    return customUrl;
+  }
+  
+  // URLs padrão para cada ambiente
+  const defaultUrls = {
+    development: import.meta.env.VITE_API_URL_DEV,
+    production: import.meta.env.VITE_API_URL_PROD
+  };
+  
+  const baseUrl = defaultUrls[CURRENT_ENVIRONMENT];
   
   // ✅ SEGURO: Não expõe URLs reais em produção
   logger.debug('Configuração da API carregada', {
-    environment: FORCE_ENVIRONMENT,
+    environment: CURRENT_ENVIRONMENT,
     hasBaseUrl: !!baseUrl,
-    hasDiagnosticoUrl: !!DIAGNOSTICO_API_URL
+    customUrlUsed: !!customUrl
   }, 'APIConfig');
   
   return baseUrl;
+};
+
+// URL específica para APIs de diagnóstico
+const getDiagnosticoUrl = (): string => {
+  return import.meta.env.VITE_DIAGNOSTICO_API_URL;
 };
 
 // Configurações da API
@@ -33,10 +52,10 @@ export const API_CONFIG = {
   BASE_URL: getBaseUrl(),
   
   // URL específica para diagnóstico
-  DIAGNOSTICO_URL: DIAGNOSTICO_API_URL,
+  DIAGNOSTICO_URL: getDiagnosticoUrl(),
   
   // Token de admin para operações especiais (vem do .env)
-  ADMIN_TOKEN: import.meta.env.VITE_ADMIN_TOKEN || 'ISRVdeWTZ5jYFKJQytjH9ZylF1ZrwhTdrrdKY4uFqXm041XIL3aVjCwojSH1EeYbUOQjPx0aO',
+  ADMIN_TOKEN: import.meta.env.VITE_ADMIN_TOKEN,
   
   // Endpoints
   ENDPOINTS: {
@@ -80,16 +99,23 @@ export const API_CONFIG = {
   // Headers padrão
   DEFAULT_HEADERS: {
     'Content-Type': 'application/json',
-    'User-Agent': 'baas-frontend/1.0.0'
+    'User-Agent': import.meta.env.VITE_APP_USER_AGENT
   },
   
-  // Timeouts
-  TIMEOUT: 30000, // 30 segundos
+  // Timeouts (em milissegundos)
+  TIMEOUT: parseInt(import.meta.env.VITE_API_TIMEOUT, 10),
   
   // Configurações de retry
   RETRY: {
-    attempts: 3,
-    delay: 1000
+    attempts: parseInt(import.meta.env.VITE_API_RETRY_ATTEMPTS, 10),
+    delay: parseInt(import.meta.env.VITE_API_RETRY_DELAY, 10)
+  },
+  
+  // Configurações de segurança
+  SECURITY: {
+    enableJwtValidation: import.meta.env.VITE_ENABLE_JWT_VALIDATION !== 'false',
+    enableRateLimitTracking: import.meta.env.VITE_ENABLE_RATE_LIMIT_TRACKING !== 'false',
+    enableSecurityLogs: import.meta.env.VITE_ENABLE_SECURITY_LOGS === 'true'
   }
 };
 
@@ -103,11 +129,11 @@ const STORAGE_KEYS = {
 // Login timeout configuration
 export const LOGIN_TIMEOUT_CONFIG = {
   // Tempo de inatividade em minutos antes do logout automático
-  TIMEOUT_MINUTES: 3000,
+  TIMEOUT_MINUTES: parseInt(import.meta.env.VITE_LOGIN_TIMEOUT_MINUTES, 10),
   // Intervalo de verificação em milissegundos
-  CHECK_INTERVAL_MS: 6000000000000, // 1 minuto
+  CHECK_INTERVAL_MS: parseInt(import.meta.env.VITE_LOGIN_CHECK_INTERVAL_MS, 10),
   // Tempo de aviso antes do logout (em minutos)
-  WARNING_MINUTES: 5,
+  WARNING_MINUTES: parseInt(import.meta.env.VITE_LOGIN_WARNING_MINUTES, 10),
   // Eventos que contam como atividade do usuário
   ACTIVITY_EVENTS: ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'] as const
 };
@@ -240,7 +266,7 @@ export const buildApiUrl = (endpoint: string): string => {
 
 // Função específica para construir URLs de diagnóstico
 export const buildDiagnosticoApiUrl = (endpoint: string): string => {
-  return `${DIAGNOSTICO_API_URL}${endpoint}`;
+  return `${API_CONFIG.DIAGNOSTICO_URL}${endpoint}`;
 };
 
 // Função utilitária para headers com possíveis tokens

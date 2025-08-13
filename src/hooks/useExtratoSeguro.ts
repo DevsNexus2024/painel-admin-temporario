@@ -27,29 +27,24 @@ export const useExtratoSeguro = (options: UseExtratoSeguroOptions = {}) => {
       const activeAccount = unifiedBankingService.getActiveAccount();
       
       if (!activeAccount) {
-        console.warn(`⚠️ [useExtratoSeguro-V2] NENHUMA CONTA ATIVA na nova arquitetura, usando BMP como padrão`);
+
         return 'bmp';
       }
       
       const provider = activeAccount.provider;
       
       // ✅ LOGS APENAS EM DESENVOLVIMENTO
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`🔒 [useExtratoSeguro-V2] Provider da NOVA ARQUITETURA: ${provider}`);
-        console.log(`🔒 [useExtratoSeguro-V2] Conta ativa: ${activeAccount.displayName}`);
-        console.log(`🔒 [useExtratoSeguro-V2] ID: ${activeAccount.id}`);
-      }
+      // Provider e conta identificados
       
       if (provider === 'bmp' || provider === 'bmp-531' || provider === 'bitso') {
         return provider as 'bmp' | 'bmp-531' | 'bitso';
       }
       
-      console.warn(`⚠️ [useExtratoSeguro-V2] Provider inválido: ${provider}, usando BMP`);
+
       return 'bmp';
       
     } catch (error) {
-      console.error(`🚨 [useExtratoSeguro-V2] ERRO CRÍTICO ao obter provider da nova arquitetura:`, error);
-      console.error(`🚨 [useExtratoSeguro-V2] A nova arquitetura pode não estar inicializada!`);
+
       return 'bmp';
     }
   };
@@ -69,13 +64,7 @@ export const useExtratoSeguro = (options: UseExtratoSeguroOptions = {}) => {
           
           // Só atualizar se realmente mudou
           if (lastAccountKeyRef.current !== newKey) {
-            if (process.env.NODE_ENV === 'development') {
-              console.log(`🔄 [useExtratoSeguro-V2] NOVA ARQUITETURA - Conta mudou:`);
-              console.log(`   Anterior: ${lastAccountKeyRef.current}`);
-              console.log(`   Atual: ${newKey}`);
-              console.log(`   Conta: ${activeAccount.displayName}`);
-              console.log(`   Provider: ${activeAccount.provider}`);
-            }
+            // Mudança de conta detectada
             
             lastAccountKeyRef.current = newKey;
             localStorage.setItem('nova_arquitetura_account_key', newKey);
@@ -88,7 +77,7 @@ export const useExtratoSeguro = (options: UseExtratoSeguroOptions = {}) => {
           }
         }
       } catch (error) {
-        console.error(`🚨 [useExtratoSeguro-V2] Erro ao monitorar nova arquitetura:`, error);
+
       }
     };
 
@@ -103,20 +92,13 @@ export const useExtratoSeguro = (options: UseExtratoSeguroOptions = {}) => {
   const provider = obterProviderNovaArquitetura();
   
   // ✅ LOGS APENAS EM DESENVOLVIMENTO
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`🎯 [useExtratoSeguro-V2] PROVIDER FINAL SELECIONADO: ${provider}`);
-    console.log(`🎯 [useExtratoSeguro-V2] Força refresh: ${forceRefresh}`);
-  }
+  // Provider final selecionado
 
   // React Query com cache otimizado para performance
   const queryResult = useQuery({
     queryKey: ['extrato-seguro-v2', provider, filtros, forceRefresh],
     queryFn: async () => {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`📡 [useExtratoSeguro-V2] ===== INICIANDO CONSULTA =====`);
-        console.log(`📡 [useExtratoSeguro-V2] Provider: ${provider}`);
-        console.log(`📡 [useExtratoSeguro-V2] Filtros:`, filtros);
-      }
+      // Iniciando consulta
       
       // 🚨 CHAMADA ISOLADA - APENAS NOVA ARQUITETURA
       const resultado = await consultarExtrato({
@@ -125,29 +107,22 @@ export const useExtratoSeguro = (options: UseExtratoSeguroOptions = {}) => {
       });
       
       if (process.env.NODE_ENV === 'development') {
-        console.log(`✅ [useExtratoSeguro-V2] Resultado obtido:`, {
-          provider: resultado.provider,
-          items: resultado.items?.length || 0,
-          temItems: !!resultado.items,
-          hasMore: resultado.hasMore
-        });
+
       }
       
       // 🔍 VALIDAÇÃO TRIPLA DE SEGURANÇA
       if (resultado.provider && resultado.provider !== provider) {
         const erro = `🚨 VIOLAÇÃO DE SEGURANÇA: Provider esperado '${provider}' mas recebido '${resultado.provider}'`;
-        console.error(erro);
+
         throw new Error(erro);
       }
       
       if (!resultado.provider) {
-        console.warn(`⚠️ [useExtratoSeguro-V2] Resposta sem provider, adicionando manualmente: ${provider}`);
+
         resultado.provider = provider;
       }
       
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`✅ [useExtratoSeguro-V2] Resultado VÁLIDO e SEGURO para ${provider}`);
-      }
+      // Resultado válido
       return resultado;
     },
     enabled: enabled,
@@ -163,12 +138,7 @@ export const useExtratoSeguro = (options: UseExtratoSeguroOptions = {}) => {
 
   // ✅ LOGS APENAS EM DESENVOLVIMENTO
   if (process.env.NODE_ENV === 'development') {
-    console.log(`📊 [useExtratoSeguro-V2] Query State:`, {
-      isLoading: queryResult.isLoading,
-      error: !!queryResult.error,
-      hasData: !!queryResult.data,
-      provider: provider
-    });
+
   }
 
   return queryResult;

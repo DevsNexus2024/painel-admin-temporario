@@ -77,14 +77,14 @@ export default function ExtractTable() {
   // 🚨 CRÍTICO: Limpar dados antigos quando há erro para evitar contaminação
   useEffect(() => {
     if (error) {
-      console.log('🧹 [ExtractTable] Erro detectado - resetando página para evitar contaminação');
+
       setCurrentPage(1);
     }
   }, [error]);
 
   // 🚨 CRÍTICO: Resetar página quando mudar filtros
   useEffect(() => {
-    console.log('🧹 [ExtractTable] Mudança detectada - resetando página para nova consulta');
+
     setCurrentPage(1);
   }, [filtrosAtivos]);
 

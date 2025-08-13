@@ -67,8 +67,8 @@ export default function DiagnosticoDeposito({ idDeposito, onRefresh }: Diagnosti
       const data = await response.json();
       
       // Log para debug - ver estrutura real da resposta
-      console.log("📥 Resposta completa do backend:", data);
-      console.log("📊 Estrutura de response:", data.response);
+
+
       
       setDiagnostico(data.response);
       

@@ -143,19 +143,19 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
         if (hasBrl && hasUsd && !hasRate) {
           const calculatedRate = brlValue / usdValue;
           newData.conversion_rate = calculatedRate > 0 ? calculatedRate.toFixed(4) : '';
-          console.log(`[CONVERSÃO AUTO] BRL (${brlValue}) ÷ USD (${usdValue}) = Taxa (${calculatedRate.toFixed(4)})`);
+          // console.log(`[CONVERSÃO AUTO] BRL (${brlValue}) ÷ USD (${usdValue}) = Taxa (${calculatedRate.toFixed(4)})`);
         }
         // Caso 2: BRL e Taxa preenchidos → calcular USD
         else if (hasBrl && hasRate && !hasUsd) {
           const calculatedUsd = brlValue / rateValue;
           newData.usd_amount = calculatedUsd > 0 ? calculatedUsd.toFixed(4) : '';
-          console.log(`[CONVERSÃO AUTO] BRL (${brlValue}) ÷ Taxa (${rateValue}) = USD (${calculatedUsd.toFixed(4)})`);
+          // console.log(`[CONVERSÃO AUTO] BRL (${brlValue}) ÷ Taxa (${rateValue}) = USD (${calculatedUsd.toFixed(4)})`);
         }
         // Caso 3: USD e Taxa preenchidos → calcular BRL  
         else if (hasUsd && hasRate && !hasBrl) {
           const calculatedBrl = usdValue * rateValue;
           newData.brl_amount = calculatedBrl > 0 ? calculatedBrl.toFixed(2) : '';
-          console.log(`[CONVERSÃO AUTO] USD (${usdValue}) × Taxa (${rateValue}) = BRL (${calculatedBrl.toFixed(2)})`);
+          // console.log(`[CONVERSÃO AUTO] USD (${usdValue}) × Taxa (${rateValue}) = BRL (${calculatedBrl.toFixed(2)})`);
         }
       }
     }

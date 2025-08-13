@@ -73,7 +73,6 @@ export class BankManager implements IBankManager {
   private activeProvider?: BankProvider;
 
   private constructor() {
-    console.log('[BANK-MANAGER] Gerenciador iniciado');
   }
 
   /**
@@ -95,7 +94,6 @@ export class BankManager implements IBankManager {
    */
   public registerProvider(provider: IBankProvider): void {
     this.providers.set(provider.provider, provider);
-    console.log(`[BANK-MANAGER] Provider ${provider.provider} registrado`);
   }
 
   /**
@@ -109,7 +107,7 @@ export class BankManager implements IBankManager {
       const provider = BankProviderFactory.createProvider(providerType, customCredentials);
       this.registerProvider(provider);
     } catch (error) {
-      console.error(`[BANK-MANAGER] Erro ao registrar ${providerType}:`, error);
+      // console.error(`[BANK-MANAGER] Erro ao registrar ${providerType}:`, error);
       throw error;
     }
   }
@@ -124,7 +122,7 @@ export class BankManager implements IBankManager {
       this.activeProvider = undefined;
     }
     
-    console.log(`[BANK-MANAGER] Provider ${provider} removido`);
+    // console.log(`[BANK-MANAGER] Provider ${provider} removido`);
   }
 
   /**
@@ -157,12 +155,11 @@ export class BankManager implements IBankManager {
    */
   public setActiveProvider(provider: BankProvider): boolean {
     if (!this.providers.has(provider)) {
-      console.error(`[BANK-MANAGER] Provider ${provider} não registrado`);
+      // console.error(`[BANK-MANAGER] Provider ${provider} não registrado`);
       return false;
     }
     
     this.activeProvider = provider;
-    console.log(`[BANK-MANAGER] Provider ativo: ${provider}`);
     return true;
   }
 
@@ -380,13 +377,9 @@ export class BankManager implements IBankManager {
    * Auto-registra providers padrão
    */
   public async autoRegisterDefaultProviders(): Promise<void> {
-    console.log('[BANK-MANAGER] Auto-registrando providers padrão...');
     
     // 🚨 PRESERVAR PROVIDER ATIVO ANTES DE REGISTRAR
     const currentActiveProvider = this.activeProvider;
-    if (currentActiveProvider) {
-      console.log(`[BANK-MANAGER] 🔒 Preservando provider ativo: ${currentActiveProvider}`);
-    }
     
     // Registrar BMP, BMP-531 e Bitso por padrão
     const defaultProviders = [BankProvider.BMP, BankProvider.BMP_531, BankProvider.BITSO];
@@ -394,19 +387,16 @@ export class BankManager implements IBankManager {
     for (const providerType of defaultProviders) {
       try {
         this.registerProviderByType(providerType);
-        console.log(`[BANK-MANAGER] ✅ ${providerType} registrado com sucesso`);
       } catch (error) {
-        console.warn(`[BANK-MANAGER] ⚠️ Falha ao registrar ${providerType}:`, error);
+        // console.warn(`[BANK-MANAGER] ⚠️ Falha ao registrar ${providerType}:`, error);
       }
     }
 
     // 🚨 RESTAURAR PROVIDER ATIVO OU DEFINIR PADRÃO
     if (currentActiveProvider && this.providers.has(currentActiveProvider)) {
-      console.log(`[BANK-MANAGER] 🔄 Restaurando provider ativo: ${currentActiveProvider}`);
       this.setActiveProvider(currentActiveProvider);
     } else {
       // Definir BMP como ativo por padrão apenas se não havia provider ativo
-      console.log('[BANK-MANAGER] Definindo provider padrão (nenhum ativo anterior)');
       if (this.providers.has(BankProvider.BMP)) {
         this.setActiveProvider(BankProvider.BMP);
       } else if (this.providers.has(BankProvider.BMP_531)) {

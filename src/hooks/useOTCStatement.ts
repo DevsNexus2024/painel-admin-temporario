@@ -18,14 +18,9 @@ export function useOTCStatement(clientId: number, params: OTCStatementParams = {
     } = useQuery({
       queryKey: [OTC_STATEMENT_QUERY_KEY, clientId, params],
       queryFn: async () => {
-        console.log('[HOOK] useOTCStatement executando com:', { clientId, params });
+
         const result = await otcService.getClientStatement(clientId, params);
-        console.log('[HOOK] useOTCStatement resultado bruto:', result);
-        console.log('[HOOK] useOTCStatement transações:', result?.data?.transacoes?.map(tx => ({
-          id: tx.id,
-          type: tx.type,
-          manual_operation: tx.manual_operation
-        })));
+
         return result;
       },
       enabled: !!clientId,

@@ -32,7 +32,7 @@ export class BitsoProvider extends BaseBankProvider {
     super(config);
     this.baseUrl = config.apiUrl;
     
-    console.log('🔧 [BITSO-PROVIDER] Configurado com URL:', this.baseUrl);
+
     this.logger.info('Bitso Provider configurado', {
       baseUrl: this.baseUrl,
       features: this.features
@@ -44,7 +44,7 @@ export class BitsoProvider extends BaseBankProvider {
    */
   async healthCheck(): Promise<BankResponse<{ status: string; latency: number }>> {
     try {
-      console.log('🩺 [BITSO] Health check iniciado (teste de conectividade)');
+
       const startTime = Date.now();
       
       // Usa endpoint de saldo para testar conectividade
@@ -67,8 +67,8 @@ export class BitsoProvider extends BaseBankProvider {
    */
   async getBalance(accountId?: string): Promise<BankResponse<StandardBalance>> {
     try {
-      console.log('💰 [BITSO] getBalance() chamado - consultando saldo Bitso', { accountId });
-      this.logger.info('Consultando saldo Bitso', { accountId });
+
+      this.logger.info('Consultando saldo Bitso', { hasAccountId: !!accountId });
       
       const response = await this.makeRequest('GET', '/balance/active');
       
@@ -119,7 +119,10 @@ export class BitsoProvider extends BaseBankProvider {
     accountId?: string
   ): Promise<BankResponse<StandardStatementResponse>> {
     try {
-      this.logger.info('Consultando extrato Bitso', { filters, accountId });
+      this.logger.info('Consultando extrato Bitso', { 
+        hasFilters: !!filters, 
+        hasAccountId: !!accountId 
+      });
 
       // Validar filtros
       const validation = this.validateFilters(filters || {});
@@ -248,7 +251,10 @@ export class BitsoProvider extends BaseBankProvider {
     accountId?: string
   ): Promise<BankResponse<StandardTransaction>> {
     try {
-      this.logger.info('Buscando transação específica Bitso', { transactionId, accountId });
+      this.logger.info('Buscando transação específica Bitso', { 
+        hasTransactionId: !!transactionId, 
+        hasAccountId: !!accountId 
+      });
       
       // Bitso pode não ter endpoint específico para transação única
       // Implementar busca no extrato seria a solução
@@ -269,21 +275,21 @@ export class BitsoProvider extends BaseBankProvider {
    */
   async getPixKeys(accountId?: string): Promise<BankResponse<any[]>> {
     try {
-      this.logger.info('Listando chaves PIX Bitso', { accountId });
+      this.logger.info('Listando chaves PIX Bitso', { hasAccountId: !!accountId });
       
-      // Bitso não armazena chaves PIX - retorna lista vazia ou chaves padrão
+      // Bitso não armazena chaves PIX - retorna lista vazia ou chaves configuráveis
       const mockKeys = [
         {
           id: 'bitso-cpf-key',
           tipo: 'CPF',
-          chave: 'Informe sua chave CPF',
+          chave: import.meta.env.VITE_BITSO_MOCK_CPF_KEY || 'Configure sua chave CPF',
           status: 'ATIVA',
           provider: 'bitso'
         },
         {
           id: 'bitso-email-key', 
           tipo: 'EMAIL',
-          chave: 'Informe sua chave Email',
+          chave: import.meta.env.VITE_BITSO_MOCK_EMAIL_KEY || 'Configure sua chave Email',
           status: 'ATIVA',
           provider: 'bitso'
         }
@@ -309,13 +315,17 @@ export class BitsoProvider extends BaseBankProvider {
     accountId?: string
   ): Promise<BankResponse<StandardTransaction>> {
     try {
-      console.log('🚀 [BITSO-PIX] Iniciando envio PIX via Bitso');
-      console.log('🚀 [BITSO-PIX] Dados recebidos:', { pixData, accountId });
-      this.logger.info('Enviando PIX via Bitso', { pixData, accountId });
+
+      this.logger.info('Enviando PIX via Bitso', { 
+        keyType: pixData.keyType, 
+        amount: pixData.amount,
+        hasKey: !!pixData.key,
+        accountId: accountId ? 'presente' : 'ausente' 
+      });
 
       // Validar dados básicos
       if (!pixData.key || !pixData.amount) {
-        console.log('❌ [BITSO-PIX] Dados inválidos - chave ou valor faltando');
+
         return this.createErrorResponse('INVALID_PARAMETERS', 'Chave PIX e valor são obrigatórios');
       }
 
@@ -341,16 +351,20 @@ export class BitsoProvider extends BaseBankProvider {
         origin_id: `frontend_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       };
 
-      console.log('📤 [BITSO-PIX] Dados preparados para backend:', requestData);
-      this.logger.info('Dados padronizados para envio PIX Bitso', requestData);
 
-      console.log('🌐 [BITSO-PIX] Fazendo requisição para /api/bitso/pix/enviar...');
-      console.log('🌐 [BITSO-PIX] URL base configurada:', this.baseUrl);
+      this.logger.info('Dados padronizados para envio PIX Bitso', {
+        amount: requestData.amount,
+        currency: requestData.currency,
+        origin_id: requestData.origin_id,
+        hasKey: !!requestData.pix_key
+      });
+
+
       
       // Chamada para endpoint simplificado do backend
       const response = await this.makeRequest('POST', '/pix/enviar', requestData);
       
-      console.log('📥 [BITSO-PIX] Resposta recebida do backend:', response);
+
 
       if (!response.sucesso) {
         // Melhor tratamento de erros específicos da Bitso
@@ -408,8 +422,7 @@ export class BitsoProvider extends BaseBankProvider {
         raw: response
       };
 
-      console.log('✅ [BITSO-PIX] PIX processado com sucesso!');
-      console.log('✅ [BITSO-PIX] Transação padronizada:', standardTransaction);
+
       
       this.logger.info('PIX enviado com sucesso via Bitso', {
         wid: response.data?.wid,
@@ -419,7 +432,7 @@ export class BitsoProvider extends BaseBankProvider {
         amount: pixData.amount
       });
 
-      console.log('🎯 [BITSO-PIX] Retornando resposta de sucesso');
+
       return this.createSuccessResponse(standardTransaction);
 
     } catch (error) {
@@ -441,7 +454,11 @@ export class BitsoProvider extends BaseBankProvider {
     accountId?: string
   ): Promise<BankResponse<{ qrCode: string; txId: string }>> {
     try {
-      this.logger.info('Gerando QR Code PIX via Bitso', { amount, description, accountId });
+      this.logger.info('Gerando QR Code PIX via Bitso', { 
+        amount, 
+        hasDescription: !!description, 
+        hasAccountId: !!accountId 
+      });
 
       // Para gerar QR Code, precisa de uma chave PIX própria
       // Como Bitso não armazena, vamos precisar que seja informada
@@ -468,7 +485,11 @@ export class BitsoProvider extends BaseBankProvider {
     accountId?: string
   ): Promise<BankResponse<{ qrCode: string; txId: string }>> {
     try {
-      this.logger.info('Criando QR Code dinâmico Bitso', { dados, accountId });
+      this.logger.info('Criando QR Code dinâmico Bitso', { 
+        valor: dados.valor,
+        tipoChave: dados.tipoChave,
+        hasAccountId: !!accountId 
+      });
 
       const requestData = {
         amount: dados.valor.toString(),
@@ -476,7 +497,7 @@ export class BitsoProvider extends BaseBankProvider {
         pix_key: dados.chavePix,
         pix_key_type: dados.tipoChave.toUpperCase(),
         reference: `QR-${Date.now()}`,
-        callback_url: process.env.VITE_BITSO_WEBHOOK_URL || 'https://api-bank.gruponexus.com.br/api/bitso/webhook'
+        callback_url: import.meta.env.VITE_BITSO_WEBHOOK_URL
       };
 
       const response = await this.makeRequest('POST', '/api/bitso/pix/qr-dinamico', requestData);
@@ -508,14 +529,17 @@ export class BitsoProvider extends BaseBankProvider {
     accountId?: string
   ): Promise<BankResponse<{ qrCode: string; txId: string }>> {
     try {
-      this.logger.info('Criando QR Code estático Bitso', { dados, accountId });
+      this.logger.info('Criando QR Code estático Bitso', { 
+        tipoChave: dados.tipoChave,
+        hasAccountId: !!accountId 
+      });
 
       const requestData = {
         currency: 'brl',
         pix_key: dados.chavePix,
         pix_key_type: dados.tipoChave.toUpperCase(),
         reference: `QR-STATIC-${Date.now()}`,
-        callback_url: process.env.VITE_BITSO_WEBHOOK_URL || 'https://api-bank.gruponexus.com.br/api/bitso/webhook'
+        callback_url: import.meta.env.VITE_BITSO_WEBHOOK_URL
       };
 
       const response = await this.makeRequest('POST', '/api/bitso/pix/qr-estatico', requestData);
@@ -599,14 +623,14 @@ export class BitsoProvider extends BaseBankProvider {
     }
     
     // Padrão: EVP (para chaves que não se encaixam nos outros padrões)
-    this.logger.info('Tipo de chave não detectado automaticamente, usando EVP como padrão', { key: keyTrimmed });
+    this.logger.info('Tipo de chave não detectado automaticamente, usando EVP como padrão', { hasKey: !!keyTrimmed });
     return 'EVP';
   }
 
   /**
    * Faz requisição para API Bitso
    */
-  private async makeRequest(method: string, endpoint: string, params?: any): Promise<any> {
+  protected async makeRequest(method: string, endpoint: string, params?: any): Promise<any> {
     await this.applyRateLimit();
 
     let url = `${this.baseUrl}${endpoint}`;
@@ -651,16 +675,7 @@ export class BitsoProvider extends BaseBankProvider {
       return response.json();
       
     } catch (error: any) {
-      console.error('🚨 [BITSO-PIX] Erro detalhado na requisição:', {
-        url,
-        method,
-        errorName: error.name,
-        errorMessage: error.message,
-        errorStack: error.stack?.substring(0, 200),
-        isCORS: error.message?.includes('CORS'),
-        isNetwork: error.message?.includes('Failed to fetch'),
-        isTimeout: error.name === 'TimeoutError' || error.name === 'AbortError'
-      });
+
       
       // Tratamento específico para timeout
       if (error.name === 'TimeoutError' || error.name === 'AbortError') {

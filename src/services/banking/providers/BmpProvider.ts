@@ -43,7 +43,7 @@ export class BmpProvider extends BaseBankProvider {
    */
   async healthCheck(): Promise<BankResponse<{ status: string; latency: number }>> {
     try {
-      console.log('🩺 [BMP] Health check iniciado (teste de conectividade)');
+
       const startTime = Date.now();
       
       // Usa endpoint de saldo para testar conectividade
@@ -66,7 +66,7 @@ export class BmpProvider extends BaseBankProvider {
    */
   async getBalance(accountId?: string): Promise<BankResponse<StandardBalance>> {
     try {
-      console.log('💰 [BMP] getBalance() chamado - consultando saldo BMP', { accountId });
+
       this.logger.info('Consultando saldo BMP', { accountId });
       
       const response = await this.makeRequest('GET', '/internal/account/saldo');
@@ -278,11 +278,7 @@ export class BmpProvider extends BaseBankProvider {
     keyType?: string;
   }, accountId?: string): Promise<BankResponse<StandardTransaction>> {
     try {
-      console.log('🚀 [BMP] sendPix() chamado - enviando PIX via BMP', { 
-        key: pixData.key, 
-        amount: pixData.amount,
-        accountId 
-      });
+
       
       this.logger.info('Enviando PIX via BMP', { 
         amount: pixData.amount,
@@ -342,7 +338,7 @@ export class BmpProvider extends BaseBankProvider {
    */
   async getPixKeys(accountId?: string): Promise<BankResponse<any[]>> {
     try {
-      console.log('🔑 [BMP] getPixKeys() chamado - listando chaves PIX via BMP', { accountId });
+
       this.logger.info('Listando chaves PIX via BMP', { accountId });
 
       const response = await this.makeRequest('GET', '/internal/pix/chaves/listar');
@@ -371,11 +367,7 @@ export class BmpProvider extends BaseBankProvider {
     accountId?: string
   ): Promise<BankResponse<{ qrCode: string; txId: string }>> {
     try {
-      console.log('📱 [BMP] generatePixQR() chamado - gerando QR Code via BMP', { 
-        amount, 
-        description,
-        accountId 
-      });
+
       
       this.logger.info('Gerando QR Code PIX via BMP', { amount, description, accountId });
 

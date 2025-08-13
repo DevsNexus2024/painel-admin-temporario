@@ -96,7 +96,7 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
     // 🚨 VALIDAÇÃO CRÍTICA: Provider obrigatório
     if (!filtros.provider) {
       const error = "🚨 ERRO CRÍTICO: Provider obrigatório para dados financeiros!";
-      console.error(error);
+
       throw new Error(error);
     }
 
@@ -138,14 +138,14 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       
       // ✅ DADOS TTF PARA BMP-531 VIA UNIFIED BANKING SERVICE
       if (provider === 'bmp-531') {
-        params.agencia = '0001';
-        params.agencia_digito = '8';
-        params.conta = '159';
-        params.conta_digito = '4';
-        params.conta_pgto = '00001594';
-        params.tipo_conta = '3';
-        params.modelo_conta = '1';
-        params.numero_banco = '531';
+        params.agencia = import.meta.env.VITE_BMP_AGENCIA_TTF;
+        params.agencia_digito = import.meta.env.VITE_BMP_AGENCIA_DIGITO_TTF;
+        params.conta = import.meta.env.VITE_BMP_CONTA_TTF;
+        params.conta_digito = import.meta.env.VITE_BMP_CONTA_DIGITO_TTF;
+        params.conta_pgto = import.meta.env.VITE_BMP_CONTA_PGTO_TTF;
+        params.tipo_conta = import.meta.env.VITE_BMP_TIPO_CONTA_TTF;
+        params.modelo_conta = import.meta.env.VITE_BMP_MODELO_CONTA_TTF;
+        params.numero_banco = import.meta.env.VITE_BMP_NUMERO_BANCO_TTF;
       }
       
       const queryString = new URLSearchParams(params).toString();
@@ -205,7 +205,7 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       const fullEndpoint = queryString ? `${endpoint}?${queryString}` : endpoint;
       const fullUrl = `${baseUrl}${fullEndpoint}`;
       
-      console.log(`🟠 [EXTRATO-SEGURO] URL BITSO: ${fullUrl}`);
+
       
       // Chamada direta e isolada para Bitso
       const response = await fetch(fullUrl, {
@@ -224,16 +224,11 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
         throw new Error(`Bitso API Error ${response.status}: ${result.message || response.statusText}`);
       }
       
-      console.log(`✅ [EXTRATO-SEGURO] Resposta Bitso recebida:`, {
-        sucesso: result?.sucesso,
-        hasData: !!result?.data,
-        hasTransacoes: !!result?.data?.transacoes,
-        transacoesCount: result?.data?.transacoes?.length || 0
-      });
+
 
     } else {
       const error = `🚨 ERRO CRÍTICO: Provider inválido: ${provider}`;
-      console.error(error);
+
       throw new Error(error);
     }
 
@@ -243,7 +238,7 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
     let cursor = null;
     
     if (provider === 'bitso') {
-      console.log(`🟠 [EXTRATO-SEGURO] Processando dados Bitso...`);
+
       // Dados Bitso já vêm normalizados do backend
       if (!result.sucesso || !result.data || !result.data.transacoes) {
         throw new Error('🚨 Formato de resposta Bitso inválido');
@@ -254,7 +249,7 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       cursor = null;
       
     } else { // provider === 'bmp' || provider === 'bmp-531'
-      console.log(`🔵 [EXTRATO-SEGURO] Processando dados ${provider.toUpperCase()}...`);
+
       // Dados BMP/BMP-531 no formato original (mesmo formato)
       if (!result.items || !Array.isArray(result.items)) {
         throw new Error(`🚨 Formato de resposta ${provider.toUpperCase()} inválido`);
@@ -272,12 +267,8 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       return dataB.getTime() - dataA.getTime(); // Mais recente primeiro
     });
     
-    console.log(`✅ [EXTRATO-SEGURO] ${movimentosFormatados.length} transações formatadas para provider: ${provider}`);
-    console.log(`🔒 [EXTRATO-SEGURO] Primeira transação:`, movimentosFormatados[0] ? {
-      data: movimentosFormatados[0].dateTime,
-      valor: movimentosFormatados[0].value,
-      tipo: movimentosFormatados[0].type
-    } : 'Nenhuma transação');
+
+
 
     return {
       items: movimentosFormatados,
@@ -286,7 +277,7 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       provider // 🚨 CRÍTICO: Sempre retornar provider para validação
     };
   } catch (error) {
-    console.error("🚨 [EXTRATO-SEGURO] Erro crítico:", error);
+
     throw error;
   }
 };
@@ -350,15 +341,15 @@ const formatarMovimentoDoBackend = (item: any, provider?: string): MovimentoExtr
     const partes = item.complemento.split(' - ');
     if (partes[0]) {
       documentoFormatado = partes[0]; // "***694380***"
-      console.log('✅ Documento extraído do complemento:', documentoFormatado);
+
     }
   } else if (item.documento) {
     // BMP: Campo documento
     documentoFormatado = item.documento;
-    console.log('✅ Documento encontrado em item.documento:', documentoFormatado);
+
   } else {
     documentoFormatado = '—';
-    console.log('⚠️ Documento não encontrado, usando fallback');
+
   }
   
   // 3️⃣ OUTROS CAMPOS
