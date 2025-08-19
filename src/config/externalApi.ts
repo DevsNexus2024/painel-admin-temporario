@@ -7,7 +7,7 @@
  */
 export const EXTERNAL_API_CONFIG = {
   // 🌐 URL base da API externa
-  BASE_URL: import.meta.env.VITE_DIAGNOSTICO_API_URL,
+  BASE_URL: import.meta.env.X_DIAGNOSTICO_API_URL,
   
   // 📍 Endpoints disponíveis
   ENDPOINTS: {
@@ -16,7 +16,7 @@ export const EXTERNAL_API_CONFIG = {
   },
   
   // 🔑 API Key (configurada no DigitalOcean App Platform)
-  API_KEY: import.meta.env.VITE_EXTERNAL_API_KEY,
+  API_KEY: import.meta.env.X_EXTERNAL_API_KEY,
   
   // ⚙️ Configurações gerais
   TIMEOUT: 30000, // 30 segundos
@@ -102,7 +102,7 @@ export const callExternalApi = async <T = any>(
 
     return result;
   } catch (error) {
-    console.error('❌ Erro na requisição para API externa:', error);
+    // Log seguro - erro na API externa (dados não expostos)
     throw error;
   }
 };
@@ -122,7 +122,7 @@ export const testarApiExterna = async (): Promise<boolean> => {
       return false;
     }
   } catch (error) {
-    console.error('❌ Erro ao testar API externa:', error);
+    // Log seguro - erro ao testar API externa (dados não expostos)
     return false;
   }
 };

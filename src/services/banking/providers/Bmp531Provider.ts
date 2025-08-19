@@ -6,6 +6,7 @@
  */
 
 import { BaseBankProvider } from '../BaseBankProvider';
+import { PUBLIC_ENV } from '@/config/env';
 import {
   BankProvider,
   BankFeature,
@@ -25,6 +26,22 @@ import type {
  * Provider específico do BMP-531
  */
 export class Bmp531Provider extends BaseBankProvider {
+
+  /**
+   * Obtém JWT Token do storage (conforme padrão)
+   */
+  private getJwtToken(): string | null {
+    try {
+      // Tenta sessionStorage primeiro, depois localStorage
+      return sessionStorage.getItem('jwt_token') || 
+             localStorage.getItem('jwt_token') || 
+             sessionStorage.getItem('auth_token') || 
+             localStorage.getItem('auth_token');
+    } catch (error) {
+      this.logger.warn('Erro ao obter JWT token', error);
+      return null;
+    }
+  }
   
   private readonly baseUrl: string;
 
@@ -74,14 +91,14 @@ export class Bmp531Provider extends BaseBankProvider {
     try {
       // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
       const dadosBancarios = {
-        agencia: import.meta.env.VITE_BMP_AGENCIA_TTF,
-        agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO_TTF,
-        conta: import.meta.env.VITE_BMP_CONTA_TTF,
-        conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO_TTF,
-        conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO_TTF,
-        tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA_TTF, 10),
-        modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA_TTF, 10),
-        numero_banco: import.meta.env.VITE_BMP_531_BANCO
+        agencia: PUBLIC_ENV.BMP_AGENCIA_TTF,
+        agencia_digito: PUBLIC_ENV.BMP_AGENCIA_DIGITO_TTF,
+        conta: PUBLIC_ENV.BMP_CONTA_TTF,
+        conta_digito: PUBLIC_ENV.BMP_CONTA_DIGITO_TTF,
+        conta_pgto: PUBLIC_ENV.BMP_CONTA_PGTO_TTF,
+        tipo_conta: PUBLIC_ENV.BMP_TIPO_CONTA_TTF,
+        modelo_conta: PUBLIC_ENV.BMP_MODELO_CONTA_TTF,
+        numero_banco: PUBLIC_ENV.BMP_531_BANCO
       };
       
       let response;
@@ -145,14 +162,14 @@ export class Bmp531Provider extends BaseBankProvider {
 
       // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
       const dadosBancarios = {
-        agencia: import.meta.env.VITE_BMP_AGENCIA,
-        agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO,
-        conta: import.meta.env.VITE_BMP_CONTA,
-        conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO,
-        conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO,
-        tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA, 10),
-        modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA, 10),
-        numero_banco: import.meta.env.VITE_BMP_531_BANCO
+        agencia: PUBLIC_ENV.BMP_AGENCIA_TTF,
+        agencia_digito: PUBLIC_ENV.BMP_AGENCIA_DIGITO_TTF,
+        conta: PUBLIC_ENV.BMP_CONTA_TTF,
+        conta_digito: PUBLIC_ENV.BMP_CONTA_DIGITO_TTF,
+        conta_pgto: PUBLIC_ENV.BMP_CONTA_PGTO_TTF,
+        tipo_conta: PUBLIC_ENV.BMP_TIPO_CONTA_TTF,
+        modelo_conta: PUBLIC_ENV.BMP_MODELO_CONTA_TTF,
+        numero_banco: PUBLIC_ENV.BMP_531_BANCO
       };
       
       // Preparar parâmetros para API BMP-531
@@ -289,13 +306,15 @@ export class Bmp531Provider extends BaseBankProvider {
       body = JSON.stringify(params);
     }
 
+    // ✅ HEADERS BÁSICOS - Backend adiciona credenciais via JWT
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...this.config.customHeaders
+      // Backend adiciona: X-API-Key, X-API-Secret baseado no JWT do usuário
     };
 
-    // Adicionar token de autenticação se disponível
-    const token = localStorage.getItem('auth_token');
+    // ✅ ADICIONAR JWT TOKEN SE DISPONÍVEL
+    const token = this.getJwtToken();
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -359,14 +378,14 @@ export class Bmp531Provider extends BaseBankProvider {
 
       // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
       const dadosBancarios = {
-        agencia: import.meta.env.VITE_BMP_AGENCIA,
-        agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO,
-        conta: import.meta.env.VITE_BMP_CONTA,
-        conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO,
-        conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO,
-        tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA, 10),
-        modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA, 10),
-        numero_banco: import.meta.env.VITE_BMP_531_BANCO
+        agencia: PUBLIC_ENV.BMP_AGENCIA_TTF,
+        agencia_digito: PUBLIC_ENV.BMP_AGENCIA_DIGITO_TTF,
+        conta: PUBLIC_ENV.BMP_CONTA_TTF,
+        conta_digito: PUBLIC_ENV.BMP_CONTA_DIGITO_TTF,
+        conta_pgto: PUBLIC_ENV.BMP_CONTA_PGTO_TTF,
+        tipo_conta: PUBLIC_ENV.BMP_TIPO_CONTA_TTF,
+        modelo_conta: PUBLIC_ENV.BMP_MODELO_CONTA_TTF,
+        numero_banco: PUBLIC_ENV.BMP_531_BANCO
       };
 
       // Preparar dados para API BMP-531 PIX
@@ -377,6 +396,8 @@ export class Bmp531Provider extends BaseBankProvider {
         informacoesAdicionais: pixData.description || 'Transferência PIX via BMP-531',
         dadosBancarios: dadosBancarios // ✅ Incluir dados bancários TTF
       };
+
+      // ✅ JWT é adicionado automaticamente no makeRequest
 
       const response = await this.makeRequest('POST', '/bmp-531/pix/enviar', {}, requestData);
 
@@ -422,25 +443,16 @@ export class Bmp531Provider extends BaseBankProvider {
    */
   async getPixKeys(accountId?: string): Promise<BankResponse<any[]>> {
     try {
-      // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
-      const dadosBancarios = {
-        agencia: import.meta.env.VITE_BMP_AGENCIA,
-        agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO,
-        conta: import.meta.env.VITE_BMP_CONTA,
-        conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO,
-        conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO,
-        tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA, 10),
-        modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA, 10),
-        numero_banco: import.meta.env.VITE_BMP_531_BANCO
-      };
-
       let response;
       try {
-        // ✅ Enviar dados bancários para buscar chaves da conta TTF
-        response = await this.makeRequest('GET', '/bmp-531/pix/chaves/listar', dadosBancarios);
+        // ✅ Listar chaves PIX (não precisa de parâmetros, JWT incluído automaticamente)
+        response = await this.makeRequest(
+          'GET', 
+          '/bmp-531/pix/chaves/listar'
+        );
       } catch (error) {
+        this.logger.warn('Erro ao listar chaves PIX BMP-531', error);
         // Se não existir endpoint específico, retornar lista vazia
-
         response = { chaves: [] };
       }
 
@@ -478,14 +490,14 @@ export class Bmp531Provider extends BaseBankProvider {
 
       // ✅ DADOS BANCÁRIOS TTF - TTF SERVICOS DIGITAIS LTDA
       const dadosBancarios = {
-        agencia: import.meta.env.VITE_BMP_AGENCIA,
-        agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO,
-        conta: import.meta.env.VITE_BMP_CONTA,
-        conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO,
-        conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO,
-        tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA, 10),
-        modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA, 10),
-        numero_banco: import.meta.env.VITE_BMP_531_BANCO
+        agencia: PUBLIC_ENV.BMP_AGENCIA_TTF,
+        agencia_digito: PUBLIC_ENV.BMP_AGENCIA_DIGITO_TTF,
+        conta: PUBLIC_ENV.BMP_CONTA_TTF,
+        conta_digito: PUBLIC_ENV.BMP_CONTA_DIGITO_TTF,
+        conta_pgto: PUBLIC_ENV.BMP_CONTA_PGTO_TTF,
+        tipo_conta: PUBLIC_ENV.BMP_TIPO_CONTA_TTF,
+        modelo_conta: PUBLIC_ENV.BMP_MODELO_CONTA_TTF,
+        numero_banco: PUBLIC_ENV.BMP_531_BANCO
       };
 
       // Dados para QR Code estático TTF

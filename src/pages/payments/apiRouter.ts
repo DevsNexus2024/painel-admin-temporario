@@ -29,7 +29,7 @@ const API_ROUTES: Record<Provider, {
   pixChaves: string;
 }> = {
   'bmp': {
-    baseUrl: import.meta.env.VITE_API_BASE_URL,
+    baseUrl: import.meta.env.X_API_BASE_URL,
     saldo: '/internal/account/saldo',
     extrato: '/internal/account/extrato',
     pixEnviar: '/internal/pix/enviar',
@@ -37,7 +37,7 @@ const API_ROUTES: Record<Provider, {
     pixChaves: '/internal/pix/chaves/listar'
   },
   'bitso': {
-    baseUrl: import.meta.env.VITE_API_BASE_URL,
+    baseUrl: import.meta.env.X_API_BASE_URL,
     saldo: '/api/bitso/balance/consultar',
     extrato: '/api/bitso/pix/extrato',
     pixEnviar: '/api/bitso/pix/enviar',
@@ -45,12 +45,12 @@ const API_ROUTES: Record<Provider, {
     pixChaves: '/api/bitso/pix/chaves'
   },
   'bmp-531': {
-    baseUrl: import.meta.env.VITE_API_BASE_URL,
-    saldo: '/api/bmp-531/account/saldo',
-    extrato: '/api/bmp-531/account/extrato',
-    pixEnviar: '/api/bmp-531/pix/enviar',
-    pixConsultar: '/api/bmp-531/pix/consultar',
-    pixChaves: '/api/bmp-531/pix/chaves/listar'
+    baseUrl: import.meta.env.X_API_BASE_URL,
+    saldo: '/bmp-531/account/saldo',
+    extrato: '/bmp-531/account/extrato',
+    pixEnviar: '/bmp-531/pix/enviar',
+    pixConsultar: '/bmp-531/pix/consultar',
+    pixChaves: '/bmp-531/pix/chaves/listar'
   }
 };
 
@@ -61,9 +61,9 @@ export const ACCOUNTS: Account[] = [
     provider: 'bmp',
     displayName: 'Conta Principal BMP',
     bankInfo: {
-      bank: import.meta.env.VITE_BMP_BANCO_BMP_274_TCR,
-      agency: import.meta.env.VITE_BMP_AGENCIA_BMP_274_TCR,
-      account: `${import.meta.env.VITE_BMP_CONTA_BMP_274_TCR}-${import.meta.env.VITE_BMP_CONTA_DIGITO_BMP_274_TCR}`
+      bank: import.meta.env.X_BMP_BANCO_BMP_274_TCR,
+      agency: import.meta.env.X_BMP_AGENCIA_BMP_274_TCR,
+      account: `${import.meta.env.X_BMP_CONTA_BMP_274_TCR}-${import.meta.env.X_BMP_CONTA_DIGITO_BMP_274_TCR}`
     }
   },
   {
@@ -71,9 +71,9 @@ export const ACCOUNTS: Account[] = [
     provider: 'bmp-531',
     displayName: 'BMP 531 TTF - Pagamentos',
     bankInfo: {
-      bank: import.meta.env.VITE_BMP_531_BANCO,
-      agency: import.meta.env.VITE_531_AGENCIA,
-      account: `${import.meta.env.VITE_BMP_CONTA_TTF}-${import.meta.env.VITE_BMP_CONTA_DIGITO_TTF}`
+      bank: import.meta.env.X_BMP_531_BANCO,
+      agency: import.meta.env.X_531_AGENCIA,
+      account: `${import.meta.env.X_BMP_CONTA_TTF}-${import.meta.env.X_BMP_CONTA_DIGITO_TTF}`
     }
   },
   {
@@ -154,7 +154,7 @@ export class ApiRouter {
   private getHeaders(): Record<string, string> {
     const commonHeaders = {
       'Content-Type': 'application/json',
-      'User-Agent': import.meta.env.VITE_APP_USER_AGENT || 'BaaS-Frontend/1.0.0'
+      'User-Agent': import.meta.env.X_APP_USER_AGENT || 'BaaS-Frontend/1.0.0'
     };
 
     // Headers específicos por provedor se necessário

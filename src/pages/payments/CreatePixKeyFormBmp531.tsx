@@ -106,7 +106,7 @@ export default function CreatePixKeyFormBmp531() {
       setApiResponse(result);
 
       if (result.sucesso) {
-        console.log("✅ [CreatePixKeyFormBmp531] Chave PIX criada com sucesso:", result);
+        // Chave PIX criada com sucesso - dados omitidos por segurança
         
         if (result.etapa === 'AGUARDANDO_MFA') {
           setEtapaAtual('AGUARDANDO_MFA');
@@ -121,7 +121,7 @@ export default function CreatePixKeyFormBmp531() {
           setEtapaAtual('CONCLUIDO');
           
           toast.success("Chave PIX criada com sucesso!", {
-            description: `Chave: ${result.chave}`,
+            description: `Chave: ${(result as any).chave || 'Criada com sucesso'}`,
             duration: 6000,
             icon: <CheckCircle className="h-4 w-4" />
           });
@@ -183,7 +183,7 @@ export default function CreatePixKeyFormBmp531() {
         codigoMfa: form.getValues("codigoMfa")
       };
 
-      console.log("🔐 [CreatePixKeyFormBmp531] Confirmando MFA:", requestData);
+      // Confirmando MFA - dados omitidos por segurança
 
       // ✅ Usar serviço BMP-531 específico (função MFA não implementada ainda)
       // const result = await Bmp531Service.confirmarMfaChavePix(requestData);
@@ -191,7 +191,8 @@ export default function CreatePixKeyFormBmp531() {
       // Por enquanto, simular confirmação para teste
       const result = {
         sucesso: false,
-        mensagem: "Função de confirmação MFA não implementada ainda no BMP-531"
+        mensagem: "Função de confirmação MFA não implementada ainda no BMP-531",
+        etapa: 'ERRO' as const
       };
       
       setApiResponse(result);
@@ -200,7 +201,7 @@ export default function CreatePixKeyFormBmp531() {
         setEtapaAtual('CONCLUIDO');
         
         toast.success("Chave PIX criada com sucesso!", {
-          description: `Chave: ${result.chave}`,
+          description: `Chave: ${(result as any).chave || 'Código confirmado'}`,
           duration: 6000,
           icon: <CheckCircle className="h-4 w-4" />
         });
@@ -214,7 +215,7 @@ export default function CreatePixKeyFormBmp531() {
         });
       }
     } catch (error) {
-      console.error("❌ [CreatePixKeyFormBmp531] Erro ao confirmar MFA:", error);
+      // Erro ao confirmar MFA - dados omitidos por segurança
       
       toast.error("Erro ao confirmar código", {
         description: error instanceof Error ? error.message : "Erro desconhecido",

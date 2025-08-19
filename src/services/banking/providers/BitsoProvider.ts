@@ -20,6 +20,7 @@ import type {
   StandardTransaction,
   StandardFilters
 } from '../types';
+import { PUBLIC_ENV } from '@/config/env';
 
 /**
  * Provider específico do Bitso
@@ -48,7 +49,7 @@ export class BitsoProvider extends BaseBankProvider {
       const startTime = Date.now();
       
       // Usa endpoint de saldo para testar conectividade
-      await this.makeRequest('GET', '/api/bitso/balance/consultar');
+      await this.makeRequest('GET', '/balance/saldos-disponiveis');
       
       const latency = Date.now() - startTime;
       
@@ -70,7 +71,7 @@ export class BitsoProvider extends BaseBankProvider {
 
       this.logger.info('Consultando saldo Bitso', { hasAccountId: !!accountId });
       
-      const response = await this.makeRequest('GET', '/balance/active');
+      const response = await this.makeRequest('GET', '/balance/saldos-disponiveis');
       
       // Processar resposta do Bitso (formato: { success: true, data: { balances: [...] } })
       const balances = response.data?.balances || response.balances;
@@ -141,7 +142,7 @@ export class BitsoProvider extends BaseBankProvider {
       if (filters?.dateFrom) params.start_date = filters.dateFrom;
       if (filters?.dateTo) params.end_date = filters.dateTo;
 
-      const response = await this.makeRequest('GET', '/api/bitso/pix/extrato', params);
+      const response = await this.makeRequest('GET', '/pix/extrato/conta', params);
 
       // Padronizar transações do Bitso
       const allTransactions: StandardTransaction[] = [];
@@ -282,14 +283,14 @@ export class BitsoProvider extends BaseBankProvider {
         {
           id: 'bitso-cpf-key',
           tipo: 'CPF',
-          chave: import.meta.env.VITE_BITSO_MOCK_CPF_KEY || 'Configure sua chave CPF',
+          chave: import.meta.env.X_BITSO_MOCK_CPF_KEY || 'Configure sua chave CPF',
           status: 'ATIVA',
           provider: 'bitso'
         },
         {
           id: 'bitso-email-key', 
           tipo: 'EMAIL',
-          chave: import.meta.env.VITE_BITSO_MOCK_EMAIL_KEY || 'Configure sua chave Email',
+          chave: import.meta.env.X_BITSO_MOCK_EMAIL_KEY || 'Configure sua chave Email',
           status: 'ATIVA',
           provider: 'bitso'
         }
@@ -348,7 +349,8 @@ export class BitsoProvider extends BaseBankProvider {
         pix_key_type: keyType.toUpperCase(),
         amount: pixData.amount.toString(),
         currency: 'brl',
-        origin_id: `frontend_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        origin_id: `frontend_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        remittanceInformation: pixData.description || `PIX para ${pixData.key}`
       };
 
 
@@ -361,8 +363,8 @@ export class BitsoProvider extends BaseBankProvider {
 
 
       
-      // Chamada para endpoint simplificado do backend
-      const response = await this.makeRequest('POST', '/pix/enviar', requestData);
+      // Chamada para endpoint da Bitso conforme guia
+      const response = await this.makeRequest('POST', '/pix/transferencia', requestData);
       
 
 
@@ -497,10 +499,10 @@ export class BitsoProvider extends BaseBankProvider {
         pix_key: dados.chavePix,
         pix_key_type: dados.tipoChave.toUpperCase(),
         reference: `QR-${Date.now()}`,
-        callback_url: import.meta.env.VITE_BITSO_WEBHOOK_URL
+        remittanceInformation: dados.descricao || `QR Code dinâmico - ${dados.valor}`
       };
 
-      const response = await this.makeRequest('POST', '/api/bitso/pix/qr-dinamico', requestData);
+      const response = await this.makeRequest('POST', '/pix/qr-dinamico', requestData);
 
       if (!response.sucesso) {
         return this.createErrorResponse('QR_CODE_FAILED', response.mensagem || 'Erro ao criar QR Code');
@@ -539,10 +541,10 @@ export class BitsoProvider extends BaseBankProvider {
         pix_key: dados.chavePix,
         pix_key_type: dados.tipoChave.toUpperCase(),
         reference: `QR-STATIC-${Date.now()}`,
-        callback_url: import.meta.env.VITE_BITSO_WEBHOOK_URL
+        remittanceInformation: dados.descricao || 'QR Code estático'
       };
 
-      const response = await this.makeRequest('POST', '/api/bitso/pix/qr-estatico', requestData);
+      const response = await this.makeRequest('POST', '/pix/qr-estatico', requestData);
 
       if (!response.sucesso) {
         return this.createErrorResponse('QR_CODE_FAILED', response.mensagem || 'Erro ao criar QR Code');
@@ -628,7 +630,8 @@ export class BitsoProvider extends BaseBankProvider {
   }
 
   /**
-   * Faz requisição para API Bitso
+   * Faz requisição para API Bitso com os 3 headers obrigatórios
+   * ✅ Implementa padrão do guia: X-API-Key, X-API-Secret, Authorization
    */
   protected async makeRequest(method: string, endpoint: string, params?: any): Promise<any> {
     await this.applyRateLimit();
@@ -644,21 +647,32 @@ export class BitsoProvider extends BaseBankProvider {
       body = JSON.stringify(params);
     }
 
+    // ✅ HEADERS BÁSICOS - Backend adiciona credenciais via JWT
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...this.config.customHeaders
+      // Backend adiciona automaticamente: X-API-Key, X-API-Secret baseado no JWT
     };
 
-    this.logger.info(`Requisição Bitso: ${method} ${url}`, params);
+    // ✅ ADICIONAR JWT TOKEN DO USUÁRIO LOGADO
+    const token = this.getJwtToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    this.logger.info(`Requisição Bitso: ${method} ${url}`, { 
+      hasParams: !!params,
+      hasToken: !!token,
+      endpoint 
+    });
 
     try {
-      // ✅ TIMEOUT SIMPLIFICADO: Usar AbortSignal.timeout (mais confiável)
       const response = await fetch(url, {
         method: method.toUpperCase(),
         headers,
         body,
         redirect: 'follow',
-        signal: AbortSignal.timeout(60000) // 60 segundos - suficiente para PIX
+        signal: AbortSignal.timeout(60000) // 60 segundos
       });
 
       if (!response.ok) {
@@ -675,8 +689,6 @@ export class BitsoProvider extends BaseBankProvider {
       return response.json();
       
     } catch (error: any) {
-
-      
       // Tratamento específico para timeout
       if (error.name === 'TimeoutError' || error.name === 'AbortError') {
         const timeoutError = new Error(`Timeout: Requisição para ${url} demorou mais de 60 segundos`);
@@ -686,6 +698,22 @@ export class BitsoProvider extends BaseBankProvider {
       
       // Re-lançar outros erros
       throw error;
+    }
+  }
+
+  /**
+   * Obtém JWT Token do storage (conforme guia)
+   */
+  private getJwtToken(): string | null {
+    try {
+      // Tenta sessionStorage primeiro, depois localStorage
+      return sessionStorage.getItem('jwt_token') || 
+             localStorage.getItem('jwt_token') || 
+             sessionStorage.getItem('auth_token') || 
+             localStorage.getItem('auth_token');
+    } catch (error) {
+      this.logger.warn('Erro ao obter JWT token', error);
+      return null;
     }
   }
 

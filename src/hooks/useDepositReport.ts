@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 
 // Base URL específica para o relatório de depósitos
-const RELATORIO_BASE_URL = import.meta.env.VITE_DIAGNOSTICO_API_URL;
+const RELATORIO_BASE_URL = import.meta.env.X_DIAGNOSTICO_API_URL;
 
 export interface DepositReportFilters {
   whitelabel?: 'EMX' | 'TCR' | 'TODOS';

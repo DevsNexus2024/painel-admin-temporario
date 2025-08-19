@@ -168,7 +168,7 @@ export default function PayQRForm() {
   };
 
   const simulateScanQR = () => {
-    const mockCode = import.meta.env.VITE_PIX_MOCK_QR_CODE;
+    const mockCode = import.meta.env.X_PIX_MOCK_QR_CODE;
     form.setValue('emvCode', mockCode);
     toast.success("QR Code simulado escaneado!");
   };

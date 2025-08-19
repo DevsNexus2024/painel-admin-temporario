@@ -1,4 +1,5 @@
 import { API_CONFIG, buildApiUrl, getApiHeaders } from "@/config/api";
+import { PUBLIC_ENV } from "@/config/env";
 import { logger } from "@/utils/logger";
 
 // ❌ REMOVIDO: import { apiRouter } from "@/pages/payments/apiRouter";
@@ -110,7 +111,7 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
     }, 'ExtratoService');
     
     // ✅ APENAS EM DESENVOLVIMENTO: Filtros completos
-    logger.sensitive('Filtros do extrato', filtros, 'ExtratoService');
+    logger.debug('Filtros do extrato', filtros, 'ExtratoService');
 
     let result: any;
     let endpoint: string;
@@ -136,16 +137,15 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       if (filtros.ate) params.end_date = filtros.ate;
       if (filtros.cursor !== undefined) params.cursor = filtros.cursor.toString();
       
-      // ✅ DADOS TTF PARA BMP-531 VIA UNIFIED BANKING SERVICE
       if (provider === 'bmp-531') {
-        params.agencia = import.meta.env.VITE_BMP_AGENCIA_TTF;
-        params.agencia_digito = import.meta.env.VITE_BMP_AGENCIA_DIGITO_TTF;
-        params.conta = import.meta.env.VITE_BMP_CONTA_TTF;
-        params.conta_digito = import.meta.env.VITE_BMP_CONTA_DIGITO_TTF;
-        params.conta_pgto = import.meta.env.VITE_BMP_CONTA_PGTO_TTF;
-        params.tipo_conta = import.meta.env.VITE_BMP_TIPO_CONTA_TTF;
-        params.modelo_conta = import.meta.env.VITE_BMP_MODELO_CONTA_TTF;
-        params.numero_banco = import.meta.env.VITE_BMP_NUMERO_BANCO_TTF;
+        params.agencia = PUBLIC_ENV.BMP_AGENCIA_TTF || '';
+        params.agencia_digito = PUBLIC_ENV.BMP_AGENCIA_DIGITO_TTF || '';
+        params.conta = PUBLIC_ENV.BMP_CONTA_TTF || '';
+        params.conta_digito = PUBLIC_ENV.BMP_CONTA_DIGITO_TTF || '';
+        params.conta_pgto = PUBLIC_ENV.BMP_CONTA_PGTO_TTF || '';
+        params.tipo_conta = String(PUBLIC_ENV.BMP_TIPO_CONTA_TTF || 1); // Garantir conversão para string
+        params.modelo_conta = String(PUBLIC_ENV.BMP_MODELO_CONTA_TTF || 1); // Garantir conversão para string
+        params.numero_banco = PUBLIC_ENV.BMP_531_BANCO || '';
       }
       
       const queryString = new URLSearchParams(params).toString();
@@ -189,39 +189,35 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       }, 'ExtratoService');
 
     } else if (provider === 'bitso') {
-      // ✅ SEGURO: Log sem expor rotas
-      logger.debug('Configurando rota Bitso', { provider: 'bitso' }, 'ExtratoService');
-      baseUrl = `${API_CONFIG.BASE_URL}/api/bitso`;
-      endpoint = '/pix/extrato';
+      // ✅ USAR NOVO BITSO PROVIDER REFATORADO
+      logger.debug('Usando BitsoProvider refatorado', { provider: 'bitso' }, 'ExtratoService');
       
-      // Preparar parâmetros Bitso - NÃO enviar cursor=0 pois a API não aceita
-      const params: Record<string, string> = {};
-      // Só adicionar cursor se for maior que 0
-      if (filtros.cursor !== undefined && filtros.cursor > 0) {
-        params.cursor = filtros.cursor.toString();
-      }
-      
-      const queryString = new URLSearchParams(params).toString();
-      const fullEndpoint = queryString ? `${endpoint}?${queryString}` : endpoint;
-      const fullUrl = `${baseUrl}${fullEndpoint}`;
-      
-
-      
-      // Chamada direta e isolada para Bitso
-      const response = await fetch(fullUrl, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'baas-frontend/1.0.0'
-          // Bitso usa autenticação HMAC no backend
-        },
-        signal: AbortSignal.timeout(30000)
-      });
-
-      result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(`Bitso API Error ${response.status}: ${result.message || response.statusText}`);
+      try {
+        // Importar novo BitsoApiClient
+        const { bitsoApi } = await import('@/services/banking');
+        
+        // Preparar filtros conforme nova API
+        const filtrosBitso: any = {
+          limit: 50 // Padrão para Bitso
+        };
+        
+        // Só adicionar cursor se tiver valor válido (API Bitso não aceita cursor=0)
+        if (filtros.cursor !== undefined && filtros.cursor > 0) {
+          filtrosBitso.cursor = filtros.cursor.toString();
+        }
+        
+        // ✅ USAR CLIENTE REFATORADO COM HEADERS OBRIGATÓRIOS
+        const response = await bitsoApi.consultarExtrato(filtrosBitso);
+        
+        if (!response.sucesso) {
+          throw new Error(response.mensagem || response.error || 'Erro na API Bitso');
+        }
+        
+        result = response;
+        
+      } catch (error: any) {
+        logger.error('Erro ao consultar extrato Bitso via novo provider', error, 'ExtratoService');
+        throw new Error(`Bitso Provider Error: ${error.message}`);
       }
       
 

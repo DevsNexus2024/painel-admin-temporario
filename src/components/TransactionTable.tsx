@@ -132,7 +132,7 @@ export function TransactionTable({ data, exportData }: TransactionTableProps) {
         toast.info("Solicitando geração do PDF...");
 
         try {
-            const backendUrl = `${import.meta.env.VITE_RECEIPT_API_URL}/api/generate-receipt`;
+            const backendUrl = `${import.meta.env.X_RECEIPT_API_URL}/api/generate-receipt`;
 
             const response = await fetch(backendUrl, {
                 method: 'POST',

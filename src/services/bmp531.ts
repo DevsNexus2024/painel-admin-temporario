@@ -7,6 +7,7 @@
  */
 
 import { API_CONFIG } from "@/config/api";
+import { PUBLIC_ENV } from "@/config/env";
 import { logger } from "@/utils/logger";
 
 // ==================== CONFIGURAÇÕES ====================
@@ -20,17 +21,20 @@ import { logger } from "@/utils/logger";
  * ✅ Inclui API credentials obrigatórias
  */
 function getAuthHeaders() {
+  // ✅ JWT do usuário logado
+  const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
+  
   return {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    'X-API-Key': import.meta.env.VITE_API_KEY_BMP_531_TCR,
-    'X-API-Secret': import.meta.env.VITE_API_SECRET_BMP_531_TCR
+    'Authorization': `Bearer ${token}`
+    // Backend adiciona automaticamente: X-API-Key, X-API-Secret baseado no JWT
   };
 }
 
 const BMP531_CONFIG = {
   // 🌐 URL base da API - vem do .env
-  baseUrl: import.meta.env.VITE_API_BASE_URL,
+  baseUrl: PUBLIC_ENV.API_BASE_URL,
   
   endpoints: {
     // Conta e Saldo
@@ -53,18 +57,18 @@ const BMP531_CONFIG = {
   
   // 🔑 Dados bancários das variáveis de ambiente - TODOS do .env
   dadosBancarios: {
-    agencia: import.meta.env.VITE_BMP_AGENCIA_TTF,
-    agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO_TTF,
-    conta: import.meta.env.VITE_BMP_CONTA_TTF,
-    conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO_TTF,
-    conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO_TTF,
-    tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA_TTF, 10),
-    modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA_TTF, 10),
-    pix_key: import.meta.env.VITE_CHAVE_BMP_531_TTF
+    agencia: PUBLIC_ENV.BMP_AGENCIA_TTF,
+    agencia_digito: PUBLIC_ENV.BMP_AGENCIA_DIGITO_TTF,
+    conta: PUBLIC_ENV.BMP_CONTA_TTF,
+    conta_digito: PUBLIC_ENV.BMP_CONTA_DIGITO_TTF,
+    conta_pgto: PUBLIC_ENV.BMP_CONTA_PGTO_TTF,
+    tipo_conta: PUBLIC_ENV.BMP_TIPO_CONTA_TTF,
+    modelo_conta: PUBLIC_ENV.BMP_MODELO_CONTA_TTF,
+    // pix_key será fornecida pelo usuário ou configuração do backend
   },
   
   // 🔐 Token de autenticação
-  secretToken: import.meta.env.VITE_X_BMP531_SECRET_TOKEN,
+  // secretToken agora é gerenciado pelo backend via JWT
   
   // Timeout padrão para requisições BMP 531
   timeout: 30000, // 30 segundos
@@ -254,13 +258,13 @@ function getDadosBancarios(accountType: 'tcr' | 'ttf' = 'ttf') {
   if (accountType === 'tcr') {
     // Dados da conta TCR - vem do .env
     return {
-      agencia: import.meta.env.VITE_BMP_AGENCIA_TCR,
-      agencia_digito: import.meta.env.VITE_BMP_AGENCIA_DIGITO_TCR,
-      conta: import.meta.env.VITE_BMP_CONTA_TCR,
-      conta_digito: import.meta.env.VITE_BMP_CONTA_DIGITO_TCR,
-      conta_pgto: import.meta.env.VITE_BMP_CONTA_PGTO_TCR,
-      tipo_conta: parseInt(import.meta.env.VITE_BMP_TIPO_CONTA_TCR, 10),
-      modelo_conta: parseInt(import.meta.env.VITE_BMP_MODELO_CONTA_TCR, 10),
+      agencia: PUBLIC_ENV.BMP_AGENCIA_TCR,
+      agencia_digito: PUBLIC_ENV.BMP_AGENCIA_DIGITO_TCR,
+      conta: PUBLIC_ENV.BMP_CONTA_TCR,
+      conta_digito: PUBLIC_ENV.BMP_CONTA_DIGITO_TCR,
+      conta_pgto: PUBLIC_ENV.BMP_CONTA_PGTO_TCR,
+      tipo_conta: PUBLIC_ENV.BMP_TIPO_CONTA_TCR,
+      modelo_conta: PUBLIC_ENV.BMP_MODELO_CONTA_TCR,
     };
   }
   
@@ -277,12 +281,24 @@ async function makeRequest<T>(
 ): Promise<T> {
   const url = `${BMP531_CONFIG.baseUrl}${endpoint}`;
   
+  // ✅ HEADERS BÁSICOS - Backend adiciona credenciais via JWT
+  const defaultHeaders = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+    // Backend adiciona automaticamente: X-API-Key, X-API-Secret baseado no JWT
+  };
+  
+  logger.info(`BMP531 Request: ${options.method || 'GET'} ${endpoint}`, {
+    hasHeaders: !!options.headers,
+    hasAuth: !!(options.headers as any)?.Authorization
+  });
+  
   try {
     const response = await fetch(url, {
       ...options,
       headers: {
-        ...getAuthHeaders(),
-        ...options.headers,
+        ...defaultHeaders,
+        ...options.headers // ✅ Headers específicos têm prioridade (como Authorization)
       },
       signal: AbortSignal.timeout(BMP531_CONFIG.timeout)
     });
@@ -296,6 +312,11 @@ async function makeRequest<T>(
     return data;
     
   } catch (error: any) {
+    logger.error('Erro na requisição BMP531', {
+      endpoint,
+      error: error.message,
+      status: error.response?.status
+    });
     
     if (error.name === 'TimeoutError') {
       throw new Error('Timeout: A requisição demorou muito para responder');
@@ -378,11 +399,19 @@ export async function getBmp531Extrato(filtros?: {
 
 /**
  * 💸 Envia PIX por chave - BMP 531
- * ✅ Conforme documentação: inclui dadosBancarios automaticamente
+ * ✅ Headers obrigatórios: X-API-Key, X-API-Secret, Authorization JWT
  * @param data - Dados do PIX a enviar
  * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'ttf')
  */
 export async function enviarPixBmp531(data: Bmp531PixEnviarRequest, accountType: 'tcr' | 'ttf' = 'ttf'): Promise<Bmp531PixEnviarResponse> {
+  // ✅ Obter token do usuário logado para Authorization header
+  const { TOKEN_STORAGE } = await import('@/config/api');
+  const userToken = TOKEN_STORAGE.get();
+  
+  if (!userToken) {
+    throw new Error('Usuário não autenticado. Faça login para enviar PIX.');
+  }
+  
   // ✅ SEGURO: Log sem dados sensíveis
   logger.info('Iniciando transferência PIX', {
     accountType: accountType.toUpperCase(),
@@ -408,13 +437,14 @@ export async function enviarPixBmp531(data: Bmp531PixEnviarRequest, accountType:
     hasDadosBancarios: !!requestBody.dadosBancarios
   }, 'BMP531Service');
   
-  // ✅ APENAS EM DESENVOLVIMENTO: Dados completos
-  logger.sensitive('PIX request completo', { data, requestBody }, 'BMP531Service');
-  
   return makeRequest<Bmp531PixEnviarResponse>(
     BMP531_CONFIG.endpoints.pixEnviar,
     {
       method: 'POST',
+      headers: {
+        // Backend adiciona automaticamente: X-API-Key, X-API-Secret via JWT
+        'Authorization': `Bearer ${userToken}` // ✅ OBRIGATÓRIO para enviar PIX
+      },
       body: JSON.stringify(requestBody)
     }
   );
@@ -432,15 +462,27 @@ export async function consultarChavePixBmp531(data: Bmp531PixConsultarChaveReque
   }, 'BMP531Service');
   
   // ✅ APENAS EM DESENVOLVIMENTO: Chave completa
-  logger.sensitive('Chave PIX para consulta', { chave: data.chave }, 'BMP531Service');
+  logger.debug('Chave PIX para consulta', { chave: data.chave }, 'BMP531Service');
   
   // ✅ Usar GET com query parameter conforme documentação
   const endpoint = `${BMP531_CONFIG.endpoints.pixConsultarChave}?chave=${encodeURIComponent(data.chave)}`;
   
+  // ✅ Obter token do usuário logado para Authorization header
+  const { TOKEN_STORAGE } = await import('@/config/api');
+  const userToken = TOKEN_STORAGE.get();
+  
+  if (!userToken) {
+    throw new Error('Usuário não autenticado. Faça login para consultar chave PIX.');
+  }
+
   return makeRequest<Bmp531PixConsultarChaveResponse>(
     endpoint,
     {
       method: 'GET',
+      headers: {
+        // Backend adiciona automaticamente: X-API-Key, X-API-Secret via JWT
+        'Authorization': `Bearer ${userToken}` // ✅ OBRIGATÓRIO para consultar chave PIX
+      },
       // ✅ Incluir dados bancários no body mesmo sendo GET (conforme documentação)
       body: JSON.stringify({
         dadosBancarios: getDadosBancarios()
@@ -462,7 +504,7 @@ export async function criarChavePixBmp531(data: Bmp531PixChaveCriarRequest): Pro
   }, 'BMP531Service');
   
   // ✅ APENAS EM DESENVOLVIMENTO: Dados completos
-  logger.sensitive('Criação de chave PIX', data, 'BMP531Service');
+  logger.debug('Criação de chave PIX', data, 'BMP531Service');
   
   // ✅ Incluir dados bancários conforme documentação
   const requestBody = {
@@ -490,30 +532,39 @@ export async function criarChavePixBmp531(data: Bmp531PixChaveCriarRequest): Pro
 
 /**
  * 📝 Lista chaves PIX cadastradas - BMP 531
- * ✅ Conforme documentação: GET com dadosBancarios no body
+ * ✅ DADOS BANCÁRIOS OBRIGATÓRIOS + JWT nos headers
  * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'ttf')
  */
 export async function listarChavesPixBmp531(accountType: 'tcr' | 'ttf' = 'ttf'): Promise<Bmp531PixChavesListarResponse> {
-
+  // ✅ Obter token do usuário logado para Authorization header  
+  const { TOKEN_STORAGE } = await import('@/config/api');
+  const userToken = TOKEN_STORAGE.get();
   
-  // ✅ PADRONIZAR igual ao extrato: Enviar via query parameters
+  if (!userToken) {
+    throw new Error('Usuário não autenticado. Faça login para listar chaves PIX.');
+  }
+  
+  // ✅ DADOS BANCÁRIOS OBRIGATÓRIOS (mas sem pix_key)
   const dadosBancarios = getDadosBancarios(accountType);
   const params = new URLSearchParams();
   
-  // Adicionar dados bancários como query parameters
+  // Adicionar dados bancários como query parameters (EXCETO pix_key)
   Object.entries(dadosBancarios).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value !== undefined && value !== null && key !== 'pix_key') {
       params.append(key, value.toString());
     }
   });
   
   const endpoint = `${BMP531_CONFIG.endpoints.pixChavesListar}?${params.toString()}`;
-
   
   return makeRequest<Bmp531PixChavesListarResponse>(
     endpoint,
     {
-      method: 'GET' // ✅ GET com query parameters igual ao extrato
+      method: 'GET',
+      headers: {
+        // Backend adiciona automaticamente: X-API-Key, X-API-Secret via JWT
+        'Authorization': `Bearer ${userToken}` // ✅ OBRIGATÓRIO para listar chaves PIX
+      }
     }
   );
 }
@@ -541,10 +592,22 @@ export async function pagarQrCodePixBmp531(data: {
   
   // console.log('📱 [BMP531Service] Request body:', requestBody);
   
+  // ✅ Obter token do usuário logado para Authorization header
+  const { TOKEN_STORAGE } = await import('@/config/api');
+  const userToken = TOKEN_STORAGE.get();
+  
+  if (!userToken) {
+    throw new Error('Usuário não autenticado. Faça login para pagar QR Code.');
+  }
+
   return makeRequest<Bmp531PixEnviarResponse>(
     BMP531_CONFIG.endpoints.pixPagarCopiaCola,
     {
       method: 'POST',
+      headers: {
+        // Backend adiciona automaticamente: X-API-Key, X-API-Secret via JWT
+        'Authorization': `Bearer ${userToken}` // ✅ OBRIGATÓRIO para pagar QR Code
+      },
       body: JSON.stringify(requestBody)
     }
   );

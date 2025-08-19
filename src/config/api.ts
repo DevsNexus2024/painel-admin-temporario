@@ -3,8 +3,8 @@ import { logger } from '@/utils/logger';
 
 // 🔧 CONFIGURAÇÃO DE AMBIENTE - Determinada por variáveis de ambiente
 const getCurrentEnvironment = (): 'development' | 'production' => {
-  // Prioridade: VITE_APP_ENVIRONMENT > NODE_ENV > modo do Vite
-  const envVar = import.meta.env.VITE_APP_ENVIRONMENT;
+  // Prioridade: X_APP_ENVIRONMENT > NODE_ENV > modo do Vite
+  const envVar = import.meta.env.X_APP_ENVIRONMENT;
   if (envVar === 'development' || envVar === 'production') {
     return envVar;
   }
@@ -18,15 +18,15 @@ const CURRENT_ENVIRONMENT = getCurrentEnvironment();
 // Função para determinar URL base
 const getBaseUrl = (): string => {
   // Usar variável específica se definida
-  const customUrl = import.meta.env.VITE_API_BASE_URL;
+  const customUrl = import.meta.env.X_API_BASE_URL;
   if (customUrl) {
     return customUrl;
   }
   
   // URLs padrão para cada ambiente
   const defaultUrls = {
-    development: import.meta.env.VITE_API_URL_DEV,
-    production: import.meta.env.VITE_API_URL_PROD
+    development: import.meta.env.X_API_URL_DEV,
+    production: import.meta.env.X_API_URL_PROD
   };
   
   const baseUrl = defaultUrls[CURRENT_ENVIRONMENT];
@@ -43,7 +43,7 @@ const getBaseUrl = (): string => {
 
 // URL específica para APIs de diagnóstico
 const getDiagnosticoUrl = (): string => {
-  return import.meta.env.VITE_DIAGNOSTICO_API_URL;
+  return import.meta.env.X_DIAGNOSTICO_API_URL;
 };
 
 // Configurações da API
@@ -55,7 +55,7 @@ export const API_CONFIG = {
   DIAGNOSTICO_URL: getDiagnosticoUrl(),
   
   // Token de admin para operações especiais (vem do .env)
-  ADMIN_TOKEN: import.meta.env.VITE_ADMIN_TOKEN,
+  ADMIN_TOKEN: import.meta.env.X_ADMIN_TOKEN,
   
   // Endpoints
   ENDPOINTS: {
@@ -99,23 +99,23 @@ export const API_CONFIG = {
   // Headers padrão
   DEFAULT_HEADERS: {
     'Content-Type': 'application/json',
-    'User-Agent': import.meta.env.VITE_APP_USER_AGENT
+    'User-Agent': import.meta.env.X_APP_USER_AGENT
   },
   
   // Timeouts (em milissegundos)
-  TIMEOUT: parseInt(import.meta.env.VITE_API_TIMEOUT, 10),
+  TIMEOUT: parseInt(import.meta.env.X_API_TIMEOUT, 10),
   
   // Configurações de retry
   RETRY: {
-    attempts: parseInt(import.meta.env.VITE_API_RETRY_ATTEMPTS, 10),
-    delay: parseInt(import.meta.env.VITE_API_RETRY_DELAY, 10)
+    attempts: parseInt(import.meta.env.X_API_RETRY_ATTEMPTS, 10),
+    delay: parseInt(import.meta.env.X_API_RETRY_DELAY, 10)
   },
   
   // Configurações de segurança
   SECURITY: {
-    enableJwtValidation: import.meta.env.VITE_ENABLE_JWT_VALIDATION !== 'false',
-    enableRateLimitTracking: import.meta.env.VITE_ENABLE_RATE_LIMIT_TRACKING !== 'false',
-    enableSecurityLogs: import.meta.env.VITE_ENABLE_SECURITY_LOGS === 'true'
+    enableJwtValidation: import.meta.env.X_ENABLE_JWT_VALIDATION !== 'false',
+    enableRateLimitTracking: import.meta.env.X_ENABLE_RATE_LIMIT_TRACKING !== 'false',
+    enableSecurityLogs: import.meta.env.X_ENABLE_SECURITY_LOGS === 'true'
   }
 };
 
@@ -129,11 +129,11 @@ const STORAGE_KEYS = {
 // Login timeout configuration
 export const LOGIN_TIMEOUT_CONFIG = {
   // Tempo de inatividade em minutos antes do logout automático
-  TIMEOUT_MINUTES: parseInt(import.meta.env.VITE_LOGIN_TIMEOUT_MINUTES, 10),
+  TIMEOUT_MINUTES: parseInt(import.meta.env.X_LOGIN_TIMEOUT_MINUTES, 10),
   // Intervalo de verificação em milissegundos
-  CHECK_INTERVAL_MS: parseInt(import.meta.env.VITE_LOGIN_CHECK_INTERVAL_MS, 10),
+  CHECK_INTERVAL_MS: parseInt(import.meta.env.X_LOGIN_CHECK_INTERVAL_MS, 10),
   // Tempo de aviso antes do logout (em minutos)
-  WARNING_MINUTES: parseInt(import.meta.env.VITE_LOGIN_WARNING_MINUTES, 10),
+  WARNING_MINUTES: parseInt(import.meta.env.X_LOGIN_WARNING_MINUTES, 10),
   // Eventos que contam como atividade do usuário
   ACTIVITY_EVENTS: ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'] as const
 };
@@ -144,7 +144,7 @@ export const TOKEN_STORAGE = {
     try {
       return localStorage.getItem(STORAGE_KEYS.TOKEN);
     } catch (error) {
-      console.error('Erro ao recuperar token:', error);
+      // Log seguro - erro ao recuperar token (dados não expostos)
       return null;
     }
   },
@@ -153,7 +153,7 @@ export const TOKEN_STORAGE = {
     try {
       localStorage.setItem(STORAGE_KEYS.TOKEN, token);
     } catch (error) {
-      console.error('Erro ao salvar token:', error);
+      // Log seguro - erro ao salvar token (dados não expostos)
     }
   },
   
@@ -161,7 +161,7 @@ export const TOKEN_STORAGE = {
     try {
       localStorage.removeItem(STORAGE_KEYS.TOKEN);
     } catch (error) {
-      console.error('Erro ao remover token:', error);
+      // Log seguro - erro ao remover token (dados não expostos)
     }
   }
 };

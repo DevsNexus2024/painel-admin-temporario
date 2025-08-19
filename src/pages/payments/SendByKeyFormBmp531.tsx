@@ -81,7 +81,7 @@ export default function SendByKeyFormBmp531() {
           duration: 3000
         });
       } else {
-        console.log("⚠️ [SendByKeyFormBmp531] Chave PIX não encontrada ou inválida");
+        // Chave PIX não encontrada - log removido por segurança
         setKeyConsultData(null);
         
         toast.warning("Chave PIX não encontrada", {
@@ -129,7 +129,7 @@ export default function SendByKeyFormBmp531() {
         descricao: data.description || "Transferência PIX"
       };
 
-      console.log("💸 [SendByKeyFormBmp531] Enviando PIX BMP 531:", requestData);
+      // Enviando PIX BMP 531 - dados omitidos por segurança
 
       // ✅ Usar serviço centralizado BMP 531
       const result = await Bmp531Service.enviarPix(requestData);
@@ -137,7 +137,7 @@ export default function SendByKeyFormBmp531() {
       setApiResponse(result);
 
       if (result.sucesso) {
-        console.log("✅ [SendByKeyFormBmp531] PIX enviado com sucesso:", result);
+        // PIX enviado com sucesso - dados omitidos por segurança
         
         toast.success("PIX enviado com sucesso!", {
           description: "Verifique os detalhes abaixo",
@@ -147,7 +147,7 @@ export default function SendByKeyFormBmp531() {
         form.reset();
         setKeyConsultData(null);
       } else {
-        console.error("❌ [SendByKeyFormBmp531] Falha ao enviar PIX:", result);
+        // Falha ao enviar PIX - dados omitidos por segurança
         
         toast.error("Falha ao enviar PIX", {
           description: result.mensagem || "Erro desconhecido",
@@ -156,7 +156,7 @@ export default function SendByKeyFormBmp531() {
         });
       }
     } catch (error) {
-      console.error("❌ [SendByKeyFormBmp531] Erro ao enviar PIX:", error);
+      // Erro ao enviar PIX - dados omitidos por segurança
       
       const errorMessage = error instanceof Error ? error.message : "Erro inesperado";
       

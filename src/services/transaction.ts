@@ -8,7 +8,7 @@ export const fetchTransactions = async (
     limit: number = 50000
 ): Promise<TransactionsResponse> => {
     try {
-        const url = `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/api/b8cash/consultarTransacoes?accountNumber=${accountNumber}&startDate=${startDate}&endDate=${endDate}&order=${order}&limit=${limit}`;
+        const url = `${import.meta.env.X_DIAGNOSTICO_API_URL}/api/b8cash/consultarTransacoes?accountNumber=${accountNumber}&startDate=${startDate}&endDate=${endDate}&order=${order}&limit=${limit}`;
 
         const response = await fetch(url, {
             method: 'GET',

@@ -4,13 +4,13 @@ import { TcrResponse, ExternalDeposit } from "../types/deposit";
 export const fetchTcrDeposits = async (email: string): Promise<TcrResponse> => {
   try {
     const response = await fetch(
-      `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/admin/depositos/email/usuario/${email}?por_pagina=600`,
+      `${import.meta.env.X_DIAGNOSTICO_API_URL}/admin/depositos/email/usuario/${email}?por_pagina=600`,
       {
         method: 'GET',
         headers: {
-          'User-Agent': import.meta.env.VITE_API_USER_AGENT,
-          'Token-Cryp-Access': import.meta.env.VITE_TOKEN_CRYP_ACCESS,
-          'Token-Whitelabel': import.meta.env.VITE_TOKEN_WHITELABEL
+          'User-Agent': import.meta.env.X_API_USER_AGENT,
+          'Token-Cryp-Access': import.meta.env.X_TOKEN_CRYP_ACCESS,
+          'Token-Whitelabel': import.meta.env.X_TOKEN_WHITELABEL
         }
       }
     );
@@ -29,13 +29,13 @@ export const fetchTcrDeposits = async (email: string): Promise<TcrResponse> => {
 export const fetchExternalDeposits = async (email: string): Promise<ExternalDeposit[]> => {
   try {
     const response = await fetch(
-      `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/admin/depositos/bb/usuario/${email}`,
+      `${import.meta.env.X_DIAGNOSTICO_API_URL}/admin/depositos/bb/usuario/${email}`,
       {
         method: 'GET',
         headers: {
-          'User-Agent': import.meta.env.VITE_API_USER_AGENT,
-          'Token-Cryp-Access': import.meta.env.VITE_TOKEN_CRYP_ACCESS,
-          'Token-Whitelabel': import.meta.env.VITE_TOKEN_WHITELABEL
+          'User-Agent': import.meta.env.X_API_USER_AGENT,
+          'Token-Cryp-Access': import.meta.env.X_TOKEN_CRYP_ACCESS,
+          'Token-Whitelabel': import.meta.env.X_TOKEN_WHITELABEL
         }
       }
     );
@@ -65,14 +65,14 @@ export const processManualDeposit = async (deposit: ExternalDeposit, customId: s
     };
     
     const response = await fetch(
-      `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/admin/depositos/processar-manual`,
+      `${import.meta.env.X_DIAGNOSTICO_API_URL}/admin/depositos/processar-manual`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': import.meta.env.VITE_API_USER_AGENT,
-          'Token-Cryp-Access': import.meta.env.VITE_TOKEN_CRYP_ACCESS,
-          'Token-Whitelabel': import.meta.env.VITE_TOKEN_WHITELABEL
+          'User-Agent': import.meta.env.X_API_USER_AGENT,
+          'Token-Cryp-Access': import.meta.env.X_TOKEN_CRYP_ACCESS,
+          'Token-Whitelabel': import.meta.env.X_TOKEN_WHITELABEL
         },
         body: JSON.stringify(depositWithCustomId)
       }

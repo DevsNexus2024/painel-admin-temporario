@@ -293,15 +293,14 @@ export abstract class BaseBankProvider implements IBankProvider {
     body?: any,
     additionalHeaders?: Record<string, string>
   ): Promise<any> {
-    const baseUrl = this.config.apiUrl || import.meta.env.VITE_API_BASE_URL;
+    const baseUrl = this.config.apiUrl || import.meta.env.X_API_BASE_URL;
     const url = `${baseUrl}${endpoint}`;
 
     // ✅ Headers com API credentials para BMP
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'X-API-Key': import.meta.env.VITE_API_KEY_BMP_TCR,
-      'X-API-Secret': import.meta.env.VITE_API_SECRET_BMP_TCR,
+      // Backend adiciona automaticamente: X-API-Key, X-API-Secret via JWT
       ...additionalHeaders
     };
 

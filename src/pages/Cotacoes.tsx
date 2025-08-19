@@ -59,7 +59,7 @@ const getExchangeLogo = (exchangeName: string): string => {
 };
 
 // API Externa direta (sem proxy) - OTIMIZADO!
-const API_BASE_URL = `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/trades/usuario`;
+const API_BASE_URL = `${import.meta.env.X_DIAGNOSTICO_API_URL}/trades/usuario`;
 
 // Função para buscar cotação otimizada
 const fetchCotacao = async (crypto: string, amount: number): Promise<ApiResponse> => {

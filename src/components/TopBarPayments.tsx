@@ -25,8 +25,6 @@ export default function TopBarPayments() {
   const handleRefresh = async () => {
     if (!currentAccount) return;
     
-    console.log("Atualizando saldo da conta:", currentAccount.displayName);
-    
     // Invalidar cache do saldo para forçar nova consulta
     queryClient.invalidateQueries({ queryKey: ['saldo-unified'] });
     
@@ -37,43 +35,39 @@ export default function TopBarPayments() {
   };
 
   const handleAccountChange = (account: Account) => {
-
+    // 1. Trocar no sistema unificado
+    const unifiedSuccess = unifiedBankingService.setActiveAccount(account.id);
     
-    // 🚨 USAR NOVA ARQUITETURA EXCLUSIVAMENTE
-    const success = unifiedBankingService.setActiveAccount(account.id);
-    
-    if (!success) {
-      console.error("❌ [TopBarPayments] Falha ao trocar conta na nova arquitetura!");
+    if (!unifiedSuccess) {
       toast.error("Erro ao trocar conta", {
-        description: "Falha na nova arquitetura bancária",
+        description: "Falha na arquitetura bancária",
         duration: 3000
       });
       return;
     }
     
-
+    // 2. Sincronizar com sistema legado (apiRouter) para manter compatibilidade
+    const apiRouter = (window as any).apiRouter;
+    if (apiRouter && apiRouter.switchToAccount) {
+      apiRouter.switchToAccount(account.id);
+    }
     
-    // ✅ REMOVIDO: Sistema legado não é mais necessário
-    
+    // 3. Atualizar estado local
     setCurrentAccount(account);
     
-    // INVALIDAR TODO O CACHE para evitar contaminação
-
-    queryClient.clear(); // Limpar tudo
+    // 4. Limpar cache para evitar dados da conta anterior
+    queryClient.clear();
     
-    // Salvar conta ativa
+    // 5. Salvar conta ativa no localStorage
     localStorage.setItem('selected_account_id', account.id);
     
+    // 6. Feedback para usuário
     toast.success("Conta alterada!", {
-      description: `Agora usando: ${account.displayName} (${account.provider.toUpperCase()}) via NOVA ARQUITETURA`,
+      description: `Agora usando: ${account.displayName} (${account.provider.toUpperCase()})`,
       duration: 3000
     });
     
-    // Log da nova arquitetura
-    const activeAccount = unifiedBankingService.getActiveAccount();
-
-    
-    // ✅ CORRIGIDO: Invalidar cache para recarregar saldo da nova conta
+    // 7. Forçar recarregamento do saldo da nova conta
     queryClient.invalidateQueries({ queryKey: ['saldo-unified'] });
   };
 
@@ -81,26 +75,52 @@ export default function TopBarPayments() {
 
   // ✅ CORRIGIDO: Usar sistema unificado para gerenciar conta ativa
   useEffect(() => {
-    // Inicializar sistema bancário unificado
     const initializeAccount = async () => {
       try {
+        // 1. Inicializar sistema unificado
         await unifiedBankingService.initialize();
         
-        // Verificar se há conta salva no localStorage
+        // 2. Verificar se há conta salva no localStorage e tentar restaurar
         const savedAccountId = localStorage.getItem('selected_account_id');
-        if (savedAccountId && switchAccount(savedAccountId)) {
-
+        if (savedAccountId) {
+          const restoreSuccess = unifiedBankingService.setActiveAccount(savedAccountId);
+          if (!restoreSuccess) {
+            localStorage.removeItem('selected_account_id');
+          }
         }
         
-        // Obter conta ativa atual do apiRouter
+        // 3. Sincronizar estado com apiRouter
         const apiRouter = (window as any).apiRouter;
         if (apiRouter) {
+          // Se não tem conta salva, pegar do apiRouter
+          if (!savedAccountId) {
+            const legacyAccount = apiRouter.getCurrentAccount();
+            if (legacyAccount) {
+              unifiedBankingService.setActiveAccount(legacyAccount.id);
+            }
+          } else {
+            // Se tem conta salva, sincronizar apiRouter
+            apiRouter.switchToAccount(savedAccountId);
+          }
+          
+          // Atualizar estado local
           const activeAccount = apiRouter.getCurrentAccount();
           setCurrentAccount(activeAccount);
         }
         
+        // 4. Fallback: se não tem conta ativa, usar primeira disponível
+        const unifiedActiveAccount = unifiedBankingService.getActiveAccount();
+        if (!unifiedActiveAccount) {
+          const availableAccounts = unifiedBankingService.getAvailableAccounts();
+          if (availableAccounts.length > 0) {
+            const firstAccount = availableAccounts[0];
+            unifiedBankingService.setActiveAccount(firstAccount.id);
+            localStorage.setItem('selected_account_id', firstAccount.id);
+          }
+        }
+        
       } catch (error) {
-        console.error('❌ Erro ao inicializar sistema bancário:', error);
+        // Error handled silently in production
       }
     };
 
@@ -108,8 +128,6 @@ export default function TopBarPayments() {
   }, []);
 
   const getSaldoDisplay = () => {
-    // ✅ Remover logs de debug que causavam loop infinito
-    
     if (isLoadingSaldo) {
       return (
         <div className="flex items-center gap-2">

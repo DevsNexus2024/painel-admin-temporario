@@ -1,7 +1,7 @@
 import { createApiRequest, API_CONFIG } from '@/config/api';
 
 // Base URL específica para o Bot de Cotação
-const BOT_COTACAO_BASE_URL = import.meta.env.VITE_DIAGNOSTICO_API_URL;
+const BOT_COTACAO_BASE_URL = import.meta.env.X_DIAGNOSTICO_API_URL;
 import {
   OtcUser,
   OtcUserGroup,

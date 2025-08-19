@@ -93,7 +93,7 @@ export default function ExtratoTcr() {
         setIsLoadingSaldo(true);
         setSaldoApi(null);
         try {
-            const response = await fetch(`${import.meta.env.VITE_DIAGNOSTICO_API_URL}/api/b8cash/consultarSaldo?accountNumber=${values.accountNumber}`, {
+            const response = await fetch(`${import.meta.env.X_DIAGNOSTICO_API_URL}/api/b8cash/consultarSaldo?accountNumber=${values.accountNumber}`, {
                 headers: {
                     'x-api-enterprise': 'tcr'
                 }

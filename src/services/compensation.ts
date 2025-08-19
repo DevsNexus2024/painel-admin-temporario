@@ -30,8 +30,8 @@ export interface CompensationResponse {
  * Serviço para consumir API de compensação de depósitos e movimentações
  */
 export class CompensationService {
-  private static readonly API_URL = `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/compensa_depositos_movimentacoes`;
-  private static readonly AUTH_HEADER = import.meta.env.VITE_ADMIN_TOKEN;
+  private static readonly API_URL = `${import.meta.env.X_DIAGNOSTICO_API_URL}/compensa_depositos_movimentacoes`;
+  private static readonly AUTH_HEADER = import.meta.env.X_CONSULTA_DADOS;
 
   /**
    * Criar compensação de depósito

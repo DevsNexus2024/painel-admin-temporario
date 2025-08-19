@@ -28,6 +28,21 @@ export class BmpProvider extends BaseBankProvider {
   
   private readonly baseUrl: string;
 
+  /**
+   * Obtém JWT Token do storage (conforme padrão)
+   */
+  private getJwtToken(): string | null {
+    try {
+      return sessionStorage.getItem('jwt_token') || 
+             localStorage.getItem('jwt_token') || 
+             sessionStorage.getItem('auth_token') || 
+             localStorage.getItem('auth_token');
+    } catch (error) {
+      this.logger.warn('Erro ao obter JWT token', error);
+      return null;
+    }
+  }
+
   constructor(config: BankConfig) {
     super(config);
     this.baseUrl = config.apiUrl;
@@ -204,7 +219,7 @@ export class BmpProvider extends BaseBankProvider {
   /**
    * Faz requisição para API BMP
    */
-  private async makeRequest(method: string, endpoint: string, params?: any): Promise<any> {
+  protected async makeRequest(method: string, endpoint: string, params?: any): Promise<any> {
     await this.applyRateLimit();
 
     let url = `${this.baseUrl}${endpoint}`;
@@ -218,13 +233,15 @@ export class BmpProvider extends BaseBankProvider {
       body = JSON.stringify(params);
     }
 
+    // ✅ HEADERS MÍNIMOS - Backend adiciona credenciais via JWT
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...this.config.customHeaders
+      // Backend adiciona automaticamente: X-API-Key, X-API-Secret, etc.
     };
 
-    // Adicionar token de autenticação se disponível
-    const token = localStorage.getItem('auth_token');
+    // ✅ ADICIONAR JWT TOKEN DO USUÁRIO LOGADO
+    const token = this.getJwtToken();
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -308,8 +325,7 @@ export class BmpProvider extends BaseBankProvider {
         description: `PIX para ${pixData.key}: ${pixData.description || 'Transferência PIX'}`,
         date: new Date().toISOString(),
         counterparty: {
-          account: pixData.key,
-          keyType: pixData.keyType
+          account: pixData.key
         },
         metadata: {
           pixKey: pixData.key,
@@ -338,10 +354,13 @@ export class BmpProvider extends BaseBankProvider {
    */
   async getPixKeys(accountId?: string): Promise<BankResponse<any[]>> {
     try {
-
       this.logger.info('Listando chaves PIX via BMP', { accountId });
 
-      const response = await this.makeRequest('GET', '/internal/pix/chaves/listar');
+      // ✅ JWT é adicionado automaticamente no makeRequest
+      const response = await this.makeRequest(
+        'GET', 
+        '/internal/pix/chaves/listar'
+      );
 
       // BMP retorna as chaves no formato já adequado
       const chaves = response.chaves || [];

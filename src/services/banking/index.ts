@@ -139,6 +139,9 @@ export { BaseBankProvider } from './BaseBankProvider';
 export { BmpProvider } from './providers/BmpProvider';
 export { BitsoProvider } from './providers/BitsoProvider';
 
+// ✅ NOVO CLIENTE API BITSO
+export { BitsoApiClient, bitsoApi } from './BitsoApiClient';
+
 // ===============================
 // UTILITÁRIOS
 // ===============================

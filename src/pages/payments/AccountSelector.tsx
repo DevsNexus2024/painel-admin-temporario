@@ -23,7 +23,7 @@ export function AccountSelector({ onAccountChange }: AccountSelectorProps) {
   const [currentAccount, setCurrentAccount] = useState<Account>(apiRouter.getCurrentAccount());
 
   const handleAccountSwitch = (accountId: string) => {
-    const success = apiRouter.switchAccount(accountId);
+    const success = apiRouter.switchToAccount(accountId);
     if (success) {
       const newAccount = apiRouter.getCurrentAccount();
       setCurrentAccount(newAccount);

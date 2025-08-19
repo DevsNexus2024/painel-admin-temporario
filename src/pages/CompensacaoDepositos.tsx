@@ -68,6 +68,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from 'date-fns/locale';
+import { PUBLIC_ENV } from '@/config/env';
+import { TOKEN_STORAGE } from '@/config/api';
 
 // Tipos que representam o modelo de dados da API
 interface ApiDeposito {
@@ -205,10 +207,10 @@ const toastStyles = {
 
 // Função de serviço para buscar dados da API - Modificada para aceitar datas opcionais
 async function buscarDepositosComErro(startDate?: string, endDate?: string): Promise<Deposito[]> {
-    const API_URL = `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/depositos/consultar-erros`;
-    const ACCOUNT_NUMBER = import.meta.env.VITE_ACCOUNT_NUMBER_B8_TCR;
-    const SECRET_HEADER = import.meta.env.VITE_EXTERNAL_API_KEY;
-    const ENTERPRISE_HEADER = 'tcr';
+    const API_URL = `${PUBLIC_ENV.DIAGNOSTICO_API_URL}/depositos/consultar-erros`;
+    const ACCOUNT_NUMBER = PUBLIC_ENV.ACCOUNT_NUMBER_B8_TCR;
+    // ✅ Credenciais agora são gerenciadas pelo backend via JWT
+    const USER_TOKEN = TOKEN_STORAGE.get(); // Token do usuário logado
 
     const url = new URL(API_URL);
     url.searchParams.append('accountNumber', ACCOUNT_NUMBER);
@@ -226,8 +228,10 @@ async function buscarDepositosComErro(startDate?: string, endDate?: string): Pro
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
-                'x-secret-admin-hd': SECRET_HEADER,
-                'x-api-enterprise': ENTERPRISE_HEADER,
+                'x-api-enterprise': 'tcr',
+                'Authorization': `Bearer ${USER_TOKEN}`,
+                // Backend adiciona automaticamente: x-secret-admin-hd, Token-Cryp-Access, Token-Whitelabel
+                'User-Agent': PUBLIC_ENV.APP_USER_AGENT
             },
         });
 
@@ -1378,8 +1382,9 @@ export default function CompensacaoDepositos() {
 
         setReprocessando(true);
 
-        const API_URL = `${import.meta.env.VITE_DIAGNOSTICO_API_URL}/depositos/compensar`;
-        const SECRET_HEADER = import.meta.env.VITE_EXTERNAL_API_KEY;
+        const API_URL = `${PUBLIC_ENV.DIAGNOSTICO_API_URL}/depositos/compensar`;
+        // ✅ Credenciais agora são gerenciadas pelo backend via JWT
+        const USER_TOKEN = TOKEN_STORAGE.get(); // Token do usuário logado
 
         try {
             const depositoIdNum = parseInt(depositoId, 10);
@@ -1391,7 +1396,10 @@ export default function CompensacaoDepositos() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-secret-admin-hd': SECRET_HEADER,
+                    'x-api-enterprise': 'tcr',
+                    'Authorization': `Bearer ${USER_TOKEN}`,
+                    // Backend adiciona automaticamente: x-secret-admin-hd, Token-Cryp-Access, Token-Whitelabel
+                    'User-Agent': PUBLIC_ENV.APP_USER_AGENT
                 },
                 body: JSON.stringify({ id_deposito: depositoIdNum })
             });
@@ -1546,7 +1554,7 @@ export default function CompensacaoDepositos() {
 
 
             // ✅ VERSÃO SUPER SIMPLES - SEM HEADERS ESPECIAIS
-            const response = await fetch(`${import.meta.env.VITE_DIAGNOSTICO_API_URL}/api/externos/depositos/atualizar`, {
+            const response = await fetch(`${PUBLIC_ENV.DIAGNOSTICO_API_URL}/api/externos/depositos/atualizar`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

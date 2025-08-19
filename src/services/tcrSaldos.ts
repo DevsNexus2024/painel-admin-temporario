@@ -1,7 +1,7 @@
 import { toast } from "sonner";
 
-const BASE_URL = import.meta.env.VITE_DIAGNOSTICO_API_URL;
-const AUTH_HEADER = import.meta.env.VITE_ADMIN_TOKEN;
+const BASE_URL = import.meta.env.X_DIAGNOSTICO_API_URL;
+const AUTH_HEADER = import.meta.env.X_ADMIN_TOKEN;
 
 export interface UsuarioSaldo {
   id_usuario: number;

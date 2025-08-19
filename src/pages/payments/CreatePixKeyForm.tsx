@@ -51,7 +51,7 @@ export default function CreatePixKeyForm() {
         const account = (window as any).apiRouter?.getCurrentAccount?.();
         setCurrentAccount(account);
       } catch (error) {
-        console.log('ApiRouter não disponível');
+        // ApiRouter não disponível
       }
     };
     
@@ -130,11 +130,11 @@ export default function CreatePixKeyForm() {
       
       if (isBmp531TTF) {
         // ✅ ISOLAMENTO: BMP 531 TTF via Bmp531Service
-        console.log('🔑 [CreatePixKey] Usando Bmp531Service para TTF');
+        // Usando Bmp531Service para TTF
         response = await Bmp531Service.criarChave(requestData);
       } else {
         // ✅ ISOLAMENTO: Outras contas via criarChavePix
-        console.log('🔑 [CreatePixKey] Usando criarChavePix para BMP 274/Bitso');
+        // Usando criarChavePix para BMP 274/Bitso
         response = await criarChavePix(requestData);
       }
       

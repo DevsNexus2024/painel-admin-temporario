@@ -56,17 +56,17 @@ const BANK_REGISTRY: Record<BankProvider, BankSettings> = {
     environments: {
       development: {
         name: 'development',
-        apiUrl: import.meta.env.VITE_BMP_API_URL_DEV || import.meta.env.VITE_API_URL_DEV,
+        apiUrl: import.meta.env.X_BMP_API_URL_DEV || import.meta.env.X_API_URL_DEV,
         timeout: 30000
       },
       staging: {
         name: 'staging',
-        apiUrl: import.meta.env.VITE_BMP_API_URL_STAGING || import.meta.env.VITE_API_BASE_URL,
+        apiUrl: import.meta.env.X_BMP_API_URL_STAGING || import.meta.env.X_API_BASE_URL,
         timeout: 20000
       },
       production: {
         name: 'production',
-        apiUrl: import.meta.env.VITE_BMP_API_URL_PROD || import.meta.env.VITE_API_BASE_URL,
+        apiUrl: import.meta.env.X_BMP_API_URL_PROD || import.meta.env.X_API_BASE_URL,
         timeout: 15000
       }
     },
@@ -103,17 +103,17 @@ const BANK_REGISTRY: Record<BankProvider, BankSettings> = {
     environments: {
       development: {
         name: 'development',
-        apiUrl: import.meta.env.VITE_BITSO_API_URL_DEV || `${import.meta.env.VITE_API_URL_DEV}/api/bitso`,
+        apiUrl: import.meta.env.X_BITSO_API_URL_DEV || `${import.meta.env.X_API_URL_DEV}/api/bitso`,
         timeout: 30000
       },
       staging: {
         name: 'staging',
-        apiUrl: import.meta.env.VITE_BITSO_API_URL_STAGING || `${import.meta.env.VITE_API_BASE_URL}/api/bitso`,
+        apiUrl: import.meta.env.X_BITSO_API_URL_STAGING || `${import.meta.env.X_API_BASE_URL}/api/bitso`,
         timeout: 20000
       },
       production: {
         name: 'production',
-        apiUrl: import.meta.env.VITE_BITSO_API_URL_STAGING || `${import.meta.env.VITE_API_BASE_URL}/api/bitso`,
+        apiUrl: import.meta.env.X_BITSO_API_URL_STAGING || `${import.meta.env.X_API_BASE_URL}/api/bitso`,
         timeout: 15000
       }
     },
@@ -148,17 +148,17 @@ const BANK_REGISTRY: Record<BankProvider, BankSettings> = {
     environments: {
       development: {
         name: 'development',
-        apiUrl: import.meta.env.VITE_BMP_531_API_URL_DEV || import.meta.env.VITE_API_URL_DEV,
+        apiUrl: import.meta.env.X_BMP_531_API_URL_DEV || import.meta.env.X_API_URL_DEV,
         timeout: 30000
       },
       staging: {
         name: 'staging',
-        apiUrl: import.meta.env.VITE_BMP_531_API_URL_STAGING || import.meta.env.VITE_API_BASE_URL,
+        apiUrl: import.meta.env.X_BMP_531_API_URL_STAGING || import.meta.env.X_API_BASE_URL,
         timeout: 20000
       },
       production: {
         name: 'production',
-        apiUrl: import.meta.env.VITE_BMP_531_API_URL_PROD || import.meta.env.VITE_API_BASE_URL,
+        apiUrl: import.meta.env.X_BMP_531_API_URL_PROD || import.meta.env.X_API_BASE_URL,
         timeout: 15000
       }
     },

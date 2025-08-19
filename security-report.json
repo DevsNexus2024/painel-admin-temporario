@@ -1,0 +1,148 @@
+{
+  "timestamp": "2025-08-15T13:35:48.956Z",
+  "buildDir": "./dist",
+  "totalFiles": 25,
+  "totalVulnerabilities": 1,
+  "totalWarnings": 0,
+  "details": [
+    {
+      "file": "dist\\.htaccess",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\assets\\index.CPvj_-Ox.css",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\assets\\InterVariable-Italic.d6KXgdvN.woff2",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\assets\\InterVariable.CWi-zmRD.woff2",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\assets\\primeicons.C6QP2o4f.woff2",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\assets\\primeicons.DMOk5skT.eot",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\assets\\primeicons.Dr5RGzOO.svg",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\assets\\primeicons.MpK4pl85.ttf",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\assets\\primeicons.WjwUDZjB.woff",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\binance-logo.png",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\favicon-tcr.png",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\foxbit-logo.png",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\image.png",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\index.html",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\js\\api.KJ5iRlGz.js",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\js\\banking.BiCXw0bJ.js",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\js\\html2canvas.esm.BC9261U0.js",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\js\\index.BCw3GpSr.js",
+      "vulnerabilities": [
+        {
+          "category": "HEADERS",
+          "pattern": "/\"x-secret-admin-hd\":\\s*\"[^*][^\"]*\"/gi",
+          "matches": [
+            "\"x-secret-admin-hd\":\"hidden\"",
+            "\"x-secret-admin-hd\":\"hidden\""
+          ],
+          "count": 2,
+          "file": "dist\\js\\index.BCw3GpSr.js"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "file": "dist\\js\\index.es.Bey1w8hz.js",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\js\\purify.es.CSkeBGaS.js",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\js\\ui.BbYwttQc.js",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\js\\vendor.JByOm2NR.js",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\placeholder.svg",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\robots.txt",
+      "vulnerabilities": [],
+      "warnings": []
+    },
+    {
+      "file": "dist\\smartpay-logo.png",
+      "vulnerabilities": [],
+      "warnings": []
+    }
+  ],
+  "summary": {
+    "HEADERS": 1
+  }
+}
