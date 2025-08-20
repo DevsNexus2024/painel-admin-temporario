@@ -230,6 +230,7 @@ async function buscarDepositosComErro(startDate?: string, endDate?: string): Pro
                 'Content-Type': 'application/json',
                 'x-api-enterprise': 'tcr',
                 'Authorization': `Bearer ${USER_TOKEN}`,
+                'xPassRouteTCR': 'ISRVdeWTZ5jYFKJQytjH9ZylF1ZrwhTdrrdKY4uFqXm041XIL3aVjCwojSH1EeYbUOQjPx0aO',
                 // Backend adiciona automaticamente: x-secret-admin-hd, Token-Cryp-Access, Token-Whitelabel
                 'User-Agent': PUBLIC_ENV.APP_USER_AGENT
             },

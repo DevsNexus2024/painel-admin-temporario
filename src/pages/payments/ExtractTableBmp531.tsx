@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign } from "lucide-react";
+import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { validarIntervaloData, formatarDataParaAPI, type MovimentoExtrato, type ExtratoResponse } from "@/services/extrato";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
+import DuplicataManagerModal from "@/components/DuplicataManagerModal";
 import { Bmp531Service, type Bmp531ExtratoResponse, type Bmp531Movimento } from "@/services/bmp531";
 
 // Tipo para os filtros
@@ -54,9 +55,15 @@ export default function ExtractTableBmp531() {
   // ✅ NOVO: Filtro de tipo de transação
   const [transactionTypeFilter, setTransactionTypeFilter] = useState<"todos" | "debito" | "credito">("todos");
 
+  // Filtro de débitos duplicados removido
+
   // Estados para modal de compensação (BMP-531)
   const [compensationModalOpen, setCompensationModalOpen] = useState(false);
   const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<MovimentoExtrato | null>(null);
+
+  // ✅ NOVO: Estados para modal de duplicatas
+  const [duplicataModalOpen, setDuplicataModalOpen] = useState(false);
+  const [selectedDuplicataTransaction, setSelectedDuplicataTransaction] = useState<MovimentoExtrato | null>(null);
 
   // ✅ Função para converter Bmp531Movimento usando LÓGICA EXATA do gerenciador BMP-531
   const convertBmp531ToMovimentoExtrato = (movimento: Bmp531Movimento): MovimentoExtrato => {
@@ -283,9 +290,14 @@ export default function ExtractTableBmp531() {
     return transactions.map(convertBmp531ToMovimentoExtrato);
   }, [transactions]);
 
+  // Lógica de duplicatas removida
+
   // Lógica de filtros e ordenação (com filtro de tipo e data no frontend)
   const filteredAndSortedTransactions = useMemo(() => {
-    let filtered = convertedTransactions.filter((transaction) => {
+    let filtered = convertedTransactions;
+
+    // Aplicar filtros
+    filtered = filtered.filter((transaction) => {
       const matchesName = !searchName || 
         transaction.client?.toLowerCase().includes(searchName.toLowerCase()) ||
         transaction.document?.toLowerCase().includes(searchName.toLowerCase());
@@ -375,6 +387,65 @@ export default function ExtractTableBmp531() {
     event.stopPropagation();
     setSelectedCompensationRecord(transaction);
     setCompensationModalOpen(true);
+  };
+
+  // ✅ NOVO: Função para extrair ID do usuário da descrição
+  const extrairIdUsuario = (transaction: MovimentoExtrato): number => {
+    const descCliente = transaction.descCliente || '';
+    
+    // Procurar padrão "Usuario 96" ou "Usuario 1733" etc.
+    const match = descCliente.match(/Usuario\s+(\d+)/i);
+    
+    if (match && match[1]) {
+      const userId = parseInt(match[1], 10);
+      console.log('[EXTRATO-BMP531] ID do usuário extraído:', {
+        descCliente,
+        userId
+      });
+      return userId;
+    }
+    
+    // Fallback caso não encontre o padrão
+    console.warn('[EXTRATO-BMP531] Não foi possível extrair ID do usuário:', {
+      descCliente,
+      transaction: transaction.id
+    });
+    return 0; // Valor que indicará erro no backend
+  };
+
+  // ✅ NOVO: Função para abrir modal de duplicatas
+  const handleGerenciarDuplicatas = (transaction: MovimentoExtrato, event: React.MouseEvent) => {
+    event.stopPropagation();
+    
+    const idUsuario = extrairIdUsuario(transaction);
+    
+    if (idUsuario === 0) {
+      toast.error('Não foi possível identificar o ID do usuário nesta transação');
+      return;
+    }
+    
+    console.log('[EXTRATO-BMP531] Abrindo modal de duplicatas para:', {
+      id: transaction.id,
+      value: transaction.value,
+      type: transaction.type,
+      client: transaction.client,
+      descCliente: transaction.descCliente,
+      idUsuario
+    });
+    
+    setSelectedDuplicataTransaction({
+      ...transaction,
+      idUsuario // Adicionar o ID extraído
+    } as any);
+    setDuplicataModalOpen(true);
+  };
+
+  // ✅ NOVO: Callback após exclusão de duplicata
+  const handleDuplicataExcluida = (idMovimentacao: number) => {
+    console.log('[EXTRATO-BMP531] Duplicata excluída:', idMovimentacao);
+    toast.success(`Duplicata ${idMovimentacao} removida do sistema`);
+    // Opcional: Recarregar dados do extrato se necessário
+    // refetch();
   };
 
   // Função para fechar modal de compensação
@@ -719,7 +790,7 @@ export default function ExtractTableBmp531() {
           </div>
 
           {/* Segunda linha - Filtros específicos BMP-531 */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
             <div className="space-y-2">
               <label className="text-sm font-semibold text-card-foreground">Descrição do cliente (BMP-531)</label>
               <Input
@@ -745,6 +816,8 @@ export default function ExtractTableBmp531() {
                 </SelectContent>
               </Select>
             </div>
+
+{/* Filtro de duplicados removido */}
 
             <div className="space-y-2">
               <label className="text-sm font-semibold text-card-foreground">Ordenar por</label>
@@ -822,6 +895,43 @@ export default function ExtractTableBmp531() {
         </CardContent>
       </Card>
 
+      {/* Resumo de duplicados removido */}
+      {false && (
+        <Card className="bg-gradient-to-r from-red-50 to-orange-50 border-red-200 shadow-lg rounded-2xl">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="p-3 rounded-xl bg-red-100 shadow-md">
+                <AlertCircle className="h-6 w-6 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-red-800 mb-2">
+                  🔍 Filtro de Débitos Duplicados Ativo
+                </h3>
+                <div className="space-y-2 text-sm text-red-700">
+                  <p className="font-medium">
+                    <strong>Como funciona:</strong> Esta é uma conta "bolsão" onde cada PIX que entra (crédito) deveria ter apenas um PIX correspondente que sai (débito).
+                  </p>
+                  <p>
+                    <strong>Duplicados identificados:</strong> Débitos que excedem a quantidade de créditos do mesmo valor.
+                  </p>
+                  <p>
+                    <strong>Exemplo:</strong> Se há 1 crédito de R$ 1.000,00 mas 3 débitos de R$ 1.000,00 → 2 débitos são duplicados (excedentes).
+                  </p>
+                  <div className="bg-red-100 rounded-lg p-3 mt-3">
+                    <p className="font-medium text-red-800">
+                      📊 <strong>Resultado atual:</strong> {filteredAndSortedTransactions.length} débitos duplicados encontrados
+                    </p>
+                    <p className="text-red-600 text-xs mt-1">
+                      Estes débitos podem indicar processamento duplicado ou erro no sistema de conciliação.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tabela de resultados */}
       <Card className="bg-card border border-border shadow-2xl rounded-3xl overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-muted/20 to-muted/30 border-b border-border pb-6">
@@ -835,10 +945,12 @@ export default function ExtractTableBmp531() {
                   Extrato de Transações BMP 531
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {filteredAndSortedTransactions.length} registros encontrados • {debitCount} débitos • {creditCount} créditos
-                  {totalLoaded > 0 && totalLoaded !== filteredAndSortedTransactions.length && (
-                    <span className="text-blue-600"> • {totalLoaded} total carregados</span>
-                  )}
+                  <>
+                    {filteredAndSortedTransactions.length} registros encontrados • {debitCount} débitos • {creditCount} créditos
+                    {totalLoaded > 0 && totalLoaded !== filteredAndSortedTransactions.length && (
+                      <span className="text-blue-600"> • {totalLoaded} total carregados</span>
+                    )}
+                  </>
                 </p>
                 
                 {/* ✅ NOVO: Totalizadores por tipo */}
@@ -1007,6 +1119,20 @@ export default function ExtractTableBmp531() {
                                     🧠 Verificar
                                   </Button>
                                 )}
+                                
+                                {/* ✅ NOVO: Botão de duplicatas para DÉBITOS */}
+                                {transaction.type === 'DÉBITO' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => handleGerenciarDuplicatas(transaction, e)}
+                                    className="h-7 px-2 text-xs transition-all bg-red-50 hover:bg-red-100 text-red-700 border-red-200 hover:border-red-300"
+                                    title="Gerenciar duplicatas desta movimentação"
+                                  >
+                                    <Trash2 className="h-3 w-3 mr-1" />
+                                    🔄 Duplicatas
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1067,18 +1193,34 @@ export default function ExtractTableBmp531() {
                           <span className="font-mono text-xs text-muted-foreground">
                             {transaction.code}
                           </span>
-                          {transaction.type === 'CRÉDITO' && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => handleCompensation(transaction, e)}
-                              className="h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                              title="Diagnóstico inteligente + Compensação BMP 531"
-                            >
-                              <DollarSign className="h-3 w-3 mr-1" />
-                              🧠 Verificar
-                            </Button>
-                          )}
+                          <div className="flex gap-2">
+                            {transaction.type === 'CRÉDITO' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => handleCompensation(transaction, e)}
+                                className="h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                title="Diagnóstico inteligente + Compensação BMP 531"
+                              >
+                                <DollarSign className="h-3 w-3 mr-1" />
+                                🧠 Verificar
+                              </Button>
+                            )}
+                            
+                            {/* ✅ NOVO: Botão de duplicatas para DÉBITOS (Mobile) */}
+                            {transaction.type === 'DÉBITO' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => handleGerenciarDuplicatas(transaction, e)}
+                                className="h-7 px-2 text-xs bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+                                title="Gerenciar duplicatas desta movimentação"
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                🔄 Duplicatas
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -1241,6 +1383,30 @@ export default function ExtractTableBmp531() {
           isOpen={compensationModalOpen}
           onClose={() => handleCloseCompensationModal()}
           extractRecord={selectedCompensationRecord}
+        />
+      )}
+
+      {/* ✅ NOVO: Modal de gerenciamento de duplicatas */}
+      {duplicataModalOpen && selectedDuplicataTransaction && (
+        <DuplicataManagerModal
+          isOpen={duplicataModalOpen}
+          onClose={() => setDuplicataModalOpen(false)}
+          transacao={{
+            id: selectedDuplicataTransaction.id,
+            value: selectedDuplicataTransaction.value,
+            client: selectedDuplicataTransaction.client,
+            dateTime: selectedDuplicataTransaction.dateTime,
+            type: selectedDuplicataTransaction.type
+          }}
+          idUsuario={(selectedDuplicataTransaction as any).idUsuario || 0}
+          onDuplicataExcluida={handleDuplicataExcluida}
+          todasTransacoes={convertedTransactions.map(t => ({
+            id: t.id,
+            value: t.value,
+            type: t.type,
+            dateTime: t.dateTime,
+            descCliente: t.descCliente
+          }))}
         />
       )}
     </div>

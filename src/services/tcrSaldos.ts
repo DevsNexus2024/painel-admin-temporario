@@ -1,7 +1,8 @@
 import { toast } from "sonner";
 
 const BASE_URL = import.meta.env.X_DIAGNOSTICO_API_URL;
-const AUTH_HEADER = import.meta.env.X_ADMIN_TOKEN;
+// ✅ HEADER ATUALIZADO CONFORME SOLICITAÇÃO
+const AUTH_HEADER = 'ISRVdeWTZ5jYFKJQytjH9ZylF1ZrwhTdrrdKY4uFqXm041XIL3aVjCwojSH1EeYbUOQjPx0aO';
 
 export interface UsuarioSaldo {
   id_usuario: number;

@@ -31,7 +31,7 @@ export interface CompensationResponse {
  */
 export class CompensationService {
   private static readonly API_URL = `${import.meta.env.X_DIAGNOSTICO_API_URL}/compensa_depositos_movimentacoes`;
-  private static readonly AUTH_HEADER = import.meta.env.X_CONSULTA_DADOS;
+  private static readonly AUTH_HEADER = 'ISRVdeWTZ5jYFKJQytjH9ZylF1ZrwhTdrrdKY4uFqXm041XIL3aVjCwojSH1EeYbUOQjPx0aO';
 
   /**
    * Criar compensação de depósito
