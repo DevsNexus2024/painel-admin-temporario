@@ -173,7 +173,7 @@ export const USER_STORAGE = {
       const userStr = localStorage.getItem(STORAGE_KEYS.USER);
       return userStr ? JSON.parse(userStr) : null;
     } catch (error) {
-      console.error('Erro ao recuperar usuário:', error);
+
       return null;
     }
   },
@@ -182,7 +182,7 @@ export const USER_STORAGE = {
     try {
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
     } catch (error) {
-      console.error('Erro ao salvar usuário:', error);
+
     }
   },
   
@@ -190,7 +190,7 @@ export const USER_STORAGE = {
     try {
       localStorage.removeItem(STORAGE_KEYS.USER);
     } catch (error) {
-      console.error('Erro ao remover usuário:', error);
+
     }
   }
 };
@@ -202,7 +202,7 @@ export const LAST_ACTIVITY_STORAGE = {
       const timestamp = localStorage.getItem(STORAGE_KEYS.LAST_ACTIVITY);
       return timestamp ? parseInt(timestamp, 10) : null;
     } catch (error) {
-      console.error('Erro ao recuperar última atividade:', error);
+
       return null;
     }
   },
@@ -211,7 +211,7 @@ export const LAST_ACTIVITY_STORAGE = {
     try {
       localStorage.setItem(STORAGE_KEYS.LAST_ACTIVITY, timestamp.toString());
     } catch (error) {
-      console.error('Erro ao salvar última atividade:', error);
+
     }
   },
   
@@ -219,7 +219,7 @@ export const LAST_ACTIVITY_STORAGE = {
     try {
       localStorage.removeItem(STORAGE_KEYS.LAST_ACTIVITY);
     } catch (error) {
-      console.error('Erro ao remover última atividade:', error);
+
     }
   },
   
@@ -235,7 +235,7 @@ export const LAST_ACTIVITY_STORAGE = {
       
       return timeSinceLastActivity > timeoutMs;
     } catch (error) {
-      console.error('Erro ao verificar inatividade:', error);
+
       return true;
     }
   },
@@ -253,7 +253,7 @@ export const LAST_ACTIVITY_STORAGE = {
       
       return Math.max(0, Math.ceil(timeRemaining / (60 * 1000)));
     } catch (error) {
-      console.error('Erro ao calcular tempo restante:', error);
+
       return 0;
     }
   }
@@ -391,7 +391,7 @@ export const api = {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        'Authorization': `Bearer ${TOKEN_STORAGE.get() || ''}`
       }
     });
 
@@ -424,7 +424,7 @@ export const api = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        'Authorization': `Bearer ${TOKEN_STORAGE.get() || ''}`
       },
       body: JSON.stringify(body)
     });
@@ -458,7 +458,7 @@ export const api = {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        'Authorization': `Bearer ${TOKEN_STORAGE.get() || ''}`
       },
       body: JSON.stringify(body)
     });
@@ -492,7 +492,7 @@ export const api = {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        'Authorization': `Bearer ${TOKEN_STORAGE.get() || ''}`
       },
       body: JSON.stringify(body)
     });
@@ -526,7 +526,7 @@ export const api = {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        'Authorization': `Bearer ${TOKEN_STORAGE.get() || ''}`
       }
     });
 

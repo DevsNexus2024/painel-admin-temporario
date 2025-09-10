@@ -1,23 +1,19 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, authService, LoginCredentials, RegisterData } from '@/services/auth';
+import { authService } from '@/services/auth';
 import { userTypeService } from '@/services/userType';
 import { toast } from 'sonner';
 import { useLoginTimeout } from '@/hooks/useLoginTimeout';
 import { LAST_ACTIVITY_STORAGE } from '@/config/api';
-
-// Tipos do contexto
-interface AuthContextType {
-  // Estado
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-
-  // Ações
-  login: (credentials: LoginCredentials) => Promise<boolean>;
-  register: (data: RegisterData) => Promise<boolean>;
-  logout: () => void;
-  refreshProfile: () => Promise<void>;
-}
+import { 
+  User, 
+  UserTypeResult, 
+  AuthContextType, 
+  LoginCredentials, 
+  RegisterData, 
+  Permission, 
+  UserRole,
+  getUserPermissions 
+} from '@/types/auth';
 
 // Criar o contexto
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,6 +26,7 @@ interface AuthProviderProps {
 // Provider do contexto
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [userType, setUserType] = useState<UserTypeResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Computed state
@@ -41,6 +38,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const performLogout = () => {
     authService.logout();
     setUser(null);
+    setUserType(null);
     toast.info('Sua sessão expirou. Faça login novamente.');
   };
 
@@ -63,15 +61,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   });
 
   /**
-   * Verifica tipo de usuário (apenas verificação, sem redirecionamento automático)
+   * Verifica tipo de usuário e carrega permissões
    */
-  const checkUserType = async (userData: User) => {
+  const checkUserType = async (userData: User): Promise<UserTypeResult | null> => {
     try {
-      const isOTC = await userTypeService.isOTCUser(userData);
-      return isOTC;
+
+      
+      const userTypeResult = await userTypeService.checkUserType(userData);
+      
+
+      
+      // Adicionar permissões baseadas no role
+      const permissions = getUserPermissions(userTypeResult.type);
+      const completeUserType: UserTypeResult = {
+        ...userTypeResult,
+        permissions
+      };
+      
+
+      
+      setUserType(completeUserType);
+      return completeUserType;
     } catch (error) {
-      console.error('❌ AuthProvider: Erro ao verificar tipo de usuário:', error);
-      return false;
+
+      
+      // Fallback para admin em caso de erro
+      const fallbackUserType: UserTypeResult = {
+        type: 'admin' as UserRole,
+        isOTC: false,
+        isAdmin: true,
+        permissions: getUserPermissions('admin')
+      };
+      
+
+      
+      setUserType(fallbackUserType);
+      return fallbackUserType;
     }
   };
 
@@ -100,18 +125,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (profileResult.sucesso && profileResult.data) {
             setUser(profileResult.data);
             
-            // Apenas verificar tipo de usuário (sem redirecionamento automático)
+            // Verificar tipo de usuário e carregar permissões
             await checkUserType(profileResult.data);
           } else {
             // Token inválido, limpar dados
             authService.logout();
             setUser(null);
+            setUserType(null);
           }
         }
       } catch (error) {
-        console.error('❌ AuthProvider: Erro ao inicializar autenticação:', error);
+
         authService.logout();
         setUser(null);
+        setUserType(null);
       } finally {
         setIsLoading(false);
       }
@@ -131,18 +158,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       if (result.sucesso && result.data) {
         setUser(result.data.user);
+        
+        // Verificar tipo de usuário e carregar permissões
+        const userTypeResult = await checkUserType(result.data.user);
+        
+
+        
         toast.success('Login realizado com sucesso!');
-        
-        // Apenas verificar tipo de usuário (redirecionamento fica por conta das rotas)
-        await checkUserType(result.data.user);
-        
         return true;
       } else {
         toast.error(result.mensagem || 'Erro no login');
         return false;
       }
     } catch (error) {
-      console.error('❌ AuthProvider: Erro no login:', error);
+
       toast.error('Erro de conexão. Tente novamente.');
       return false;
     } finally {
@@ -161,6 +190,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       if (result.sucesso && result.data) {
         setUser(result.data.user);
+        
+        // Verificar tipo de usuário e carregar permissões
+        await checkUserType(result.data.user);
+        
         toast.success('Registro realizado com sucesso!');
         return true;
       } else {
@@ -168,7 +201,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return false;
       }
     } catch (error) {
-      console.error('Erro no registro:', error);
+
       toast.error('Erro de conexão. Tente novamente.');
       return false;
     } finally {
@@ -182,6 +215,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = () => {
     authService.logout();
     setUser(null);
+    setUserType(null);
     toast.info('Logout realizado com sucesso');
   };
 
@@ -194,20 +228,57 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       if (result.sucesso && result.data) {
         setUser(result.data);
+        
+        // Recarregar tipo de usuário e permissões
+        await checkUserType(result.data);
       } else {
         // Token inválido, fazer logout
         logout();
       }
     } catch (error) {
-      console.error('Erro ao atualizar perfil:', error);
+
       logout();
     }
+  };
+
+  /**
+   * Funções de verificação de permissões
+   */
+  const checkPermission = (permission: Permission): boolean => {
+    if (!isAuthenticated || !user || !userType) return false;
+    
+    return userType.permissions.includes(permission) || userType.permissions.includes('admin.full_access');
+  };
+
+  const hasRole = (role: UserRole): boolean => {
+    if (!isAuthenticated || !user || !userType) return false;
+    
+    return userType.type === role;
+  };
+
+  const hasAnyRole = (roles: UserRole[]): boolean => {
+    if (!isAuthenticated || !user || !userType) return false;
+    
+    return roles.includes(userType.type);
+  };
+
+  const hasAllPermissions = (permissions: Permission[]): boolean => {
+    if (!isAuthenticated || !user || !userType) return false;
+    
+    return permissions.every(permission => checkPermission(permission));
+  };
+
+  const hasAnyPermission = (permissions: Permission[]): boolean => {
+    if (!isAuthenticated || !user || !userType) return false;
+    
+    return permissions.some(permission => checkPermission(permission));
   };
 
   // Valor do contexto
   const contextValue: AuthContextType = {
     // Estado
     user,
+    userType,
     isAuthenticated,
     isLoading,
 
@@ -215,7 +286,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     login,
     register,
     logout,
-    refreshProfile
+    refreshProfile,
+    
+    // Verificações de permissão
+    checkPermission,
+    hasRole,
+    hasAnyRole,
+    hasAllPermissions,
+    hasAnyPermission
   };
 
   return (

@@ -217,6 +217,11 @@ export default function MainLayout() {
                                         label="Clientes OTC"
                                         badge="NOVO"
                                     />
+                                    <SidebarLink
+                                        to="/corpx"
+                                        icon={<CreditCard className="h-4 w-4" />}
+                                        label="CORPX TTF"
+                                    />
                                 </div>
                             </div>
                         </nav>

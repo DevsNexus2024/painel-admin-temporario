@@ -8,12 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, DollarSign, User, FileText, Calendar, CheckCircle, AlertCircle, Search, Brain } from "lucide-react";
+import { Loader2, DollarSign, User, FileText, Calendar, CheckCircle, AlertCircle, Search, Brain, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { MovimentoExtrato } from "@/services/extrato";
 import { CompensationData, useCompensation, CompensationService } from "@/services/compensation";
 import DiagnosticoDepositoSimplificado from "./DiagnosticoDepositoSimplificado";
 import DiagnosticoDeposito from "./DiagnosticoDeposito";
+import DuplicataManagerModal from "./DuplicataManagerModal";
 
 interface CompensationModalInteligenteProps {
   isOpen: boolean;
@@ -31,6 +32,10 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
   const [useManualId, setUseManualId] = useState(false);
   const [versaoSimplificada, setVersaoSimplificada] = useState(true); // ✨ Nova versão como padrão
   const { createCompensation } = useCompensation();
+  
+  // Estados para funcionalidade de duplicatas
+  const [duplicataModalOpen, setDuplicataModalOpen] = useState(false);
+  const [selectedDuplicataRecord, setSelectedDuplicataRecord] = useState<MovimentoExtrato | null>(null);
 
   // Inicializar dados do formulário quando o modal abrir
   useEffect(() => {
@@ -47,12 +52,14 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       
       setQuantiaInput(extractRecord.value.toString());
       
-      // Resetar states
+          // Resetar states
       setActiveTab("diagnostico");
       setShowManualForm(false);
       setManualDepositId('');
       setUseManualId(false);
       setVersaoSimplificada(true); // ✨ Padrão para nova versão
+      setDuplicataModalOpen(false);
+      setSelectedDuplicataRecord(null);
     }
   }, [isOpen, extractRecord]);
 
@@ -95,6 +102,8 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     setManualDepositId('');
     setUseManualId(false);
     setVersaoSimplificada(true);
+    setDuplicataModalOpen(false);
+    setSelectedDuplicataRecord(null);
     onClose(false);
   };
 
@@ -140,7 +149,6 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     
     // 4. Tentar extrair da descrição geral
     const allText = [
-      extractRecord.description,
       extractRecord.client,
       extractRecord.descCliente
     ].filter(Boolean).join(' ');
@@ -150,8 +158,29 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       if (match) return parseInt(match[1]);
     }
     
-    // Se não encontrar, retornar null (mostrar opção manual)
+      // Se não encontrar, retornar null (mostrar opção manual)
     return null;
+  };
+  
+  // Função para extrair ID do usuário do campo descCliente
+  const extrairIdUsuario = (descCliente: string): number => {
+    // Padrão: caas436344xU1122; ou similar - extrair número após "xU"
+    const match = descCliente?.match(/xU(\d+)/i);
+    return match ? parseInt(match[1], 10) : 0;
+  };
+  
+  // Função para abrir modal de duplicatas
+  const handleGerenciarDuplicatas = () => {
+    if (!extractRecord) return;
+    
+    setSelectedDuplicataRecord(extractRecord);
+    setDuplicataModalOpen(true);
+  };
+  
+  // Função para fechar modal de duplicatas
+  const handleDuplicataExcluida = () => {
+    toast.success("Duplicata excluída com sucesso!");
+    // Opcional: recarregar dados ou notificar componente pai
   };
 
   const automaticDepositId = getDepositId();
@@ -212,8 +241,8 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
             <div className="flex items-center justify-between mb-2">
               <TabsList className="grid grid-cols-2 flex-1 mr-4">
                 <TabsTrigger value="diagnostico" className="flex items-center gap-2">
-                  <Search className="h-4 w-4" />
-                  1. Diagnóstico Inteligente
+                  <Trash2 className="h-4 w-4" />
+                  1. Gerenciar Duplicatas
                 </TabsTrigger>
                 <TabsTrigger value="manual" className="flex items-center gap-2">
                   <DollarSign className="h-4 w-4" />
@@ -238,34 +267,58 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
               </div>
             </div>
             
-            {/* Tab Diagnóstico */}
+            {/* Tab Gerenciar Duplicatas */}
             <TabsContent value="diagnostico" className="space-y-4">
-              {depositId ? (
-                <div>
-                  <Alert className="mb-4">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      <strong>💡 Recomendação:</strong> Execute primeiro o diagnóstico para detectar automaticamente onde está o dinheiro e ter acesso a ações de reprocessamento. A compensação manual só deve ser usada como último recurso.
-                      {versaoSimplificada && (
-                        <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
-                          <strong>✨ Nova Versão:</strong> Mais transparente, configurável e confiável. Prioriza verificação local e oferece controle manual total.
+              <Alert className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>🔍 Gerenciar Duplicatas:</strong> Busque e exclua movimentações duplicadas com base no valor da transação selecionada. O sistema buscará automaticamente por duplicatas do mesmo valor para o usuário identificado.
+                </AlertDescription>
+              </Alert>
+              
+              {extractRecord ? (
+                <div className="space-y-4">
+                  {/* Informações para busca de duplicatas */}
+                  <Card className="bg-blue-50 border-blue-200">
+                    <CardContent className="p-4">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Valor para busca</Label>
+                          <p className="font-semibold text-blue-600">{formatCurrency(extractRecord.value)}</p>
                         </div>
-                      )}
-                    </AlertDescription>
-                  </Alert>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">ID do Usuário</Label>
+                          <p className="font-mono text-xs">
+                            {extractRecord.descCliente 
+                              ? extrairIdUsuario(extractRecord.descCliente) || 'Não identificado' 
+                              : 'Não informado'
+                            }
+                          </p>
+                        </div>
+                        <div className="col-span-2">
+                          <Label className="text-xs text-muted-foreground">Descrição do Cliente</Label>
+                          <p className="text-xs">{extractRecord.descCliente || 'Não informado'}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                   
-                  {/* ✨ Renderizar componente baseado na versão selecionada */}
-                  {versaoSimplificada ? (
-                    <DiagnosticoDepositoSimplificado 
-                      idDeposito={depositId} 
-                      onRefresh={handleDiagnosticoSuccess}
-                    />
-                  ) : (
-                    <DiagnosticoDeposito 
-                      idDeposito={depositId} 
-                      onRefresh={handleDiagnosticoSuccess}
-                    />
-                  )}
+                  {/* Botão para abrir modal de duplicatas */}
+                  <div className="text-center">
+                    <Button 
+                      onClick={handleGerenciarDuplicatas}
+                      className="bg-red-500 hover:bg-red-600 text-white"
+                      disabled={!extractRecord.descCliente || extrairIdUsuario(extractRecord.descCliente || '') === 0}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Buscar e Gerenciar Duplicatas
+                    </Button>
+                    {(!extractRecord.descCliente || extrairIdUsuario(extractRecord.descCliente || '') === 0) && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        ID do usuário não identificado na descrição do cliente
+                      </p>
+                    )}
+                  </div>
                   
                   <div className="mt-6 pt-4 border-t">
                     <Button 
@@ -273,7 +326,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                       onClick={() => setActiveTab("manual")}
                       className="w-full"
                     >
-                      Ainda assim prosseguir para compensação manual →
+                      Prosseguir para compensação manual →
                     </Button>
                   </div>
                 </div>
@@ -281,45 +334,9 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                 <Alert className="border-yellow-200 bg-yellow-50">
                   <AlertCircle className="h-4 w-4 text-yellow-600" />
                   <AlertDescription className="text-yellow-800">
-                    <strong>ID do depósito não identificado automaticamente.</strong>
+                    <strong>Dados do registro não disponíveis.</strong>
                     <br />
-                    O diagnóstico inteligente precisa do ID do depósito. Você pode:
-                    <ul className="mt-2 ml-4 list-disc">
-                      <li>Inserir manualmente o ID do depósito abaixo</li>
-                      <li>Verificar o código do registro: {extractRecord?.code}</li>
-                      <li>Prosseguir diretamente para compensação manual</li>
-                    </ul>
-                    
-                    <div className="mt-4 space-y-3">
-                      <div className="flex gap-2">
-                        <Input
-                          type="number"
-                          placeholder="Ex: 12345"
-                          value={manualDepositId}
-                          onChange={(e) => setManualDepositId(e.target.value)}
-                          className="flex-1"
-                        />
-                        <Button 
-                          onClick={() => {
-                            if (manualDepositId.trim()) {
-                              setUseManualId(true);
-                            }
-                          }}
-                          disabled={!manualDepositId.trim()}
-                          className="bg-primary hover:bg-primary/90"
-                        >
-                          🔍 Diagnosticar
-                        </Button>
-                      </div>
-                      
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setActiveTab("manual")}
-                        className="w-full"
-                      >
-                        Ou prosseguir para compensação manual →
-                      </Button>
-                    </div>
+                    Não é possível gerenciar duplicatas sem os dados da transação selecionada.
                   </AlertDescription>
                 </Alert>
               )}
@@ -503,6 +520,23 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
           )}
         </DialogFooter>
       </DialogContent>
+      
+      {/* Modal de Duplicatas */}
+      {selectedDuplicataRecord && (
+        <DuplicataManagerModal
+          isOpen={duplicataModalOpen}
+          onClose={() => setDuplicataModalOpen(false)}
+          transacao={{
+            id: selectedDuplicataRecord.id,
+            value: selectedDuplicataRecord.value,
+            client: selectedDuplicataRecord.client,
+            dateTime: selectedDuplicataRecord.dateTime,
+            type: selectedDuplicataRecord.type
+          }}
+          idUsuario={extrairIdUsuario(selectedDuplicataRecord.descCliente || '')}
+          onDuplicataExcluida={handleDuplicataExcluida}
+        />
+      )}
     </Dialog>
   );
 }

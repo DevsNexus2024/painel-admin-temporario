@@ -66,7 +66,7 @@ export default function Bmp531Page() {
           {/* Extrato - Largura Total */}
           <TabsContent value="extract" className="mt-0">
             <div className="w-full">
-              <ExtractTableBmp531 />
+              <ExtractTableBmp531 accountType="tcr" />
             </div>
           </TabsContent>
 

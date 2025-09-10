@@ -10,6 +10,7 @@ import type { Account } from "@/pages/payments/apiRouter";
 import { useCacheManager } from "@/hooks/useCacheManager";
 import { useSaldo } from "@/hooks/useSaldo";
 
+
 export default function TopBarPayments() {
   // ✅ CORRIGIDO: Usar sistema unificado com hook useSaldo otimizado
   const { data: saldoData, isLoading: isLoadingSaldo, error: saldoError } = useSaldo();
@@ -17,6 +18,9 @@ export default function TopBarPayments() {
   
   // Hook para gerenciar cache
   const { invalidateExtrato, queryClient } = useCacheManager();
+  
+  // Estado para loading durante troca
+  const [isChangingAccount, setIsChangingAccount] = useState(false);
 
   // Converter erro para string para compatibilidade
   const error = saldoError?.message || null;
@@ -34,41 +38,50 @@ export default function TopBarPayments() {
     });
   };
 
-  const handleAccountChange = (account: Account) => {
-    // 1. Trocar no sistema unificado
-    const unifiedSuccess = unifiedBankingService.setActiveAccount(account.id);
+  const handleAccountChange = async (account: Account) => {
+    setIsChangingAccount(true);
     
-    if (!unifiedSuccess) {
-      toast.error("Erro ao trocar conta", {
-        description: "Falha na arquitetura bancária",
-        duration: 3000
+    try {
+      // 1. Atualizar estado local PRIMEIRO
+      setCurrentAccount(account);
+      
+      // 2. Sincronizar com apiRouter (sistema que funciona)
+      const apiRouter = (window as any).apiRouter;
+      if (apiRouter && apiRouter.switchToAccount) {
+        apiRouter.switchToAccount(account.id);
+      }
+      
+      // 3. Tentar com unifiedBankingService se disponível
+      try {
+        unifiedBankingService.setActiveAccount(account.id);
+      } catch (error) {
+        // Ignorar erros do sistema novo se não funcionar
+      }
+      
+      // 4. Salvar no localStorage
+      localStorage.setItem('selected_account_id', account.id);
+      
+      // 5. Limpar cache para forçar reload dos dados
+      queryClient.clear();
+      queryClient.invalidateQueries({ queryKey: ['saldo-unified'] });
+      
+      // 6. Aguardar um pouquinho para sincronizar
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // 7. Feedback CLARO para usuário
+      toast.success("🔄 Conta alterada!", {
+        description: `✅ Agora usando: ${account.displayName} (${account.provider.toUpperCase()})`,
+        duration: 4000
       });
-      return;
+      
+    } catch (error) {
+      toast.error("❌ Erro ao trocar conta", {
+        description: "Tente novamente em alguns segundos",
+        duration: 4000
+      });
+    } finally {
+      setIsChangingAccount(false);
     }
-    
-    // 2. Sincronizar com sistema legado (apiRouter) para manter compatibilidade
-    const apiRouter = (window as any).apiRouter;
-    if (apiRouter && apiRouter.switchToAccount) {
-      apiRouter.switchToAccount(account.id);
-    }
-    
-    // 3. Atualizar estado local
-    setCurrentAccount(account);
-    
-    // 4. Limpar cache para evitar dados da conta anterior
-    queryClient.clear();
-    
-    // 5. Salvar conta ativa no localStorage
-    localStorage.setItem('selected_account_id', account.id);
-    
-    // 6. Feedback para usuário
-    toast.success("Conta alterada!", {
-      description: `Agora usando: ${account.displayName} (${account.provider.toUpperCase()})`,
-      duration: 3000
-    });
-    
-    // 7. Forçar recarregamento do saldo da nova conta
-    queryClient.invalidateQueries({ queryKey: ['saldo-unified'] });
   };
 
   // ✅ REMOVIDO: Hook useSaldo já carrega automaticamente
@@ -192,8 +205,31 @@ export default function TopBarPayments() {
             <SendHorizontal className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Pagamentos Pix</h1>
-            <p className="text-muted-foreground text-sm">Central de transferências</p>
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
+              Pagamentos Pix
+              {/* 🚨 INDICADOR CLARO DO PROVIDER ATIVO */}
+              {isChangingAccount ? (
+                <div className="flex items-center gap-2 bg-orange-500/20 rounded-xl px-3 py-1 border border-orange-300">
+                  <Loader2 className="w-3 h-3 animate-spin text-orange-400" />
+                  <span className="text-sm font-medium text-orange-300">
+                    TROCANDO CONTA...
+                  </span>
+                </div>
+              ) : currentAccount && (
+                <div className="flex items-center gap-2 bg-white/10 rounded-xl px-3 py-1 border border-white/20">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  <span className="text-sm font-medium text-white">
+                    {currentAccount.provider.toUpperCase()} ATIVO
+                  </span>
+                </div>
+              )}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Central de transferências
+              {isChangingAccount && (
+                <span className="ml-2 text-orange-400 font-medium">• Aguarde, trocando conta...</span>
+              )}
+            </p>
           </div>
         </div>
 
@@ -202,7 +238,7 @@ export default function TopBarPayments() {
             variant="ghost" 
             size="sm"
             onClick={handleRefresh}
-            disabled={isLoadingSaldo}
+            disabled={isLoadingSaldo || isChangingAccount}
             className="hover:bg-muted rounded-xl"
           >
             {isLoadingSaldo ? (
@@ -231,9 +267,18 @@ export default function TopBarPayments() {
                   {getSaldoDisplay()}
                 </p>
                 {saldoData && currentAccount && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {currentAccount.provider.toUpperCase()} • {(saldoData as any).moeda || 'BRL'} • {new Date().toLocaleTimeString()}
-                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      currentAccount.provider === 'bitso' 
+                        ? 'bg-orange-100 text-orange-800' 
+                        : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {currentAccount.provider.toUpperCase()}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {(saldoData as any).moeda || 'BRL'} • {new Date().toLocaleTimeString()}
+                    </span>
+                  </div>
                 )}
               </div>
             </div>

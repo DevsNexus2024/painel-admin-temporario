@@ -33,6 +33,8 @@ import "./testGlobal";
 // Hook para verificar conta ativa
 import { useState, useEffect } from "react";
 import { useBankFeatures } from "@/hooks/useBankFeatures";
+// 🧪 TEMPORÁRIO: Indicador simples
+import SimpleProviderIndicator from "@/components/SimpleProviderIndicator";
 
 export default function PaymentsPage() {
   const [activeAccount, setActiveAccount] = useState<any>(null);
@@ -87,6 +89,9 @@ export default function PaymentsPage() {
       <TopBarPayments />
       
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
+        {/* 🧪 TEMPORÁRIO: Indicador simples de provider */}
+        <SimpleProviderIndicator />
+        
         {/* Layout Principal - Tabs no Topo */}
         <Tabs defaultValue="extract" className="w-full">
           <div className="flex items-center justify-between mb-6">

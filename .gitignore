@@ -26,4 +26,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
+*.md
+*.txt
+*.pdf
+*.docx
+*.doc
+*.xls
+*.xlsx
+*.pptx
+*.ppt
+*.zip   
+dist

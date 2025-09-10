@@ -1,54 +1,250 @@
-// Re-exportar o hook do contexto para facilitar importações
+/**
+ * 🔐 HOOKS DE AUTENTICAÇÃO E PERMISSÕES
+ * Sistema completo de verificação de acesso
+ */
+
+import { useContext } from 'react';
+import AuthContext from '@/contexts/AuthContext';
+import { Permission, UserRole, hasPermission, hasAnyPermission, hasAllPermissions, ROUTE_PERMISSIONS } from '@/types/auth';
+
+// Re-exportar o hook básico do contexto
 export { useAuth } from '@/contexts/AuthContext';
 
-// Hook adicional para verificações específicas
-import { useAuth as useAuthContext } from '@/contexts/AuthContext';
-
 /**
- * Hook para verificar se usuário tem permissão específica
- * (para futuras implementações de roles/permissões)
+ * Hook avançado para verificações de permissões
  */
-export const useAuthPermissions = () => {
-  const { user, isAuthenticated } = useAuthContext();
+export const usePermissions = () => {
+  const context = useContext(AuthContext);
+  
+  if (!context) {
+    throw new Error('usePermissions deve ser usado dentro de um AuthProvider');
+  }
 
-  const hasPermission = (permission: string): boolean => {
-    if (!isAuthenticated || !user) return false;
+  const { user, userType, isAuthenticated } = context;
+
+  /**
+   * Verifica se usuário tem permissão específica
+   */
+  const checkPermission = (permission: Permission): boolean => {
+    if (!isAuthenticated || !user || !userType) return false;
     
-    // Por enquanto, todos os usuários autenticados têm todas as permissões
-    // Futuramente pode implementar sistema de roles
-    return true;
+    return hasPermission(userType.permissions, permission);
   };
 
-  const isAdmin = (): boolean => {
-    if (!isAuthenticated || !user) return false;
+  /**
+   * Verifica se usuário tem pelo menos uma das permissões
+   */
+  const checkAnyPermission = (permissions: Permission[]): boolean => {
+    if (!isAuthenticated || !user || !userType) return false;
     
-    // Implementar lógica de admin quando necessário
-    return false;
+    return hasAnyPermission(userType.permissions, permissions);
+  };
+
+  /**
+   * Verifica se usuário tem todas as permissões
+   */
+  const checkAllPermissions = (permissions: Permission[]): boolean => {
+    if (!isAuthenticated || !user || !userType) return false;
+    
+    return hasAllPermissions(userType.permissions, permissions);
+  };
+
+  /**
+   * Verifica se usuário tem role específico
+   */
+  const hasRole = (role: UserRole): boolean => {
+    if (!isAuthenticated || !user || !userType) return false;
+    
+    return userType.type === role;
+  };
+
+  /**
+   * Verifica se usuário tem um dos roles
+   */
+  const hasAnyRole = (roles: UserRole[]): boolean => {
+    if (!isAuthenticated || !user || !userType) return false;
+    
+    return roles.includes(userType.type);
+  };
+
+  /**
+   * Verifica se é admin
+   */
+  const isAdmin = (): boolean => {
+    return hasRole('admin') || checkPermission('admin.full_access');
+  };
+
+  /**
+   * Verifica se é cliente OTC
+   */
+  const isOTCClient = (): boolean => {
+    return hasRole('otc_client') || (userType?.isOTC && !userType?.isEmployee);
+  };
+
+  /**
+   * Verifica se é funcionário OTC
+   */
+  const isOTCEmployee = (): boolean => {
+    return hasRole('otc_employee') || (userType?.isEmployee === true);
+  };
+
+  /**
+   * Verifica se é gerente
+   */
+  const isManager = (): boolean => {
+    return hasRole('manager');
   };
 
   return {
-    hasPermission,
+    // Verificações de permissão
+    checkPermission,
+    checkAnyPermission,
+    checkAllPermissions,
+    
+    // Verificações de role
+    hasRole,
+    hasAnyRole,
     isAdmin,
+    isOTCClient,
+    isOTCEmployee,
+    isManager,
+    
+    // Dados do usuário
     user,
-    isAuthenticated
+    userType,
+    isAuthenticated,
+    permissions: userType?.permissions || []
   };
 };
 
 /**
  * Hook para proteção de rotas
  */
-export const useAuthGuard = () => {
-  const { isAuthenticated, isLoading } = useAuthContext();
+export const useRouteGuard = () => {
+  const { isAuthenticated, isLoading } = useContext(AuthContext) || {};
+  const { checkPermission, hasRole, hasAnyRole } = usePermissions();
 
-  const canAccess = (requireAuth: boolean = true): boolean => {
+  /**
+   * Verifica se usuário pode acessar rota específica
+   */
+  const canAccessRoute = (routePath: string): boolean => {
+    if (isLoading) return false;
+    if (!isAuthenticated) return false;
+
+    const routeConfig = ROUTE_PERMISSIONS[routePath];
+    if (!routeConfig) return true; // Rota sem restrições
+
+    // Verificar role específico
+    if (routeConfig.requiredRole) {
+      return hasRole(routeConfig.requiredRole);
+    }
+
+    // Verificar roles permitidos
+    if (routeConfig.allowedRoles && routeConfig.allowedRoles.length > 0) {
+      return hasAnyRole(routeConfig.allowedRoles);
+    }
+
+    // Verificar permissões necessárias
+    if (routeConfig.requiredPermissions && routeConfig.requiredPermissions.length > 0) {
+      return routeConfig.requiredPermissions.every(permission => checkPermission(permission));
+    }
+
+    // Verificar flags específicas
+    if (routeConfig.requireAdmin && !hasRole('admin')) {
+      return false;
+    }
+
+    if (routeConfig.requireEmployee && !hasRole('otc_employee')) {
+      return false;
+    }
+
+    return true;
+  };
+
+  /**
+   * Verifica acesso genérico com opções
+   */
+  const canAccess = (options: {
+    requireAuth?: boolean;
+    requiredRole?: UserRole;
+    requiredPermissions?: Permission[];
+    allowedRoles?: UserRole[];
+  } = {}): boolean => {
+    const { 
+      requireAuth = true, 
+      requiredRole, 
+      requiredPermissions, 
+      allowedRoles 
+    } = options;
+
     if (isLoading) return false;
     
-    return requireAuth ? isAuthenticated : true;
+    if (requireAuth && !isAuthenticated) return false;
+    if (!requireAuth) return true;
+
+    if (requiredRole && !hasRole(requiredRole)) return false;
+    if (allowedRoles && allowedRoles.length > 0 && !hasAnyRole(allowedRoles)) return false;
+    if (requiredPermissions && requiredPermissions.length > 0) {
+      return requiredPermissions.every(permission => checkPermission(permission));
+    }
+
+    return true;
   };
 
   return {
+    canAccessRoute,
     canAccess,
-    isLoading,
-    isAuthenticated
+    isLoading: isLoading || false,
+    isAuthenticated: isAuthenticated || false
+  };
+};
+
+/**
+ * Hook para componentes condicionais baseados em permissões
+ */
+export const useConditionalRender = () => {
+  const { checkPermission, hasRole, hasAnyRole, isAuthenticated } = usePermissions();
+
+  /**
+   * Renderiza componente se usuário tem permissão
+   */
+  const renderIfPermission = (permission: Permission, component: React.ReactNode): React.ReactNode => {
+    return checkPermission(permission) ? component : null;
+  };
+
+  /**
+   * Renderiza componente se usuário tem role
+   */
+  const renderIfRole = (role: UserRole, component: React.ReactNode): React.ReactNode => {
+    return hasRole(role) ? component : null;
+  };
+
+  /**
+   * Renderiza componente se usuário tem um dos roles
+   */
+  const renderIfAnyRole = (roles: UserRole[], component: React.ReactNode): React.ReactNode => {
+    return hasAnyRole(roles) ? component : null;
+  };
+
+  /**
+   * Renderiza componente se autenticado
+   */
+  const renderIfAuthenticated = (component: React.ReactNode): React.ReactNode => {
+    return isAuthenticated ? component : null;
+  };
+
+  /**
+   * Renderiza componente se NÃO autenticado
+   */
+  const renderIfNotAuthenticated = (component: React.ReactNode): React.ReactNode => {
+    return !isAuthenticated ? component : null;
+  };
+
+  return {
+    renderIfPermission,
+    renderIfRole,
+    renderIfAnyRole,
+    renderIfAuthenticated,
+    renderIfNotAuthenticated
   };
 }; 

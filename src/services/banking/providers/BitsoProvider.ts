@@ -134,7 +134,7 @@ export class BitsoProvider extends BaseBankProvider {
       // Preparar parâmetros para API Bitso
       const params: any = {
         currency: 'brl', // Focar em PIX BRL
-        limit: filters?.limit || 50
+        limit: filters?.limit || 1000 // ✅ CORRIGIDO: Aumentar limite padrão para 1000
       };
 
       // Bitso pode ter parâmetros específicos

@@ -57,26 +57,38 @@ const Login: React.FC = () => {
           if (storedUser) {
             const userTypeResult = await userTypeService.checkUserType(storedUser);
             
-            if (userTypeResult.isOTC) {
-              // Se é usuário OTC, redirecionar para extrato OTC
+
+            
+            // 1ª Prioridade: Funcionário OTC
+            if (userTypeResult.isEmployee || userTypeResult.type === 'otc_employee') {
+
+              navigate('/employee-statement', { replace: true });
+            }
+            // 2ª Prioridade: Cliente OTC (mas não funcionário)
+            else if (userTypeResult.isOTC && !userTypeResult.isEmployee) {
+
               navigate('/client-statement', { replace: true });
-            } else if (userTypeResult.isAdmin) {
-              // Se é admin, redirecionar para dashboard principal
+            }
+            // 3ª Prioridade: Admin
+            else if (userTypeResult.isAdmin || userTypeResult.type === 'admin') {
+
               const targetRoute = from === '/' || from === '/login' ? '/' : from;
               navigate(targetRoute, { replace: true });
-            } else {
-              // Fallback - assumir admin
+            }
+            // Fallback
+            else {
+
               navigate('/', { replace: true });
             }
           } else {
             navigate('/', { replace: true });
           }
         } catch (error) {
-          console.error('❌ Login: Erro ao verificar tipo de usuário:', error);
+
           // Em caso de erro, redirecionar para dashboard por segurança
           navigate('/', { replace: true });
         }
-      }, 300); // Aumentar timeout para garantir que a API responda
+      }, 500); // Aumentar timeout para garantir que a API responda completamente
     }
   };
 

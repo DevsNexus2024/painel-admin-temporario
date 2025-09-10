@@ -1,26 +1,8 @@
 import { authService } from './auth';
+import { UserRole, UserTypeResult } from '@/types/auth';
 
-/**
- * Tipos de usuário no sistema
- */
-export type UserType = 'otc_client' | 'admin' | 'otc_employee';
-
-/**
- * Resultado da verificação de tipo de usuário
- */
-export interface UserTypeResult {
-  type: UserType;
-  isOTC: boolean;
-  isAdmin: boolean;
-  isEmployee?: boolean;
-  otcClient?: any;
-  hasOTCRole?: boolean;
-  otcAccess?: {
-    client_id: number;
-    client_name: string;
-    client_document: string;
-  };
-}
+// Mantém compatibilidade com código antigo
+export type UserType = UserRole;
 
 /**
  * Resposta da API de tipo de usuário
@@ -29,7 +11,7 @@ interface UserTypeAPIResponse {
   sucesso: boolean;
   data: {
     userId: number;
-    type: UserType;
+    type: UserRole;
     isAdmin: boolean;
     isOTCClient: boolean;
     isOTCEmployee?: boolean;
@@ -52,11 +34,17 @@ export class UserTypeService {
    */
   async checkUserType(user: { id: string | number; email: string; name?: string }): Promise<UserTypeResult> {
     try {
+
+      
       // Fazer chamada para a API do backend
       const response = await authService.getUserType();
       
+
+      
       if (response.sucesso && response.data) {
         const { type, isAdmin, isOTCClient, isOTCEmployee, otcClient, hasOTCRole, otcAccess } = response.data;
+        
+
         
         return {
           type,
@@ -65,23 +53,26 @@ export class UserTypeService {
           isEmployee: isOTCEmployee,
           otcClient,
           hasOTCRole,
-          otcAccess
+          otcAccess,
+          permissions: [] // Será preenchido pelo AuthContext
         };
       } else {
-        // console.warn('⚠️ UserTypeService: Resposta inválida da API, assumindo admin');
+
         return {
-          type: 'admin',
+          type: 'admin' as UserRole,
           isOTC: false,
-          isAdmin: true
+          isAdmin: true,
+          permissions: [] // Será preenchido pelo AuthContext
         };
       }
     } catch (error) {
-      // console.error('❌ UserTypeService: Erro ao verificar tipo do usuário via API:', error);
+
       // Em caso de erro, assumir como admin para não bloquear acesso
       return {
-        type: 'admin',
+        type: 'admin' as UserRole,
         isOTC: false,
-        isAdmin: true
+        isAdmin: true,
+        permissions: [] // Será preenchido pelo AuthContext
       };
     }
   }

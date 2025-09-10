@@ -15,6 +15,7 @@ import PaymentsPage from "./pages/payments";
 import Cotacoes from "./pages/Cotacoes";
 import GrupoTcrSaldos from "./pages/GrupoTcrSaldos";
 import Bmp531Page from "./pages/Bmp531Page";
+import CorpXPage from "./pages/CorpXPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIAMENTE
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
@@ -79,9 +80,9 @@ const BankingSystemInitializer = ({ children }: { children: React.ReactNode }) =
       try {
         await initializeBankingSystem();
       } catch (error) {
-        console.error('❌ [APP] Erro ao inicializar sistema bancário:', error);
+
         // Não bloquear a aplicação, mas alertar
-        console.warn('⚠️ [APP] Aplicação funcionará em modo fallback');
+
       }
     };
 
@@ -132,6 +133,7 @@ const App = () => (
                 <Route path="/compensacao-depositos" element={<CompensacaoDepositos />} />
                 <Route path="/grupo-tcr/saldos" element={<GrupoTcrSaldos />} />
                 <Route path="/bmp-531" element={<Bmp531Page />} />
+                <Route path="/corpx" element={<CorpXPage />} />
                 <Route path="/pagamentos" element={<PaymentsPage />} />
                 <Route path="/cotacoes" element={<Cotacoes />} />
                 <Route path="/bot-cotacao" element={<BotCotacao />} />

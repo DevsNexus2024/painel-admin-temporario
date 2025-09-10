@@ -13,7 +13,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useExtratoSeguro } from "@/hooks/useExtratoSeguro";
+// ✅ PAGINAÇÃO TRADICIONAL: Páginas numeradas
+import { useExtratoPaginado } from "@/hooks/useExtratoPaginado";
 import { validarIntervaloData, formatarDataParaAPI, MovimentoExtrato, ExtratoResponse } from "@/services/extrato";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
@@ -37,16 +38,16 @@ export default function ExtractTable() {
   // 🚨 NOVO: Estado para rastrear registros já creditados
   const [creditedRecords, setCreditedRecords] = useState<Set<string>>(new Set());
   
-  // *** NOVA PAGINAÇÃO FRONTEND ***
-  const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 200; // Mostrar 50 transações por página
+  // 🚀 PAGINAÇÃO INFINITA - Não precisamos mais dessas variáveis
+  // const [currentPage, setCurrentPage] = useState(1); // REMOVIDO
+  // const ITEMS_PER_PAGE = 200; // REMOVIDO
   
   // Novos estados para filtros de busca
   const [searchName, setSearchName] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [searchDescCliente, setSearchDescCliente] = useState(""); // Filtro para descCliente (BMP-531)
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("none");
-  const [sortBy, setSortBy] = useState<"value" | "date" | "none">("none");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("desc");
+  const [sortBy, setSortBy] = useState<"value" | "date" | "none">("date");
 
   // Estados para o modal de crédito OTC
   const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
@@ -59,33 +60,44 @@ export default function ExtractTable() {
   // ✅ ADICIONADO: Hook para verificar o provedor ativo
   const bankFeatures = useBankFeatures();
 
-  // 🚨 USAR HOOK ULTRA-SEGURO QUE NÃO PERMITE MISTURA
-  const { 
-    data: extratoData, 
-    isLoading, 
+  // 🚨 PAGINAÇÃO TRADICIONAL: 200 registros por página
+  const {
+    data: extratoItems,
+    pageInfo,
+    isLoading,
     error,
-    refetch 
-  } = useExtratoSeguro({ 
-    filtros: filtrosAtivos,
-    enabled: true
+    currentPage,
+    goToPage,
+    nextPage,
+    prevPage,
+    firstPage,
+    lastPage,
+    refetch,
+    provider
+  } = useExtratoPaginado({
+    filtros: {
+      de: filtrosAtivos.de,
+      ate: filtrosAtivos.ate,
+      provider: bankFeatures.provider as 'bmp' | 'bmp-531' | 'bitso'
+    },
+    enabled: true,
+    pageSize: 1000 // ✅ CORRIGIDO: 1000 registros por página para evitar limitação
   });
 
-  const transactions = (extratoData as ExtratoResponse)?.items || [];
-  const hasMore = (extratoData as ExtratoResponse)?.hasMore || false;
-  const currentCursor = (extratoData as ExtratoResponse)?.cursor || 0;
+  // ✅ USAR DADOS DA PAGINAÇÃO TRADICIONAL
+  const transactions = extratoItems || [];
 
   // 🚨 CRÍTICO: Limpar dados antigos quando há erro para evitar contaminação
   useEffect(() => {
     if (error) {
-
-      setCurrentPage(1);
+      // Com paginação infinita, não precisamos resetar página
+      console.error('[ExtractTable] Erro no carregamento:', error);
     }
   }, [error]);
 
-  // 🚨 CRÍTICO: Resetar página quando mudar filtros
+  // 🔄 Hook reage automaticamente às mudanças de filtros
   useEffect(() => {
-
-    setCurrentPage(1);
+    // useExtratoPaginado já reage automaticamente aos filtros
   }, [filtrosAtivos]);
 
   // ✅ ADICIONADO: Função para obter badge do provedor
@@ -112,11 +124,11 @@ export default function ExtractTable() {
     return null;
   };
 
-  // Função para filtrar e ordenar transações
+  // 🚀 FILTROS LOCAIS APENAS (filtros de data agora são server-side)
   const filteredAndSortedTransactions = useMemo(() => {
     let filtered = [...transactions];
 
-    // Filtro por nome do cliente
+    // ✅ Filtros de busca local (texto) - mantidos para UX instantânea
     if (searchName.trim()) {
       const searchTerm = searchName.toLowerCase().trim();
       filtered = filtered.filter(transaction => 
@@ -125,7 +137,6 @@ export default function ExtractTable() {
       );
     }
 
-    // Filtro por valor
     if (searchValue.trim()) {
       const searchAmount = parseFloat(searchValue.replace(/[^\d,.-]/g, '').replace(',', '.'));
       if (!isNaN(searchAmount)) {
@@ -135,7 +146,6 @@ export default function ExtractTable() {
       }
     }
 
-    // Filtro por descCliente (apenas BMP-531)
     if (searchDescCliente.trim()) {
       const searchTerm = searchDescCliente.toLowerCase().trim();
       filtered = filtered.filter(transaction => 
@@ -143,7 +153,7 @@ export default function ExtractTable() {
       );
     }
 
-    // Ordenação
+    // ✅ Ordenação local (dados já vêm ordenados do servidor por data)
     if (sortBy !== "none" && sortOrder !== "none") {
       filtered.sort((a, b) => {
         let valueA: any, valueB: any;
@@ -167,15 +177,8 @@ export default function ExtractTable() {
     return filtered;
   }, [transactions, searchName, searchValue, searchDescCliente, sortBy, sortOrder]);
 
-  // *** NOVA PAGINAÇÃO FRONTEND ***
-  const totalItems = filteredAndSortedTransactions.length;
-  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
-  const currentPageTransactions = filteredAndSortedTransactions.slice(startIndex, endIndex);
-
-  // Usar transações da página atual
-  const displayTransactions = currentPageTransactions;
+  // 🚀 PAGINAÇÃO INFINITA - Usar todas as transações carregadas
+  const displayTransactions = filteredAndSortedTransactions;
 
   const handleRowClick = (transaction: MovimentoExtrato) => {
     setSelectedTransaction(transaction);
@@ -189,7 +192,7 @@ export default function ExtractTable() {
   };
 
   const handleAplicarFiltros = async () => {
-        if (dateFrom && dateTo) {
+    if (dateFrom && dateTo) {
       if (!validarIntervaloData(formatarDataParaAPI(dateFrom), formatarDataParaAPI(dateTo))) {
         toast.error("Intervalo de datas inválido", {
           description: "Verifique se a data inicial é menor que a final e o intervalo não passa de 31 dias",
@@ -199,18 +202,21 @@ export default function ExtractTable() {
       }
     }
 
+    // 🚀 FILTROS AGORA SÃO APLICADOS NO SERVIDOR - MUITO MAIS EFICIENTE
     const novosFiltros: FiltrosAtivos = {
-      // ✅ REMOVIDO cursor: 0 que causa erro na API Bitso
       ...(dateFrom && dateTo && {
         de: formatarDataParaAPI(dateFrom),
         ate: formatarDataParaAPI(dateTo)
       })
     };
 
-    // Resetar para primeira página
-    setCurrentPage(1);
     setFiltrosAtivos(novosFiltros);
-    toast.success("Filtros aplicados com sucesso!");
+    
+    // 🔄 O hook useExtratoSeguroPaginado vai detectar a mudança e fazer nova query automaticamente
+    toast.success("🚀 Filtros aplicados no servidor!", {
+      description: `Buscando ${bankFeatures.provider?.toUpperCase()} com filtros de data`,
+      duration: 3000
+    });
   };
 
   const handleLimparFiltros = async () => {
@@ -218,31 +224,16 @@ export default function ExtractTable() {
     setDateTo(undefined);
     setSearchName("");
     setSearchValue("");
-    setSearchDescCliente(""); // Limpar filtro descCliente
+    setSearchDescCliente("");
     setSortBy("none");
     setSortOrder("none");
-    setCurrentPage(1);
     setFiltrosAtivos({});
-    toast.success("Filtros limpos!");
-  };
-
-  // *** NOVAS FUNÇÕES DE PAGINAÇÃO ***
-  const handleNextPage = () => {
-    if (currentPage < totalPages) {
-      setCurrentPage(prev => prev + 1);
-    }
-  };
-
-  const handlePrevPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(prev => prev - 1);
-    }
-  };
-
-  const handleGoToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
-    }
+    
+    // 🔄 O hook useExtratoSeguroPaginado vai detectar a mudança e recarregar automaticamente
+    toast.success("🧹 Filtros limpos!", {
+      description: "Recarregando dados mais recentes",
+      duration: 3000
+    });
   };
 
   // 🚨 FUNÇÃO PARA VERIFICAR SE REGISTRO JÁ FOI CREDITADO
@@ -297,7 +288,7 @@ export default function ExtractTable() {
   };
 
   const handleRefresh = () => {
-    setCurrentPage(1);
+    // 🔄 Com paginação infinita, só fazemos refetch
     refetch();
   };
 
@@ -579,10 +570,20 @@ export default function ExtractTable() {
                   Extrato de Transações
                   {/* ✅ ADICIONADO: Badge do provedor no título da tabela */}
                   {getProviderBadge()}
+                  {/* 📄 INDICADOR DE SISTEMA USADO */}
+                  {provider === 'bitso' ? (
+                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                      Bitso: Filtros funcionais ✅
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                      Paginação Tradicional 📄
+                    </span>
+                  )}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {displayTransactions.length} registros filtrados • {displayTransactions.filter(t => t.type === 'DÉBITO').length} débitos • {displayTransactions.filter(t => t.type === 'CRÉDITO').length} créditos
-                  {hasMore && <span className="text-blue-500"> • Mais registros disponíveis</span>}
+                  {displayTransactions.length} registros na página • {displayTransactions.filter(t => t.type === 'DÉBITO').length} débitos • {displayTransactions.filter(t => t.type === 'CRÉDITO').length} créditos
+                  {pageInfo && pageInfo.totalPages > 1 && <span className="text-blue-500"> • {pageInfo.totalPages} páginas total</span>}
                   {(searchName || searchValue || searchDescCliente || sortBy !== "none") && (
                     <span className="text-amber-500"> • Filtros ativos</span>
                   )}
@@ -758,48 +759,32 @@ export default function ExtractTable() {
                             <TableCell className="py-3">
                               <div className="flex items-center justify-center gap-1">
                                 {transaction.type === 'CRÉDITO' && (
-                                  <>
-                                    {/* Botão Compensar - apenas BMP-531 */}
-                                    {bankFeatures.provider === 'bmp-531' ? (
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={(e) => handleCompensation(transaction, e)}
-                                        className="h-7 px-2 text-xs transition-all bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300"
-                                        title="Diagnóstico inteligente + Compensação"
-                                      >
-                                        <DollarSign className="h-3 w-3 mr-1" />
-                                        🧠 Verificar
-                                      </Button>
-                                    ) : (
-                                      /* Botão OTC - outros provedores */
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={(e) => handleCreditToOTC(transaction, e)}
-                                        disabled={isRecordCredited(transaction)}
-                                        className={cn(
-                                          "h-7 px-2 text-xs transition-all",
-                                          isRecordCredited(transaction)
-                                            ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                            : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
-                                        )}
-                                        title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
-                                      >
-                                        {isRecordCredited(transaction) ? (
-                                          <>
-                                            <Check className="h-3 w-3 mr-1" />
-                                            Creditado
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Plus className="h-3 w-3 mr-1" />
-                                            OTC
-                                          </>
-                                        )}
-                                      </Button>
+                                  /* ✅ Botão OTC - todos os provedores */
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => handleCreditToOTC(transaction, e)}
+                                    disabled={isRecordCredited(transaction)}
+                                    className={cn(
+                                      "h-7 px-2 text-xs transition-all",
+                                      isRecordCredited(transaction)
+                                        ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                        : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
                                     )}
-                                  </>
+                                    title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
+                                  >
+                                    {isRecordCredited(transaction) ? (
+                                      <>
+                                        <Check className="h-3 w-3 mr-1" />
+                                        Creditado
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="h-3 w-3 mr-1" />
+                                        OTC
+                                      </>
+                                    )}
+                                  </Button>
                                 )}
                               </div>
                             </TableCell>
@@ -809,6 +794,109 @@ export default function ExtractTable() {
                     </TableBody>
                   </Table>
                 </div>
+                
+                {/* 📄 PAGINAÇÃO TRADICIONAL */}
+                {pageInfo && (pageInfo.totalPages > 1) && (
+                  <div className="mt-6 p-4 border-t border-border bg-muted/10">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                      
+                      {/* Info da página atual */}
+                      <div className="text-sm text-muted-foreground">
+                        Mostrando {pageInfo?.startItem || 1} a {pageInfo?.endItem || displayTransactions.length} de {pageInfo?.totalItems || displayTransactions.length} registros
+                        <span className="text-primary"> • Página {pageInfo?.currentPage || currentPage} de {pageInfo?.totalPages || '?'}</span>
+                      </div>
+                      
+                      {/* Controles de navegação */}
+                      <div className="flex items-center gap-2">
+                        
+                        {/* Primeira página */}
+                        <Button
+                          onClick={firstPage}
+                          disabled={currentPage === 1}
+                          variant="outline"
+                          size="sm"
+                          className="h-9 px-3"
+                        >
+                          ⏮️
+                        </Button>
+                        
+                        {/* Página anterior */}
+                        <Button
+                          onClick={prevPage}
+                          disabled={currentPage === 1}
+                          variant="outline"
+                          size="sm"
+                          className="h-9 px-3"
+                        >
+                          ← Anterior
+                        </Button>
+                        
+                        {/* Números das páginas (máximo 5) */}
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, pageInfo?.totalPages || 5) }, (_, i) => {
+                            let pageNum;
+                            const totalPages = pageInfo?.totalPages || 5;
+                            if (totalPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (currentPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (currentPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i;
+                            } else {
+                              pageNum = currentPage - 2 + i;
+                            }
+                            
+                            return (
+                              <Button
+                                key={pageNum}
+                                onClick={() => goToPage(pageNum)}
+                                variant={pageNum === currentPage ? "default" : "outline"}
+                                size="sm"
+                                className="h-9 w-9 p-0"
+                              >
+                                {pageNum}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                        
+                        {/* Próxima página */}
+                        <Button
+                          onClick={nextPage}
+                          disabled={currentPage === (pageInfo?.totalPages || 1)}
+                          variant="outline"
+                          size="sm"
+                          className="h-9 px-3"
+                        >
+                          Próxima →
+                        </Button>
+                        
+                        {/* Última página */}
+                        <Button
+                          onClick={lastPage}
+                          disabled={currentPage === (pageInfo?.totalPages || 1)}
+                          variant="outline"
+                          size="sm"
+                          className="h-9 px-3"
+                        >
+                          ⏭️
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* 📊 INFORMAÇÕES DE PAGINAÇÃO */}
+                {pageInfo && (
+                  <div className="text-center text-xs text-muted-foreground mt-4 p-4 bg-muted/20 rounded-lg">
+                    <div className="flex flex-wrap justify-center gap-4">
+                      <span>📄 Página {pageInfo?.currentPage || currentPage} de {pageInfo?.totalPages || '?'}</span>
+                      <span>📊 Total: {pageInfo?.totalItems || displayTransactions.length} registros</span>
+                      <span>📋 Mostrando: {pageInfo?.pageSize || 1000} por página</span>
+                      <span className="text-blue-600">💾 {provider?.toUpperCase()} Provider</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Versão Mobile/Tablet - Cards em lista */}
@@ -896,50 +984,32 @@ export default function ExtractTable() {
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             {transaction.type === 'CRÉDITO' && (
-                              <>
-                                {/* Botão OTC - outros provedores */}
-                                {bankFeatures.provider !== 'bmp-531' && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => handleCreditToOTC(transaction, e)}
-                                    disabled={isRecordCredited(transaction)}
-                                    className={cn(
-                                      "h-8 px-2 text-xs transition-all",
-                                      isRecordCredited(transaction)
-                                        ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                        : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                                    )}
-                                    title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
-                                  >
-                                    {isRecordCredited(transaction) ? (
-                                      <>
-                                        <Check className="h-3 w-3 mr-1" />
-                                        Creditado
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Plus className="h-3 w-3 mr-1" />
-                                        OTC
-                                      </>
-                                    )}
-                                  </Button>
+                              /* ✅ Botão OTC - todos os provedores (Mobile) */
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => handleCreditToOTC(transaction, e)}
+                                disabled={isRecordCredited(transaction)}
+                                className={cn(
+                                  "h-8 px-2 text-xs transition-all",
+                                  isRecordCredited(transaction)
+                                    ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                    : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
                                 )}
-                                
-                                {/* Botão Compensar - apenas BMP-531 */}
-                                {bankFeatures.provider === 'bmp-531' && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => handleCompensation(transaction, e)}
-                                    className="h-8 px-2 text-xs transition-all bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                    title="Diagnóstico inteligente + Compensação"
-                                  >
-                                    <DollarSign className="h-3 w-3 mr-1" />
-                                    🧠 Compensar
-                                  </Button>
+                                title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
+                              >
+                                {isRecordCredited(transaction) ? (
+                                  <>
+                                    <Check className="h-3 w-3 mr-1" />
+                                    Creditado
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    OTC
+                                  </>
                                 )}
-                              </>
+                              </Button>
                             )}
                             <Button
                               variant="ghost"
@@ -967,75 +1037,101 @@ export default function ExtractTable() {
                     </Card>
                   );
                 })}
-              </div>
-
-              {/* *** NOVA PAGINAÇÃO FRONTEND *** */}
-              {totalPages > 1 && (
-                <div className="p-4 border-t border-border bg-muted/10">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                
+                {/* 📄 PAGINAÇÃO TRADICIONAL MOBILE */}
+                {pageInfo && pageInfo.totalPages > 1 && (
+                  <div className="mt-6 p-4 border-t border-border bg-muted/10">
                     
                     {/* Info da página atual */}
-                    <div className="text-sm text-muted-foreground">
-                      Mostrando {startIndex + 1} a {Math.min(endIndex, totalItems)} de {totalItems} transações
-                      {totalPages > 1 && ` (Página ${currentPage} de ${totalPages})`}
+                    <div className="text-center text-sm text-muted-foreground mb-4">
+                      Mostrando {pageInfo.startItem} a {pageInfo.endItem} de {pageInfo.totalItems} registros
+                      <br />
+                      <span className="text-primary">Página {pageInfo.currentPage} de {pageInfo.totalPages}</span>
                     </div>
                     
-                    {/* Controles de navegação */}
-                    <div className="flex items-center gap-2">
+                    {/* Controles de navegação mobile */}
+                    <div className="flex flex-col gap-3">
                       
-                      {/* Botão Anterior */}
-                      <Button
-                        onClick={handlePrevPage}
-                        disabled={currentPage === 1}
-                        variant="outline"
-                        size="sm"
-                        className="h-9 px-3"
-                      >
-                        ← Anterior
-                      </Button>
+                      {/* Linha 1: Primeira, Anterior, Próxima, Última */}
+                      <div className="flex justify-center gap-2">
+                        <Button
+                          onClick={firstPage}
+                          disabled={currentPage === 1}
+                          variant="outline"
+                          size="sm"
+                        >
+                          ⏮️ Primeira
+                        </Button>
+                        <Button
+                          onClick={prevPage}
+                          disabled={currentPage === 1}
+                          variant="outline"
+                          size="sm"
+                        >
+                          ← Anterior
+                        </Button>
+                        <Button
+                          onClick={nextPage}
+                          disabled={currentPage === pageInfo.totalPages}
+                          variant="outline"
+                          size="sm"
+                        >
+                          Próxima →
+                        </Button>
+                        <Button
+                          onClick={lastPage}
+                          disabled={currentPage === pageInfo.totalPages}
+                          variant="outline"
+                          size="sm"
+                        >
+                          Última ⏭️
+                        </Button>
+                      </div>
                       
-                      {/* Números das páginas (máximo 5) */}
-                      <div className="flex items-center gap-1">
-                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      {/* Linha 2: Números das páginas (máximo 3 em mobile) */}
+                      <div className="flex justify-center gap-1">
+                        {Array.from({ length: Math.min(3, pageInfo.totalPages) }, (_, i) => {
                           let pageNum;
-                          if (totalPages <= 5) {
+                          if (pageInfo.totalPages <= 3) {
                             pageNum = i + 1;
-                          } else if (currentPage <= 3) {
+                          } else if (currentPage <= 2) {
                             pageNum = i + 1;
-                          } else if (currentPage >= totalPages - 2) {
-                            pageNum = totalPages - 4 + i;
+                          } else if (currentPage >= pageInfo.totalPages - 1) {
+                            pageNum = pageInfo.totalPages - 2 + i;
                           } else {
-                            pageNum = currentPage - 2 + i;
+                            pageNum = currentPage - 1 + i;
                           }
                           
                           return (
                             <Button
                               key={pageNum}
-                              onClick={() => handleGoToPage(pageNum)}
+                              onClick={() => goToPage(pageNum)}
                               variant={pageNum === currentPage ? "default" : "outline"}
                               size="sm"
-                              className="h-9 w-9 p-0"
+                              className="h-9 w-12 p-0"
                             >
                               {pageNum}
                             </Button>
                           );
                         })}
                       </div>
-                      
-                      {/* Botão Próximo */}
-                      <Button
-                        onClick={handleNextPage}
-                        disabled={currentPage === totalPages}
-                        variant="outline"
-                        size="sm"
-                        className="h-9 px-3"
-                      >
-                        Próximo →
-                      </Button>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+                
+                {/* 📊 INFORMAÇÕES DE PAGINAÇÃO MOBILE */}
+                {pageInfo && (
+                  <div className="text-center text-xs text-muted-foreground mt-4 p-4 bg-muted/20 rounded-lg">
+                    <div className="space-y-2">
+                      <div>📄 Página {pageInfo.currentPage} de {pageInfo.totalPages}</div>
+                      <div>📊 Total: {pageInfo.totalItems} registros • 📋 {pageInfo.pageSize} por página</div>
+                      <div className="text-blue-600">💾 {provider?.toUpperCase()} Provider</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 🚀 PAGINAÇÃO INFINITA JÁ IMPLEMENTADA ACIMA */}
             </>
           )}
         </CardContent>

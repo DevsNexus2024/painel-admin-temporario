@@ -39,7 +39,7 @@ const BMP531_CONFIG = {
   endpoints: {
     // Conta e Saldo
     saldo: '/bmp-531/account/saldo',
-    extrato: '/bmp-531/account/extrato',
+    extrato: '/api/bmp-531/account/statement',  // ✅ ROTA CORRETA que funciona
     
     // PIX - Operações
     pixEnviar: '/bmp-531/pix/enviar',
@@ -281,11 +281,19 @@ async function makeRequest<T>(
 ): Promise<T> {
   const url = `${BMP531_CONFIG.baseUrl}${endpoint}`;
   
-  // ✅ HEADERS BÁSICOS - Backend adiciona credenciais via JWT
+  // ✅ HEADERS COM AUTENTICAÇÃO COMPLETA
+  const { TOKEN_STORAGE } = await import('@/config/api');
+  const userToken = TOKEN_STORAGE.get();
+  
+  if (!userToken) {
+    throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+  }
+  
   const defaultHeaders = {
     'Content-Type': 'application/json',
-    'Accept': 'application/json'
-    // Backend adiciona automaticamente: X-API-Key, X-API-Secret baseado no JWT
+    'Accept': 'application/json',
+    'Authorization': `Bearer ${userToken}`,
+    // Backend adiciona automaticamente X-API-Key e X-API-Secret baseado no JWT
   };
   
   logger.info(`BMP531 Request: ${options.method || 'GET'} ${endpoint}`, {
@@ -366,24 +374,38 @@ export async function getBmp531Extrato(filtros?: {
 }, accountType: 'tcr' | 'ttf' = 'ttf'): Promise<Bmp531ExtratoResponse> {
   let endpoint = BMP531_CONFIG.endpoints.extrato;
   
-  // Adicionar parâmetros de filtro se fornecidos
-  if (filtros && Object.keys(filtros).length > 0) {
-    const params = new URLSearchParams();
+  // ✅ PARÂMETROS CORRETOS para rota /statement
+  const params = new URLSearchParams();
+  const dadosBancarios = getDadosBancarios(accountType);
+  
+  // Parâmetros obrigatórios da conta
+  params.append('Conta.Agencia', dadosBancarios.agencia || '0001');
+  params.append('Conta.AgenciaDigito', dadosBancarios.agencia_digito || '8');
+  params.append('Conta.Conta', dadosBancarios.conta || '159');
+  params.append('Conta.ContaDigito', dadosBancarios.conta_digito || '4');
+  params.append('Conta.ContaPgto', dadosBancarios.conta_pgto || '00001594');
+  params.append('Conta.TipoConta', dadosBancarios.tipo_conta?.toString() || '3');
+  params.append('Conta.ModeloConta', dadosBancarios.modelo_conta?.toString() || '1');
+  params.append('NumeroBanco', '531');
+  
+  // Parâmetros de data (corrigir timezone)
+  if (filtros?.de && filtros?.ate) {
+    // ✅ CORREÇÃO: Usar split para evitar problemas de timezone
+    const [anoInicial, mesInicial, diaInicial] = filtros.de.split('-');
+    const [anoFinal, mesFinal, diaFinal] = filtros.ate.split('-');
     
-    if (filtros.de) {
-      params.append('de', filtros.de);
-    }
-    if (filtros.ate) {
-      params.append('ate', filtros.ate);
-    }
-    if (filtros.cursor) {
-      params.append('cursor', filtros.cursor.toString());
-    }
-    
-    endpoint += `?${params.toString()}`;
+    params.append('Mes', mesInicial);
+    params.append('Ano', anoInicial);
+    params.append('DiaInicial', diaInicial);
+    params.append('DiaFinal', diaFinal);
+  } else {
+    // Sem filtros: buscar mês atual
+    const hoje = new Date();
+    params.append('Mes', (hoje.getMonth() + 1).toString().padStart(2, '0'));
+    params.append('Ano', hoje.getFullYear().toString());
   }
   
-  const dadosBancarios = getDadosBancarios(accountType);
+  endpoint += `?${params.toString()}`;
   
   const resultado = await makeRequest<Bmp531ExtratoResponse>(
     endpoint,

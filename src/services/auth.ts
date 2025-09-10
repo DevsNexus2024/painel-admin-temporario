@@ -1,16 +1,9 @@
 import { API_CONFIG, createApiRequest, TOKEN_STORAGE, USER_STORAGE, LAST_ACTIVITY_STORAGE } from '@/config/api';
 import { logger } from '@/utils/logger';
 import { handleApiError } from '@/utils/error.handler';
+import { User, LoginCredentials, RegisterData } from '@/types/auth';
 
-// Tipos
-export interface User {
-  id: string;
-  email: string;
-  name?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
+// Tipos de resposta da API
 export interface AuthResponse {
   sucesso: boolean;
   mensagem: string;
@@ -18,17 +11,6 @@ export interface AuthResponse {
     user: User;
     token: string;
   };
-}
-
-export interface LoginCredentials {
-  email: string;
-  password: string;
-}
-
-export interface RegisterData {
-  email: string;
-  password: string;
-  name?: string;
 }
 
 // Classe de serviços de autenticação

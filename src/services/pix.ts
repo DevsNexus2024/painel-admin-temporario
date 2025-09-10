@@ -953,9 +953,9 @@ const executarConsultaChavePixBMP531 = async (chave: string): Promise<PixKeyCons
         ispb: result.dados?.conta?.ispb || null,
       },
       banco: {
-        descricao: result.banco || result.dados?.banco?.descricao || 'BMP-531',
-        numero: result.dados?.banco?.numero || '531',
-        ispb: result.dados?.banco?.ispb || '',
+        descricao: result.dados?.banco?.descricao || result.banco?.descricao || 'BMP-531',
+        numero: result.dados?.banco?.numero || result.banco?.numero || '531',
+        ispb: result.dados?.banco?.ispb || result.banco?.ispb || '',
       },
       detalhesConsulta: result,
       ticket: result.ticket || '',

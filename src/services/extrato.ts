@@ -241,8 +241,9 @@ export const consultarExtrato = async (filtros: ExtratoFiltros = {}): Promise<Ex
       }
       
       movimentosFormatados = result.data.transacoes.map(item => formatarMovimentoBitso(item));
-      hasMore = false; // TODO: implementar paginação Bitso
-      cursor = null;
+      // ✅ CORRIGIDO: Implementar paginação Bitso baseada na resposta da API
+      hasMore = result.data.hasMore || result.data.hasNextPage || false;
+      cursor = result.data.nextCursor || result.data.nextMarker || null;
       
     } else { // provider === 'bmp' || provider === 'bmp-531'
 

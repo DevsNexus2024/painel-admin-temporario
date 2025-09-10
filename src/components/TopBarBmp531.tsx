@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { RefreshCcw, SendHorizontal, DollarSign, Loader2 } from "lucide-react";
+import { RefreshCcw, SendHorizontal, DollarSign, Loader2, Lock, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -9,6 +9,9 @@ export default function TopBarBmp531() {
   const [saldoData, setSaldoData] = useState<Bmp531SaldoResponse | null>(null);
   const [isLoadingSaldo, setIsLoadingSaldo] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ✅ Os dados de saldo bloqueado já vêm do endpoint de saldo
+  console.log('[SALDO DATA] saldoData completa:', saldoData);
 
   // Função para carregar saldo específico da BMP 531
   const loadSaldoBmp531 = async () => {
@@ -38,16 +41,15 @@ export default function TopBarBmp531() {
   };
 
   const handleRefresh = async () => {
-
     await loadSaldoBmp531();
     
     toast.success("Saldo atualizado!", {
-      description: "BMP 531",
+      description: "BMP 531 - Saldo atualizado",
       duration: 3000
     });
   };
 
-  // Carregar saldo inicial
+  // Carregar dados iniciais
   useEffect(() => {
     loadSaldoBmp531();
   }, []);
@@ -90,6 +92,60 @@ export default function TopBarBmp531() {
     }
 
     return "R$ 0,00";
+  };
+
+  // ✅ Função para extrair saldo bloqueado do endpoint de saldo
+  const getSaldoBloqueadoFromSaldo = (): number => {
+    console.log('[SALDO BLOQUEADO] saldoData:', saldoData);
+    return saldoData?.saldoBloqueado || 0;
+  };
+
+  // ✅ Função para calcular saldo total (disponível - bloqueado)
+  const getSaldoTotalFromSaldo = (): number => {
+    console.log('[SALDO TOTAL] saldoData:', saldoData);
+    const disponivel = saldoData?.saldoDisponivel || 0;
+    const bloqueado = saldoData?.saldoBloqueado || 0;
+    return disponivel - bloqueado;
+  };
+
+  // ✅ Display do saldo bloqueado
+  const getSaldoBloqueadoDisplay = () => {
+    if (isLoadingSaldo) {
+      return (
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Carregando...</span>
+        </div>
+      );
+    }
+    
+    const valor = getSaldoBloqueadoFromSaldo();
+    const formatted = new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(valor);
+    
+    return formatted;
+  };
+
+  // ✅ Display do saldo total
+  const getSaldoTotalDisplay = () => {
+    if (isLoadingSaldo) {
+      return (
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Carregando...</span>
+        </div>
+      );
+    }
+    
+    const valor = getSaldoTotalFromSaldo();
+    const formatted = new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(valor);
+    
+    return formatted;
   };
 
   const getContaInfo = () => {
@@ -155,21 +211,62 @@ export default function TopBarBmp531() {
         </div>
       </div>
 
-      {/* Card de saldo - Específico para BMP 531 */}
+      {/* Cards de saldo - BMP 531 */}
       <div className="w-full max-w-7xl mx-auto">
-        <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl max-w-md">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-emerald-500/20">
-              <DollarSign className="h-5 w-5 text-emerald-400" />
-            </div>
-            <div className="flex-1">
-              <p className="text-muted-foreground text-sm">Saldo disponível</p>
-              <p className={`font-bold text-xl font-mono mt-1 ${error ? 'text-destructive' : 'text-foreground'}`}>
-                {getSaldoDisplay()}
-              </p>
-              {getContaInfo()}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          {/* Card: Saldo Atual (do endpoint de saldo) */}
+          <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-emerald-500/20">
+                <DollarSign className="h-5 w-5 text-emerald-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-muted-foreground text-sm">Saldo disponível</p>
+                <p className={`font-bold text-lg font-mono mt-1 ${error ? 'text-destructive' : 'text-foreground'}`}>
+                  {getSaldoDisplay()}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Endpoint Saldo</p>
+              </div>
             </div>
           </div>
+
+          {/* Card: Saldo Bloqueado */}
+          <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-red-500/20">
+                <Lock className="h-5 w-5 text-red-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-muted-foreground text-sm">Saldo bloqueado</p>
+                <p className="font-bold text-lg font-mono mt-1 text-foreground">
+                  {getSaldoBloqueadoDisplay()}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Do Extrato</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Card: Saldo Total */}
+          <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-blue-500/20">
+                <CheckCircle className="h-5 w-5 text-blue-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-muted-foreground text-sm">Saldo total</p>
+                <p className="font-bold text-lg font-mono mt-1 text-foreground">
+                  {getSaldoTotalDisplay()}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Disponível - Bloqueado</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Informações da conta */}
+        <div className="mt-4 text-center">
+          {getContaInfo()}
         </div>
       </div>
     </div>

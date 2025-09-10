@@ -50,8 +50,12 @@ export const PUBLIC_ENV = {
   // Dados bancários (não são secretos - são identificadores públicos)
   BMP_BANCO_BMP_274_TCR: import.meta.env.X_BMP_BANCO_BMP_274_TCR || '',
   BMP_AGENCIA_BMP_274_TCR: import.meta.env.X_BMP_AGENCIA_BMP_274_TCR || '',
+  BMP_AGENCIA_DIGITO_BMP_274_TCR: import.meta.env.X_BMP_AGENCIA_DIGITO_BMP_274_TCR || '',
   BMP_CONTA_BMP_274_TCR: import.meta.env.X_BMP_CONTA_BMP_274_TCR || '',
   BMP_CONTA_DIGITO_BMP_274_TCR: import.meta.env.X_BMP_CONTA_DIGITO_BMP_274_TCR || '',
+  BMP_CONTA_PGTO_BMP_274_TCR: import.meta.env.X_BMP_CONTA_PGTO_BMP_274_TCR || '',
+  BMP_TIPO_CONTA_BMP_274_TCR: parseInt(import.meta.env.X_BMP_TIPO_CONTA_BMP_274_TCR || '3', 10),
+  BMP_MODELO_CONTA_BMP_274_TCR: parseInt(import.meta.env.X_BMP_MODELO_CONTA_BMP_274_TCR || '1', 10),
   
   BMP_531_BANCO: import.meta.env.X_BMP_531_BANCO || '',
   BMP_AGENCIA_TTF: import.meta.env.X_531_AGENCIA || '',

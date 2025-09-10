@@ -174,14 +174,7 @@ const ClientStatement: React.FC = () => {
           formattedDate: new Date(getOrderingTimestamp(tx)).toLocaleString('pt-BR')
         });
         
-        // Log apenas para as primeiras comparações para não poluir
-        if (Math.random() < 0.05) {
-          console.log('[CLIENT-STATEMENT] Ordenação DEBUG:', {
-            a: formatForDebug(a),
-            b: formatForDebug(b),
-            comparison: timestampB - timestampA
-          });
-        }
+
       }
       
       return timestampB - timestampA; // Mais recente primeiro
@@ -278,7 +271,7 @@ const ClientStatement: React.FC = () => {
       toast.success(checked ? 'Registro marcado como conferido' : 'Registro desmarcado');
 
     } catch (error) {
-      console.error('Erro ao atualizar status:', error);
+
       toast.error('Erro ao salvar. Tente novamente.');
       
       // Reverter o estado do checkbox em caso de erro
@@ -334,7 +327,7 @@ const ClientStatement: React.FC = () => {
         throw new Error(`Você não possui acesso a nenhum cliente OTC. Usuário: ${user.email} (ID: ${user.id})`);
       }
 
-      console.log('Cliente OTC encontrado:', client);
+
 
       // Verificar se o usuário tem permissão para acessar este cliente
       if (String(client.user?.id) !== String(user.id)) {
@@ -344,7 +337,7 @@ const ClientStatement: React.FC = () => {
       setClientId(client.id);
       
     } catch (error) {
-      console.error('Erro ao buscar cliente OTC:', error);
+
       setError(error instanceof Error ? error.message : 'Erro desconhecido');
       setLoading(false);
     }
@@ -409,7 +402,7 @@ const ClientStatement: React.FC = () => {
           };
         } else {
           // Caso não encontre a transação (não deveria acontecer normalmente)
-          console.warn(`Transação não encontrada para histórico ${historico.id}`);
+
           return null;
         }
       }).filter(Boolean); // Remove itens null
@@ -511,7 +504,7 @@ const ClientStatement: React.FC = () => {
       await logout();
       window.location.href = '/login';
     } catch (error) {
-      console.error('Erro ao fazer logout:', error);
+
       // Forçar logout mesmo se der erro
       window.location.href = '/login';
     }
@@ -834,7 +827,7 @@ const ClientStatement: React.FC = () => {
       toast.success('PDF exportado com sucesso!');
       
     } catch (error) {
-      console.error('Erro ao gerar PDF:', error);
+
       toast.error('Erro ao gerar PDF. Tente novamente.');
     } finally {
       setExportingPDF(false);

@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { validarIntervaloData, formatarDataParaAPI, type MovimentoExtrato, type ExtratoResponse } from "@/services/extrato";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
+import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
 import DuplicataManagerModal from "@/components/DuplicataManagerModal";
 import { Bmp531Service, type Bmp531ExtratoResponse, type Bmp531Movimento } from "@/services/bmp531";
 
@@ -24,7 +25,11 @@ interface FiltrosAtivos {
   ate?: string;
 }
 
-export default function ExtractTableBmp531() {
+interface ExtractTableBmp531Props {
+  accountType?: 'tcr' | 'ttf';
+}
+
+export default function ExtractTableBmp531({ accountType = 'ttf' }: ExtractTableBmp531Props) {
   const [selectedTransaction, setSelectedTransaction] = useState<MovimentoExtrato | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState<Date>();
@@ -49,8 +54,8 @@ export default function ExtractTableBmp531() {
   const [searchName, setSearchName] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [searchDescCliente, setSearchDescCliente] = useState(""); // Filtro específico BMP-531
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("none");
-  const [sortBy, setSortBy] = useState<"value" | "date" | "none">("none");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("desc");
+  const [sortBy, setSortBy] = useState<"value" | "date" | "none">("date");
   
   // ✅ NOVO: Filtro de tipo de transação
   const [transactionTypeFilter, setTransactionTypeFilter] = useState<"todos" | "debito" | "credito">("todos");
@@ -61,9 +66,15 @@ export default function ExtractTableBmp531() {
   const [compensationModalOpen, setCompensationModalOpen] = useState(false);
   const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<MovimentoExtrato | null>(null);
 
-  // ✅ NOVO: Estados para modal de duplicatas
+  // ✅ Estados condicionais baseados no tipo de conta
+  // Para TTF: Modal OTC 
+  const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
+  const [selectedExtractRecord, setSelectedExtractRecord] = useState<MovimentoExtrato | null>(null);
+  const [creditedRecords, setCreditedRecords] = useState<Set<string>>(new Set());
+  
+  // Para TCR: Modal Duplicatas
   const [duplicataModalOpen, setDuplicataModalOpen] = useState(false);
-  const [selectedDuplicataTransaction, setSelectedDuplicataTransaction] = useState<MovimentoExtrato | null>(null);
+  const [selectedDuplicataRecord, setSelectedDuplicataRecord] = useState<MovimentoExtrato | null>(null);
 
   // ✅ Função para converter Bmp531Movimento usando LÓGICA EXATA do gerenciador BMP-531
   const convertBmp531ToMovimentoExtrato = (movimento: Bmp531Movimento): MovimentoExtrato => {
@@ -171,8 +182,8 @@ export default function ExtractTableBmp531() {
           cursor: currentCursor
         };
         
-        const data = await Bmp531Service.getExtrato(params);
-        const transactions = data?.items || [];
+        const data = await Bmp531Service.getExtrato(params, accountType);
+        const transactions = (data as any)?.movimentos || [];
         
         allTransactionsList = [...allTransactionsList, ...transactions];
         
@@ -197,6 +208,8 @@ export default function ExtractTableBmp531() {
       
       setAllTransactions(allTransactionsList);
       setTotalLoaded(allTransactionsList.length);
+      
+
       
       // ✅ ORDENAR POR DATA DESC (mais recente primeiro)
       allTransactionsList.sort((a, b) => {
@@ -239,8 +252,8 @@ export default function ExtractTableBmp531() {
         cursor: extratoData.cursor
       };
       
-      const data = await Bmp531Service.getExtrato(params);
-      const newTransactions = data?.items || [];
+      const data = await Bmp531Service.getExtrato(params, accountType);
+      const newTransactions = (data as any)?.movimentos || [];
       
       const updatedTransactions = [...allTransactions, ...newTransactions];
       
@@ -281,7 +294,7 @@ export default function ExtractTableBmp531() {
   // Os filtros são aplicados diretamente no frontend
 
   // ✅ Usar allTransactions que contém TODOS os registros carregados
-  const transactions = allTransactions.length > 0 ? allTransactions : (extratoData?.items || []);
+  const transactions = allTransactions.length > 0 ? allTransactions : ((extratoData as any)?.movimentos || []);
   const hasMore = extratoData?.hasMore || false;
   const currentCursor = extratoData?.cursor || 0;
 
@@ -389,64 +402,11 @@ export default function ExtractTableBmp531() {
     setCompensationModalOpen(true);
   };
 
-  // ✅ NOVO: Função para extrair ID do usuário da descrição
-  const extrairIdUsuario = (transaction: MovimentoExtrato): number => {
-    const descCliente = transaction.descCliente || '';
-    
-    // Procurar padrão "Usuario 96" ou "Usuario 1733" etc.
-    const match = descCliente.match(/Usuario\s+(\d+)/i);
-    
-    if (match && match[1]) {
-      const userId = parseInt(match[1], 10);
-      console.log('[EXTRATO-BMP531] ID do usuário extraído:', {
-        descCliente,
-        userId
-      });
-      return userId;
-    }
-    
-    // Fallback caso não encontre o padrão
-    console.warn('[EXTRATO-BMP531] Não foi possível extrair ID do usuário:', {
-      descCliente,
-      transaction: transaction.id
-    });
-    return 0; // Valor que indicará erro no backend
-  };
 
-  // ✅ NOVO: Função para abrir modal de duplicatas
-  const handleGerenciarDuplicatas = (transaction: MovimentoExtrato, event: React.MouseEvent) => {
-    event.stopPropagation();
-    
-    const idUsuario = extrairIdUsuario(transaction);
-    
-    if (idUsuario === 0) {
-      toast.error('Não foi possível identificar o ID do usuário nesta transação');
-      return;
-    }
-    
-    console.log('[EXTRATO-BMP531] Abrindo modal de duplicatas para:', {
-      id: transaction.id,
-      value: transaction.value,
-      type: transaction.type,
-      client: transaction.client,
-      descCliente: transaction.descCliente,
-      idUsuario
-    });
-    
-    setSelectedDuplicataTransaction({
-      ...transaction,
-      idUsuario // Adicionar o ID extraído
-    } as any);
-    setDuplicataModalOpen(true);
-  };
 
-  // ✅ NOVO: Callback após exclusão de duplicata
-  const handleDuplicataExcluida = (idMovimentacao: number) => {
-    console.log('[EXTRATO-BMP531] Duplicata excluída:', idMovimentacao);
-    toast.success(`Duplicata ${idMovimentacao} removida do sistema`);
-    // Opcional: Recarregar dados do extrato se necessário
-    // refetch();
-  };
+
+
+
 
   // Função para fechar modal de compensação
   const handleCloseCompensationModal = (wasSuccessful?: boolean) => {
@@ -457,6 +417,57 @@ export default function ExtractTableBmp531() {
     
     setCompensationModalOpen(false);
     setSelectedCompensationRecord(null);
+  };
+
+  // ✅ NOVO: Funções para OTC
+  const isRecordCredited = (transaction: MovimentoExtrato): boolean => {
+    const recordKey = `bmp-531-${transaction.id}`;
+    return creditedRecords.has(recordKey);
+  };
+
+  const handleCreditToOTC = async (transaction: MovimentoExtrato, event: React.MouseEvent) => {
+    event.stopPropagation(); // Evitar que abra o modal de detalhes
+    
+    // Verificar se já foi creditado antes de abrir modal
+    if (isRecordCredited(transaction)) {
+      toast.error('Registro já creditado', {
+        description: 'Este registro do extrato já foi creditado para um cliente OTC'
+      });
+      return;
+    }
+    
+    setSelectedExtractRecord(transaction);
+    setCreditOTCModalOpen(true);
+  };
+
+  const handleCloseCreditOTCModal = (wasSuccessful?: boolean) => {
+    // Se operação foi realizada com sucesso, marcar como creditado
+    if (wasSuccessful && selectedExtractRecord) {
+      const recordKey = `bmp-531-${selectedExtractRecord.id}`;
+      setCreditedRecords(prev => new Set(prev).add(recordKey));
+    }
+    
+    setCreditOTCModalOpen(false);
+    setSelectedExtractRecord(null);
+  };
+
+  // ✅ NOVO: Funções para Duplicatas (TCR)
+  const extrairIdUsuario = (descCliente: string): string => {
+    // Padrão: caas436344xU1122; ou similar - extrair número após "xU"
+    const match = descCliente?.match(/xU(\d+)/i);
+    return match ? match[1] : '';
+  };
+
+  const handleGerenciarDuplicatas = (record: MovimentoExtrato, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setSelectedDuplicataRecord(record);
+    setDuplicataModalOpen(true);
+  };
+
+  const handleDuplicataExcluida = () => {
+    // Recarregar dados após exclusão
+    loadAllTransactionsBmp531();
+    toast.success("Duplicata excluída com sucesso!");
   };
 
   const handleAplicarFiltros = async () => {
@@ -470,13 +481,70 @@ export default function ExtractTableBmp531() {
       }
     }
 
-    // ✅ SIMPLIFICADO: Não enviar filtros para backend, fazer filtro apenas no frontend
+    // ✅ NOVO: Enviar filtros para backend igual à TTF
+    setIsLoading(true);
+    setError(null);
+    setAllTransactions([]);
+    setTotalLoaded(0);
     setCurrentPage(1);
     
-    toast.success("Filtros aplicados!", {
-      description: "Transações filtradas com sucesso",
-      duration: 2000
-    });
+    try {
+      let allTransactionsList: Bmp531Movimento[] = [];
+      let currentCursor = 0;
+      let hasMorePages = true;
+      let pageCount = 1;
+      
+      // ✅ Usar filtros de data se fornecidos
+      const filtros = (dateFrom && dateTo) ? {
+        de: formatarDataParaAPI(dateFrom),
+        ate: formatarDataParaAPI(dateTo)
+      } : undefined;
+      
+      // Carregar todas as páginas com filtros
+      while (hasMorePages) {
+        const params = {
+          cursor: currentCursor,
+          ...filtros
+        };
+        
+        const data = await Bmp531Service.getExtrato(params, accountType);
+        const transactions = (data as any)?.movimentos || [];
+        
+        allTransactionsList = [...allTransactionsList, ...transactions];
+        
+        if (data?.hasMore && data?.cursor && data.cursor > currentCursor) {
+          currentCursor = data.cursor;
+          pageCount++;
+        } else {
+          hasMorePages = false;
+        }
+        
+        if (pageCount > 50) {
+          break;
+        }
+      }
+      
+      setAllTransactions(allTransactionsList);
+      setTotalLoaded(allTransactionsList.length);
+      
+      toast.success("Filtros aplicados!", {
+        description: `${allTransactionsList.length} transações encontradas`,
+        duration: 2000
+      });
+      
+      // Armazenar filtros ativos
+      setFiltrosAtivos({
+        de: dateFrom ? formatarDataParaAPI(dateFrom) : undefined,
+        ate: dateTo ? formatarDataParaAPI(dateTo) : undefined
+      });
+      
+    } catch (error: any) {
+      console.error("❌ [ExtractTableBmp531] Erro ao aplicar filtros:", error);
+      setError(error.message);
+      toast.error("Erro ao aplicar filtros");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleLimparFiltros = async () => {
@@ -486,10 +554,18 @@ export default function ExtractTableBmp531() {
     setSearchValue("");
     setSearchDescCliente("");
     setTransactionTypeFilter("todos");
-    setSortBy("none");
-    setSortOrder("none");
+    setSortBy("date");
+    setSortOrder("desc");
     setCurrentPage(1);
-    toast.success("Filtros limpos!");
+    setFiltrosAtivos({});
+    
+    // ✅ NOVO: Recarregar dados sem filtros
+    await loadAllTransactionsBmp531();
+    
+    toast.success("Filtros limpos!", {
+      description: "Todos os filtros foram removidos",
+      duration: 2000
+    });
   };
 
   // ✅ NOVO: Função para exportar CSV
@@ -1107,31 +1183,63 @@ export default function ExtractTableBmp531() {
                             </TableCell>
                             <TableCell className="py-3">
                               <div className="flex items-center justify-center gap-1">
-                                {transaction.type === 'CRÉDITO' && (
+
+                                
+                                {/* ✅ Botões condicionais baseados no tipo de conta */}
+                                {accountType === 'ttf' && transaction.type === 'CRÉDITO' && (
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    onClick={(e) => handleCompensation(transaction, e)}
-                                    className="h-7 px-2 text-xs transition-all bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300"
-                                    title="Diagnóstico inteligente + Compensação BMP 531"
+                                    onClick={(e) => handleCreditToOTC(transaction, e)}
+                                    disabled={isRecordCredited(transaction)}
+                                    className={cn(
+                                      "h-7 px-2 text-xs transition-all",
+                                      isRecordCredited(transaction)
+                                        ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                        : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
+                                    )}
+                                    title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
                                   >
-                                    <DollarSign className="h-3 w-3 mr-1" />
-                                    🧠 Verificar
+                                    {isRecordCredited(transaction) ? (
+                                      <>
+                                        <Check className="h-3 w-3 mr-1" />
+                                        Creditado
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="h-3 w-3 mr-1" />
+                                        OTC
+                                      </>
+                                    )}
                                   </Button>
                                 )}
                                 
-                                {/* ✅ NOVO: Botão de duplicatas para DÉBITOS */}
-                                {transaction.type === 'DÉBITO' && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => handleGerenciarDuplicatas(transaction, e)}
-                                    className="h-7 px-2 text-xs transition-all bg-red-50 hover:bg-red-100 text-red-700 border-red-200 hover:border-red-300"
-                                    title="Gerenciar duplicatas desta movimentação"
-                                  >
-                                    <Trash2 className="h-3 w-3 mr-1" />
-                                    🔄 Duplicatas
-                                  </Button>
+                                {/* ✅ Botões para TCR (conforme prints) */}
+                                {accountType === 'tcr' && (
+                                  <>
+                                    {transaction.type === 'DÉBITO' && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={(e) => handleGerenciarDuplicatas(transaction, e)}
+                                        className="h-7 px-2 text-xs bg-red-50 hover:bg-red-100 text-red-700 border-red-200 hover:border-red-300"
+                                      >
+                                        <Trash2 className="h-3 w-3 mr-1" />
+                                        Duplicatas
+                                      </Button>
+                                    )}
+                                    {transaction.type === 'CRÉDITO' && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={(e) => handleCompensation(transaction, e)}
+                                        className="h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300"
+                                      >
+                                        <DollarSign className="h-3 w-3 mr-1" />
+                                        Verificar
+                                      </Button>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </TableCell>
@@ -1194,31 +1302,63 @@ export default function ExtractTableBmp531() {
                             {transaction.code}
                           </span>
                           <div className="flex gap-2">
-                            {transaction.type === 'CRÉDITO' && (
+
+                            
+                            {/* ✅ Botões condicionais baseados no tipo de conta (Mobile) */}
+                            {accountType === 'ttf' && transaction.type === 'CRÉDITO' && (
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={(e) => handleCompensation(transaction, e)}
-                                className="h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                title="Diagnóstico inteligente + Compensação BMP 531"
+                                onClick={(e) => handleCreditToOTC(transaction, e)}
+                                disabled={isRecordCredited(transaction)}
+                                className={cn(
+                                  "h-7 px-2 text-xs transition-all",
+                                  isRecordCredited(transaction)
+                                    ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                    : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                                )}
+                                title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
                               >
-                                <DollarSign className="h-3 w-3 mr-1" />
-                                🧠 Verificar
+                                {isRecordCredited(transaction) ? (
+                                  <>
+                                    <Check className="h-3 w-3 mr-1" />
+                                    Creditado
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    OTC
+                                  </>
+                                )}
                               </Button>
                             )}
                             
-                            {/* ✅ NOVO: Botão de duplicatas para DÉBITOS (Mobile) */}
-                            {transaction.type === 'DÉBITO' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => handleGerenciarDuplicatas(transaction, e)}
-                                className="h-7 px-2 text-xs bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
-                                title="Gerenciar duplicatas desta movimentação"
-                              >
-                                <Trash2 className="h-3 w-3 mr-1" />
-                                🔄 Duplicatas
-                              </Button>
+                            {/* ✅ Botões para TCR (Mobile - conforme prints) */}
+                            {accountType === 'tcr' && (
+                              <>
+                                {transaction.type === 'DÉBITO' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => handleGerenciarDuplicatas(transaction, e)}
+                                    className="h-7 px-2 text-xs bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+                                  >
+                                    <Trash2 className="h-3 w-3 mr-1" />
+                                    Duplicatas
+                                  </Button>
+                                )}
+                                {transaction.type === 'CRÉDITO' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => handleCompensation(transaction, e)}
+                                    className="h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                  >
+                                    <DollarSign className="h-3 w-3 mr-1" />
+                                    Verificar
+                                  </Button>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -1386,27 +1526,29 @@ export default function ExtractTableBmp531() {
         />
       )}
 
-      {/* ✅ NOVO: Modal de gerenciamento de duplicatas */}
-      {duplicataModalOpen && selectedDuplicataTransaction && (
+      {/* ✅ Modal OTC (TTF) */}
+      {accountType === 'ttf' && (
+        <CreditExtractToOTCModal
+          isOpen={creditOTCModalOpen}
+          onClose={handleCloseCreditOTCModal}
+          extractRecord={selectedExtractRecord}
+        />
+      )}
+
+      {/* ✅ NOVO: Modal Duplicatas (TCR) */}
+      {accountType === 'tcr' && selectedDuplicataRecord && (
         <DuplicataManagerModal
           isOpen={duplicataModalOpen}
           onClose={() => setDuplicataModalOpen(false)}
           transacao={{
-            id: selectedDuplicataTransaction.id,
-            value: selectedDuplicataTransaction.value,
-            client: selectedDuplicataTransaction.client,
-            dateTime: selectedDuplicataTransaction.dateTime,
-            type: selectedDuplicataTransaction.type
+            id: selectedDuplicataRecord.id,
+            value: selectedDuplicataRecord.value,
+            client: selectedDuplicataRecord.client,
+            dateTime: selectedDuplicataRecord.dateTime,
+            type: selectedDuplicataRecord.type
           }}
-          idUsuario={(selectedDuplicataTransaction as any).idUsuario || 0}
+          idUsuario={parseInt(extrairIdUsuario(selectedDuplicataRecord.descCliente || '')) || 0}
           onDuplicataExcluida={handleDuplicataExcluida}
-          todasTransacoes={convertedTransactions.map(t => ({
-            id: t.id,
-            value: t.value,
-            type: t.type,
-            dateTime: t.dateTime,
-            descCliente: t.descCliente
-          }))}
         />
       )}
     </div>
