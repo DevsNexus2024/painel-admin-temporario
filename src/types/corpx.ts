@@ -30,6 +30,7 @@ export interface CorpXExtratoParams {
   page?: number;
   dataInicio?: string; // YYYY-MM-DD
   dataFim?: string; // YYYY-MM-DD
+  itensporpagina?: number; // Limite de itens por página (máx 500)
 }
 
 export interface CorpXPixKey {

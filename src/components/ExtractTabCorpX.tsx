@@ -22,9 +22,22 @@ export default function ExtractTabCorpX() {
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [error, setError] = useState<string>("");
   
-  // Estados para filtros
-  const [dateFrom, setDateFrom] = useState<Date>();
-  const [dateTo, setDateTo] = useState<Date>();
+  // ✅ Função para obter período padrão de 3 dias (hoje + 2 dias atrás)
+  const getDefaultDates = () => {
+    const hoje = new Date();
+    const doisDiasAtras = new Date();
+    doisDiasAtras.setDate(hoje.getDate() - 2);
+    
+    return {
+      dateFrom: doisDiasAtras,
+      dateTo: hoje
+    };
+  };
+
+  // Estados para filtros - iniciando com período padrão de 3 dias
+  const defaultDates = getDefaultDates();
+  const [dateFrom, setDateFrom] = useState<Date>(defaultDates.dateFrom);
+  const [dateTo, setDateTo] = useState<Date>(defaultDates.dateTo);
   const [searchName, setSearchName] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [searchDescCliente, setSearchDescCliente] = useState("");
@@ -156,6 +169,7 @@ export default function ExtractTabCorpX() {
   const totalCredito = filteredAndSortedTransactions.filter(t => t.type === 'CRÉDITO').reduce((sum, t) => sum + t.value, 0);
   
 
+
   // ✅ Carregar transações (com filtros de período)
   const loadCorpXTransactions = async (customDateFrom?: Date, customDateTo?: Date, page: number = 1) => {
     try {
@@ -164,19 +178,31 @@ export default function ExtractTabCorpX() {
       
       const cnpj = "14283885000198"; // CNPJ fixo para teste
       
-      // ✅ Usar datas customizadas (dos filtros) ou datas selecionadas ou padrão
-      const dataInicio = customDateFrom || dateFrom;
-      const dataFim = customDateTo || dateTo;
+      // ✅ Usar datas customizadas (dos filtros) ou datas selecionadas ou período padrão de 3 dias
+      let dataInicio, dataFim;
       
-      const params = dataInicio && dataFim ? {
+      if (customDateFrom && customDateTo) {
+        // Usar datas customizadas
+        dataInicio = customDateFrom.toISOString().split('T')[0];
+        dataFim = customDateTo.toISOString().split('T')[0];
+      } else if (dateFrom && dateTo) {
+        // Usar datas selecionadas
+        dataInicio = dateFrom.toISOString().split('T')[0];
+        dataFim = dateTo.toISOString().split('T')[0];
+      } else {
+        // Usar período padrão de 3 dias
+        const hoje = new Date();
+        const doisDiasAtras = new Date();
+        doisDiasAtras.setDate(hoje.getDate() - 2);
+        
+        dataInicio = doisDiasAtras.toISOString().split('T')[0];
+        dataFim = hoje.toISOString().split('T')[0];
+      }
+      
+      const params = {
         cnpj,
-        dataInicio: dataInicio.toISOString().split('T')[0], // YYYY-MM-DD
-        dataFim: dataFim.toISOString().split('T')[0],       // YYYY-MM-DD
-        page: page // 🚀 Paginação server-side
-      } : {
-        cnpj,
-        dataInicio: "2024-12-01", // Padrão: dezembro 2024
-        dataFim: "2024-12-31",
+        dataInicio,
+        dataFim,
         page: page // 🚀 Paginação server-side
       };
       
@@ -262,10 +288,11 @@ export default function ExtractTabCorpX() {
     }
   };
 
-  // ✅ Limpar filtros
+  // ✅ Limpar filtros - voltar ao período padrão de 3 dias
   const handleLimparFiltros = () => {
-    setDateFrom(undefined);
-    setDateTo(undefined);
+    const defaultDates = getDefaultDates();
+    setDateFrom(defaultDates.dateFrom);
+    setDateTo(defaultDates.dateTo);
     setSearchName("");
     setSearchValue("");
     setSearchDescCliente("");
@@ -275,7 +302,7 @@ export default function ExtractTabCorpX() {
     setCurrentPage(1);
     loadCorpXTransactions(undefined, undefined, 1);
     toast.success("Filtros limpos!", {
-      description: "Todos os filtros foram removidos",
+      description: "Retornado ao período padrão de 3 dias",
       duration: 2000
     });
   };
@@ -313,6 +340,79 @@ export default function ExtractTabCorpX() {
     }
   };
 
+  // ✅ Função para exportar CSV
+  const exportToCSV = () => {
+    try {
+      // Cabeçalho do CSV
+      const headers = [
+        'Data/Hora',
+        'Valor',
+        'Tipo',
+        'Cliente',
+        'Documento',
+        'Descrição',
+        'Código',
+        'Provedor'
+      ];
+
+      // Converter dados para CSV
+      const csvData = filteredAndSortedTransactions.map(transaction => [
+        formatDate(transaction.dateTime),
+        `${transaction.type === 'DÉBITO' ? '-' : '+'}${formatCurrency(transaction.value)}`,
+        transaction.type,
+        transaction.client || '',
+        transaction.document || '',
+        transaction.descCliente || '',
+        transaction.code || '',
+        'CORPX'
+      ]);
+
+      // Criar conteúdo CSV
+      const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => 
+          row.map(field => 
+            // Escapar campos que contêm vírgula, aspas ou quebra de linha
+            typeof field === 'string' && (field.includes(',') || field.includes('"') || field.includes('\n'))
+              ? `"${field.replace(/"/g, '""')}"` 
+              : field
+          ).join(',')
+        )
+      ].join('\n');
+
+      // Criar arquivo e fazer download
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      
+      // Gerar nome do arquivo com data atual
+      const dataAtual = new Date().toISOString().split('T')[0];
+      const nomeArquivo = `extrato_corpx_${dataAtual}.csv`;
+      
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', nomeArquivo);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+
+      toast.success(`CSV exportado com sucesso!`, {
+        description: `${filteredAndSortedTransactions.length} registros exportados para ${nomeArquivo}`,
+        duration: 3000
+      });
+
+    } catch (error) {
+      console.error('[CORPX-CSV] Erro ao exportar CSV:', error);
+      toast.error("Erro ao exportar CSV", {
+        description: "Não foi possível gerar o arquivo de exportação",
+        duration: 4000
+      });
+    }
+  };
+
   // ✅ Funções para OTC
   const isRecordCredited = (transaction: any): boolean => {
     const recordKey = `corpx-${transaction.id}`;
@@ -345,10 +445,11 @@ export default function ExtractTabCorpX() {
     setSelectedExtractRecord(null);
   };
 
-  // ✅ Carregar dados ao montar o componente
+  // ✅ Carregar dados ao montar o componente com período padrão de 3 dias
   useEffect(() => {
-    loadCorpXTransactions(undefined, undefined, 1);
-  }, []);
+    // Usar as datas padrão já definidas no estado
+    loadCorpXTransactions(dateFrom, dateTo, 1);
+  }, []); // Manter [] para executar apenas na montagem
 
   return (
     <div className="space-y-6">
@@ -525,7 +626,7 @@ export default function ExtractTabCorpX() {
               Limpar
             </Button>
             <Button 
-              onClick={() => loadCorpXTransactions()} 
+              onClick={() => loadCorpXTransactions(dateFrom, dateTo, currentPage)} 
               variant="outline" 
               disabled={isLoading}
               className="rounded-xl px-6 py-3 font-semibold border-border hover:border-purple-500 transition-colors"
@@ -536,6 +637,15 @@ export default function ExtractTabCorpX() {
                 <RefreshCw className="h-4 w-4 mr-2" />
               )}
               {isLoading ? "Carregando..." : "Atualizar"}
+            </Button>
+            <Button 
+              onClick={exportToCSV} 
+              variant="outline" 
+              disabled={isLoading || filteredAndSortedTransactions.length === 0}
+              className="rounded-xl px-6 py-3 font-semibold border-border hover:border-green-500 hover:text-green-600 transition-colors"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Exportar CSV
             </Button>
           </div>
         </CardContent>
@@ -593,7 +703,7 @@ export default function ExtractTabCorpX() {
               <AlertCircle className="h-12 w-12 mx-auto text-red-500 mb-4" />
               <h3 className="text-lg font-semibold text-card-foreground mb-2">Erro ao carregar extrato</h3>
               <p className="text-muted-foreground mb-4">{error}</p>
-              <Button onClick={() => loadCorpXTransactions()} variant="outline">
+              <Button onClick={() => loadCorpXTransactions(dateFrom, dateTo, 1)} variant="outline">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Tentar novamente
               </Button>

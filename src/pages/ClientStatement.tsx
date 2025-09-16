@@ -510,6 +510,168 @@ const ClientStatement: React.FC = () => {
     }
   };
 
+  // ✅ Função para exportar CSV
+  const exportToCSV = () => {
+    try {
+      // Cabeçalho do CSV
+      const headers = [
+        'Data/Hora',
+        'Tipo',
+        'Pagador/Descrição',
+        'Valor BRL',
+        'Valor USD',
+        'Saldo Anterior BRL',
+        'Saldo Posterior BRL',
+        'Saldo Anterior USD', 
+        'Saldo Posterior USD',
+        'Taxa Conversão',
+        'Documento Pagador',
+        'ID BMP'
+      ];
+
+      // Converter dados para CSV
+      const csvData = filteredAndSortedTransactions.map(item => {
+        const operationType = (item as any).operation_type;
+        let tipo = '';
+        
+        switch (operationType) {
+          case 'deposit':
+            tipo = 'Deposito';
+            break;
+          case 'withdrawal':
+            tipo = 'Saque';
+            break;
+          case 'manual_credit':
+            tipo = 'Credito Manual';
+            break;
+          case 'manual_debit':
+            tipo = (item as any).conversion_rate ? 'Conversao BRL para USD' : 'Debito Manual';
+            break;
+          default:
+            tipo = item.type === 'deposit' ? 'Deposito' : 'Saque';
+        }
+
+        // Formatar data limpa
+        const dataFormatada = ((item as any).operation_type === 'manual_credit' || (item as any).operation_type === 'manual_debit') 
+          ? formatTimestamp(item.date, 'dd/MM/yyyy HH:mm')
+          : formatOTCTimestamp(item.date, 'dd/MM/yyyy HH:mm');
+
+        // Determinar pagador/descrição - limpar caracteres especiais
+        let pagadorDescricao = '';
+        if (operationType === 'manual_credit' || operationType === 'manual_debit') {
+          pagadorDescricao = ((item as any).operation_description || 'N/A').replace(/[,;]/g, ' ');
+        } else {
+          pagadorDescricao = (item.payer_name || 'N/A').replace(/[,;]/g, ' ');
+        }
+
+        // Função para formatar valores monetários sem vírgulas problemáticas
+        const formatMoney = (value: number): string => {
+          return value.toFixed(2).replace('.', ',');
+        };
+
+        // Valores BRL e USD - formato limpo
+        let valorBRL = '';
+        let valorUSD = '';
+        
+        if (operationType === 'manual_debit' && (item as any).conversion_rate) {
+          // Conversão
+          valorBRL = `-${formatMoney(Math.abs((item as any).amount_change || 0))}`;
+          valorUSD = `+${formatMoney(Math.abs((item as any).usd_amount_change || 0))}`;
+        } else if (isUSDOnlyOperation(item)) {
+          // Operação USD pura
+          valorBRL = '0,00';
+          valorUSD = `${(item as any).usd_amount_change > 0 ? '+' : '-'}${formatMoney(Math.abs((item as any).usd_amount_change))}`;
+        } else {
+          // Transação normal BRL
+          const prefix = (operationType === 'deposit' || operationType === 'manual_credit') ? '+' : '-';
+          valorBRL = `${prefix}${formatMoney(Math.abs(item.amount))}`;
+          valorUSD = '0,00';
+        }
+
+        // Saldos - apenas números sem R$ e símbolos 
+        const saldoAntBRL = formatMoney((item as any).saldo_anterior || 0);
+        const saldoPostBRL = formatMoney((item as any).saldo_posterior || 0);
+        const saldoAntUSD = formatMoney((item as any).usd_balance_before || 0);
+        const saldoPostUSD = formatMoney((item as any).usd_balance_after || 0);
+        const taxaConversao = (item as any).conversion_rate ? formatMoney(parseFloat((item as any).conversion_rate)) : '';
+
+        return [
+          dataFormatada,
+          tipo,
+          pagadorDescricao,
+          valorBRL,
+          valorUSD,
+          saldoAntBRL,
+          saldoPostBRL,
+          saldoAntUSD,
+          saldoPostUSD,
+          taxaConversao,
+          (item.payer_document || '').replace(/[,;]/g, ' '),
+          (item.bmp_identifier || '').replace(/[,;]/g, ' ')
+        ];
+      });
+
+      // Criar conteúdo CSV usando ponto-e-vírgula como separador
+      const csvContent = [
+        headers.join(';'),
+        ...csvData.map(row => 
+          row.map(field => {
+            // Converter para string e limpar
+            const str = String(field || '');
+            // Se contém ponto-e-vírgula ou aspas, escapar com aspas duplas
+            if (str.includes(';') || str.includes('"') || str.includes('\n')) {
+              return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+          }).join(';')
+        )
+      ].join('\n');
+
+      // Criar arquivo e fazer download
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      
+      // Gerar nome do arquivo
+      let dateForFileName = '';
+      if (searchDate) {
+        dateForFileName = searchDate.replace(/\//g, '-');
+      } else if (showOnlyToday) {
+        dateForFileName = new Date().toLocaleDateString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: '2-digit'
+        }).replace(/\//g, '-');
+      } else {
+        dateForFileName = 'periodo-completo';
+      }
+      
+      const nomeArquivo = `extrato-otc-${data?.cliente.name.replace(/\s+/g, '-').toLowerCase()}-${dateForFileName}.csv`;
+      
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', nomeArquivo);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+
+      toast.success(`CSV exportado com sucesso!`, {
+        description: `${filteredAndSortedTransactions.length} registros exportados para ${nomeArquivo}`,
+        duration: 3000
+      });
+
+    } catch (error) {
+      console.error('[OTC-CSV] Erro ao exportar CSV:', error);
+      toast.error("Erro ao exportar CSV", {
+        description: "Não foi possível gerar o arquivo de exportação",
+        duration: 4000
+      });
+    }
+  };
+
   // Função para exportar PDF - VERSÃO PROFISSIONAL PARA IMPRESSÃO
   const exportToPDF = async () => {
     if (!data) {
@@ -1151,6 +1313,15 @@ const ClientStatement: React.FC = () => {
               >
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Atualizar
+              </Button>
+              <Button
+                onClick={exportToCSV}
+                disabled={!data || filteredAndSortedTransactions.length === 0}
+                variant="outline"
+                className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Exportar CSV
               </Button>
               <Button
                 onClick={exportToPDF}

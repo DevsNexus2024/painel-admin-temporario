@@ -40,7 +40,10 @@ export class CompensationService {
    */
   static async createCompensation(data: CompensationData): Promise<CompensationResponse> {
     try {
-
+      console.log('[COMPENSATION] Enviando compensação manual:', {
+        url: this.API_URL,
+        data: { ...data, hash: data.hash }
+      });
 
       const response = await fetch(this.API_URL, {
         method: 'POST',
@@ -51,18 +54,48 @@ export class CompensationService {
         body: JSON.stringify(data)
       });
 
-      const responseData: CompensationResponse = await response.json();
-
-      if (!response.ok) {
-
-        throw new Error(responseData.erro || responseData.mensagem || 'Erro desconhecido');
+      let responseData: any;
+      let responseText: string = '';
+      
+      try {
+        responseText = await response.text();
+        console.log('[COMPENSATION] Resposta bruta da API:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: responseText
+        });
+        
+        responseData = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        console.error('[COMPENSATION] Erro ao fazer parse da resposta:', parseError);
+        responseData = { erro: `Resposta inválida da API: ${responseText}` };
       }
 
+      if (!response.ok) {
+        let errorMessage = 'Erro desconhecido na API';
+        
+        if (responseData) {
+          errorMessage = responseData.erro || 
+                       responseData.mensagem || 
+                       responseData.error || 
+                       responseData.message || 
+                       `Erro HTTP ${response.status}: ${response.statusText}`;
+        }
+        
+        console.error('[COMPENSATION] Erro detalhado da API:', {
+          status: response.status,
+          responseData,
+          extractedError: errorMessage
+        });
 
+        throw new Error(errorMessage);
+      }
+
+      console.log('[COMPENSATION] Compensação manual realizada com sucesso:', responseData);
       return responseData;
 
     } catch (error) {
-
+      console.error('[COMPENSATION] Erro na compensação manual:', error);
       throw error;
     }
   }
@@ -116,8 +149,9 @@ export const useCompensation = () => {
       // Validar dados
       const validation = CompensationService.validateCompensationData(data);
       if (!validation.valid) {
-        toast.error('Dados inválidos', {
-          description: validation.errors.join(', ')
+        toast.error('Dados inválidos para compensação', {
+          description: validation.errors.join(', '),
+          duration: 4000
         });
         return false;
       }
@@ -125,16 +159,51 @@ export const useCompensation = () => {
       // Criar compensação
       const response = await CompensationService.createCompensation(data);
       
-      toast.success('Compensação processada!', {
-        description: `ID Movimentação: ${response.response?.id_movimentacao}`
-      });
-
+      // Toast de sucesso removido - será mostrado pelo componente principal
       return true;
+      
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro desconhecido';
-      toast.error('Erro ao processar compensação', {
-        description: message
+      let errorMessage = 'Erro desconhecido';
+      let errorDetails = '';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        
+        // Melhorar mensagens específicas para o usuário
+        if (errorMessage.includes('usuário não encontrado') || errorMessage.includes('ID do usuário')) {
+          errorDetails = 'Verifique se o ID do usuário está correto.';
+        } else if (errorMessage.includes('quantia') || errorMessage.includes('valor')) {
+          errorDetails = 'Verifique se o valor está correto e dentro dos limites.';
+        } else if (errorMessage.includes('saldo insuficiente')) {
+          errorDetails = 'Saldo insuficiente na conta para processar a compensação.';
+        } else if (errorMessage.includes('limite')) {
+          errorDetails = 'Valor pode ter excedido os limites permitidos.';
+        } else if (errorMessage.includes('duplicad') || errorMessage.includes('já processad')) {
+          errorDetails = 'Esta compensação pode já ter sido realizada.';
+        } else if (errorMessage.includes('autenticação') || errorMessage.includes('token')) {
+          errorDetails = 'Problema de autenticação. Faça login novamente.';
+        } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+          errorDetails = 'Verifique sua conexão com a internet.';
+        } else if (errorMessage.includes('timeout')) {
+          errorDetails = 'Tente novamente em alguns instantes.';
+        }
+      } else {
+        errorMessage = String(error);
+      }
+      
+      console.error('[COMPENSATION-HOOK] Erro na compensação:', {
+        error: errorMessage,
+        errorDetails,
+        fullError: error,
+        data
       });
+      
+      // Toast de erro mais informativo
+      toast.error('Erro na Compensação Saldo Visual', {
+        description: `${errorMessage}${errorDetails ? ` ${errorDetails}` : ''}`,
+        duration: 6000
+      });
+      
       return false;
     }
   };

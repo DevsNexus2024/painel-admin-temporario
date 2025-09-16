@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { 
   buscarDuplicatas, 
@@ -180,6 +181,14 @@ export default function DuplicataManagerModal({
     onClose();
   };
 
+  // Função para formatar moeda (igual ao modal de compensação)
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(Math.abs(value));
+  };
+
   // ===== RENDER =====
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -213,34 +222,44 @@ export default function DuplicataManagerModal({
         </DialogHeader>
 
         {/* ===== INFORMAÇÕES DA TRANSAÇÃO ===== */}
-        <Card className="bg-muted/20">
+        <Card className="bg-gray-100 border-gray-300 shadow-sm">
           <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <div className="p-2 rounded-lg bg-background">
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div>
+                <Label className="text-xs text-gray-600 font-medium">Valor da Transação</Label>
+                <p className="font-bold text-gray-800 bg-white px-2 py-1 rounded border">{formatCurrency(transacao.value)}</p>
               </div>
-              <div className="flex-1">
-                <h4 className="font-semibold text-sm">Transação Selecionada</h4>
-                <div className="flex gap-6 text-sm text-muted-foreground mt-1">
-                  <span><strong>Valor:</strong> R$ {Math.abs(transacao.value).toFixed(2)}</span>
-                  <span><strong>Cliente:</strong> {transacao.client || 'N/A'}</span>
-                  <span><strong>Tipo:</strong> {transacao.type}</span>
-                  <span><strong>ID Usuário:</strong> {idUsuario}</span>
-                </div>
+              <div>
+                <Label className="text-xs text-gray-600 font-medium">Data/Hora</Label>
+                <p className="font-medium text-gray-800 bg-white px-2 py-1 rounded border break-words">{transacao.dateTime}</p>
               </div>
-              <Button
-                onClick={handleBuscarDuplicatas}
-                disabled={isLoading}
-                size="sm"
-                className="bg-blue-500 hover:bg-blue-600"
-              >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Search className="h-4 w-4 mr-2" />
-                )}
-                {isLoading ? 'Buscando...' : 'Buscar Novamente'}
-              </Button>
+              <div>
+                <Label className="text-xs text-gray-600 font-medium">Cliente</Label>
+                <p className="font-medium text-gray-800 bg-white px-2 py-1 rounded border break-words">{transacao.client || 'Não informado'}</p>
+              </div>
+              <div>
+                <Label className="text-xs text-gray-600 font-medium">Tipo</Label>
+                <p className="font-bold text-gray-800 bg-white px-2 py-1 rounded border">{transacao.type}</p>
+              </div>
+              <div>
+                <Label className="text-xs text-gray-600 font-medium">ID do Usuário</Label>
+                <p className="font-mono text-sm font-bold text-gray-800 bg-white px-2 py-1 rounded border">{idUsuario}</p>
+              </div>
+              <div className="flex items-end">
+                <Button
+                  onClick={handleBuscarDuplicatas}
+                  disabled={isLoading}
+                  size="sm"
+                  className="bg-blue-500 hover:bg-blue-600 text-white w-full"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4 mr-2" />
+                  )}
+                  {isLoading ? 'Buscando...' : 'Buscar Novamente'}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

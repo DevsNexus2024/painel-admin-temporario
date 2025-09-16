@@ -77,7 +77,9 @@ export default function ExtractTableBmp531({ accountType = 'ttf' }: ExtractTable
   const [selectedDuplicataRecord, setSelectedDuplicataRecord] = useState<MovimentoExtrato | null>(null);
 
   // ✅ Função para converter Bmp531Movimento usando LÓGICA EXATA do gerenciador BMP-531
-  const convertBmp531ToMovimentoExtrato = (movimento: Bmp531Movimento): MovimentoExtrato => {
+  const convertBmp531ToMovimentoExtrato = (movimento: Bmp531Movimento): MovimentoExtrato | null => {
+    
+    // 🔍 DEBUG: Log removido - dados já mapeados corretamente
     
     // ✅ Obter valor (sempre positivo para exibição, como no gerenciador)
     const valor = parseFloat(movimento.vlrMovimento?.toString() || movimento.valor?.toString() || '0');
@@ -109,34 +111,51 @@ export default function ExtractTableBmp531({ accountType = 'ttf' }: ExtractTable
       tipo = 'CRÉDITO';
     }
     
-    // ✅ CLIENTE: Priorizar nome direto, depois extrair do complemento (IGUAL AO EXTRATO.TS)
+    // ✅ CLIENTE: Verificar TODOS os campos possíveis da API BMP-531
     let clienteFormatado = '';
     
-    if (movimento.nome) {
-      clienteFormatado = movimento.nome;
+    // Verificar todos os campos possíveis para nome do cliente
+    const nomeCliente = movimento.nome || 
+                       (movimento as any).nomeCliente || 
+                       (movimento as any).nomePagador || 
+                       (movimento as any).nomeRecebedor ||
+                       (movimento as any).nomeContraparte;
+    
+    if (nomeCliente && nomeCliente.trim()) {
+      clienteFormatado = nomeCliente.trim();
     } else if (movimento.complemento && movimento.complemento.includes(' - ')) {
       const partes = movimento.complemento.split(' - ');
       clienteFormatado = partes.slice(1).join(' - ');
-    } else if (movimento.cliente) {
-      clienteFormatado = movimento.cliente;
+    } else if (movimento.cliente && movimento.cliente.trim()) {
+      clienteFormatado = movimento.cliente.trim();
+    } else if (descricaoOperacaoAPI && descricaoOperacaoAPI.includes(' - ')) {
+      // Tentar extrair nome da descrição da operação
+      const partes = descricaoOperacaoAPI.split(' - ');
+      if (partes.length > 1) {
+        clienteFormatado = partes[1].trim();
+      }
     } else {
-      clienteFormatado = 'Cliente não identificado';
+      clienteFormatado = ''; // Deixar vazio para filtrar depois
     }
     
-    // ✅ DOCUMENTO: Priorizar documentoFederal, depois extrair do complemento
+    // ✅ DOCUMENTO: Verificar TODOS os campos possíveis da API BMP-531
     let documentoFormatado = '';
     
-    if (movimento.documentoFederal) {
-      documentoFormatado = movimento.documentoFederal;
+    const documentoCliente = movimento.documentoFederal || 
+                            (movimento as any).cpfCnpj || 
+                            (movimento as any).documentoPagador || 
+                            (movimento as any).documentoRecebedor ||
+                            movimento.documento;
+    
+    if (documentoCliente && documentoCliente.trim()) {
+      documentoFormatado = documentoCliente.trim();
     } else if (movimento.complemento && movimento.complemento.includes('***')) {
       const partes = movimento.complemento.split(' - ');
       if (partes[0]) {
         documentoFormatado = partes[0];
       }
-    } else if (movimento.documento) {
-      documentoFormatado = movimento.documento;
     } else {
-      documentoFormatado = '—';
+      documentoFormatado = ''; // Deixar vazio para filtrar depois
     }
     
     // ✅ DESCLIENTE: Campo específico BMP-531 - IGUAL AO GERENCIADOR ORIGINAL
@@ -145,14 +164,25 @@ export default function ExtractTableBmp531({ accountType = 'ttf' }: ExtractTable
       descClienteFormatado = descClienteAPI.trim();
     }
     
+    // 🚫 FILTRAR transações sem informações relevantes
+    const temInformacoesRelevantes = clienteFormatado || 
+                                    documentoFormatado || 
+                                    descClienteFormatado || 
+                                    (descricaoOperacaoAPI && descricaoOperacaoAPI.includes('PIX'));
+    
+    if (!temInformacoesRelevantes) {
+      console.log('[BMP531-FILTRO] Transação filtrada por falta de informações relevantes:', movimento.codigo);
+      return null; // Retorna null para filtrar esta transação
+    }
+    
     const converted: MovimentoExtrato = {
       id: movimento.codigo || movimento.codigoTransacao || movimento.id || Math.random().toString(36),
       dateTime: (movimento as any).dtMovimento || movimento.dtLancamento || movimento.dataHora || new Date().toLocaleString('pt-BR'),
       value: valorAbsoluto, // ✅ Usar valor absoluto para exibição
       type: tipo,
-      document: documentoFormatado,
-      client: clienteFormatado,
-      identified: !!movimento.nome || !!movimento.documentoFederal,
+      document: documentoFormatado || '—',
+      client: clienteFormatado || 'Cliente não identificado',
+      identified: !!(nomeCliente || documentoCliente || descClienteFormatado),
       code: (movimento as any).identificadorOperacao || movimento.codigoTransacao || movimento.codigo || Math.random().toString(36).substr(2, 9).toUpperCase(),
       descCliente: descClienteFormatado || undefined, // ✅ Campo específico BMP-531
       descricaoOperacao: descricaoOperacaoAPI || movimento.descricao || undefined // Campo específico BMP-531
@@ -298,9 +328,11 @@ export default function ExtractTableBmp531({ accountType = 'ttf' }: ExtractTable
   const hasMore = extratoData?.hasMore || false;
   const currentCursor = extratoData?.cursor || 0;
 
-  // Converter transações BMP 531 para formato padrão
+  // Converter transações BMP 531 para formato padrão e filtrar nulls
   const convertedTransactions: MovimentoExtrato[] = useMemo(() => {
-    return transactions.map(convertBmp531ToMovimentoExtrato);
+    return transactions
+      .map(convertBmp531ToMovimentoExtrato)
+      .filter((transaction): transaction is MovimentoExtrato => transaction !== null);
   }, [transactions]);
 
   // Lógica de duplicatas removida

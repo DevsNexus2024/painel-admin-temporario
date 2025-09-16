@@ -258,12 +258,14 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    // 🧪 TESTE: Verificar se CorpX suporta paginação real
+    // ✅ CORRIGIDO: Incluir filtros de data conforme especificação do backend
     const requestBody = {
       tax_document: params.cnpj,
-      itensporpagina: 100, // Manter 100 (limite da API)
-      page: params.page || 1 // 🚀 TESTAR: Paginação real
-      // Sem datas para testar se funciona
+      itensporpagina:  500, // Conforme especificação: limite de 500 por página
+      page: params.page || 1,
+      // ✅ ADICIONADO: Parâmetros de data conforme backend espera
+      ...(params.dataInicio && { dataini: params.dataInicio }),
+      ...(params.dataFim && { datafim: params.dataFim })
     };
     
     //console.log('[CORPX-EXTRATO] 🧪 TESTE: Paginação real CorpX - página', params.page || 1);

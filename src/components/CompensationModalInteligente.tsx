@@ -8,10 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, DollarSign, User, FileText, Calendar, CheckCircle, AlertCircle, Search, Brain, Trash2 } from "lucide-react";
+import { Loader2, DollarSign, User, FileText, Calendar, CheckCircle, AlertCircle, Search, Brain, Trash2, AlertTriangle, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { toast } from "sonner";
 import { MovimentoExtrato } from "@/services/extrato";
 import { CompensationData, useCompensation, CompensationService } from "@/services/compensation";
+import { useCompensacaoBRBTC, validarElegibilidadeBRBTC } from "@/services/compensacao-brbtc";
+import { TcrSaldosService, compararSaldos, type SaldosComparacao, type UsuarioSaldo, type SaldoBrbtc } from "@/services/tcrSaldos";
+import { TOKEN_STORAGE } from "@/config/api";
 import DiagnosticoDepositoSimplificado from "./DiagnosticoDepositoSimplificado";
 import DiagnosticoDeposito from "./DiagnosticoDeposito";
 import DuplicataManagerModal from "./DuplicataManagerModal";
@@ -32,22 +35,40 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
   const [useManualId, setUseManualId] = useState(false);
   const [versaoSimplificada, setVersaoSimplificada] = useState(true); // ✨ Nova versão como padrão
   const { createCompensation } = useCompensation();
+  const { executarCompensacao: executarCompensacaoBRBTC, isLoading: isLoadingBRBTC } = useCompensacaoBRBTC();
   
   // Estados para funcionalidade de duplicatas
   const [duplicataModalOpen, setDuplicataModalOpen] = useState(false);
   const [selectedDuplicataRecord, setSelectedDuplicataRecord] = useState<MovimentoExtrato | null>(null);
+  
+  // Estados para modal de confirmação personalizado
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
+  
+  // Estados para conferência de saldo individual
+  const [isCheckingSaldo, setIsCheckingSaldo] = useState(false);
+  const [saldoComparacao, setSaldoComparacao] = useState<SaldosComparacao | null>(null);
+  
+  // Estados para depósitos internos BRBTC
+  const [isLoadingDepositos, setIsLoadingDepositos] = useState(false);
+  const [depositosInternos, setDepositosInternos] = useState<any[] | null>(null);
 
   // Inicializar dados do formulário quando o modal abrir
   useEffect(() => {
     if (isOpen && extractRecord) {
       const defaultValues = CompensationService.getDefaultValues();
       
+      const idUsuarioExtraido = extractRecord.descCliente 
+        ? extrairIdUsuario(extractRecord.descCliente) 
+        : 0;
+      
       setFormData({
         ...defaultValues,
         quantia: extractRecord.value,
         documento_depositante: extractRecord.document !== '—' ? extractRecord.document : '',
         nome_depositante: extractRecord.client || '',
-        data_movimentacao: new Date(extractRecord.dateTime).getTime()
+        data_movimentacao: new Date(extractRecord.dateTime).getTime(),
+        id_usuario: idUsuarioExtraido || undefined
       });
       
       setQuantiaInput(extractRecord.value.toString());
@@ -60,6 +81,12 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       setVersaoSimplificada(true); // ✨ Padrão para nova versão
       setDuplicataModalOpen(false);
       setSelectedDuplicataRecord(null);
+      setShowConfirmModal(false);
+      setConfirmAction(null);
+      setSaldoComparacao(null);
+      setIsCheckingSaldo(false);
+      setDepositosInternos(null);
+      setIsLoadingDepositos(false);
     }
   }, [isOpen, extractRecord]);
 
@@ -87,10 +114,271 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     setIsLoading(false);
     
     if (success) {
-      toast.success("Compensação manual realizada", {
-        description: `Valor: ${formatCurrency(quantia)} creditado para usuário ${formData.id_usuario}`
+      toast.success("Compensação Saldo Visual realizada com sucesso!", {
+        description: `Valor: ${formatCurrency(quantia)} creditado para usuário ${formData.id_usuario}. Modal permanece aberto para outras ações.`
       });
-      onClose(true);
+      // Não fechar o modal automaticamente, deixar o usuário decidir
+    }
+  };
+
+  // ✨ NOVA FUNÇÃO: Conferência de Saldo Individual
+  const handleConferirSaldo = async () => {
+    if (!extractRecord) {
+      toast.error('Nenhum registro selecionado');
+      return;
+    }
+
+    // Extrair ID do usuário
+    const idUsuarioExtraido = extrairIdUsuario(extractRecord.descCliente || '');
+    if (!idUsuarioExtraido) {
+      toast.error('ID do usuário não identificado', {
+        description: 'Não foi possível extrair o ID do usuário da descrição do cliente'
+      });
+      return;
+    }
+
+    setIsCheckingSaldo(true);
+    setSaldoComparacao(null);
+
+    try {
+      console.log('[CONFERIR-SALDO] Iniciando conferência para usuário:', idUsuarioExtraido);
+
+      // 1. Buscar saldo visual do TCR
+      console.log('[CONFERIR-SALDO] Buscando saldo visual TCR...');
+      const saldoTcrResponse = await TcrSaldosService.listarUsuariosSaldos({
+        id_usuario: idUsuarioExtraido,
+        pagina: 1,
+        por_pagina: 1
+      });
+
+      const usuarioTcr = saldoTcrResponse.response.usuarios[0];
+      if (!usuarioTcr) {
+        throw new Error(`Usuário ${idUsuarioExtraido} não encontrado no TCR`);
+      }
+
+      console.log('[CONFERIR-SALDO] Saldo TCR encontrado:', usuarioTcr.saldos);
+
+      // 2. Buscar saldo real do Brasil Bitcoin
+      if (!usuarioTcr.id_brasil_bitcoin) {
+        throw new Error(`Usuário ${idUsuarioExtraido} não possui conta Brasil Bitcoin configurada`);
+      }
+
+      console.log('[CONFERIR-SALDO] Buscando saldo real Brasil Bitcoin...');
+      const saldoBrbtcResponse = await TcrSaldosService.consultarSaldoBrbtc(usuarioTcr.id_brasil_bitcoin);
+      const saldoBrbtc = saldoBrbtcResponse.response.data;
+
+      console.log('[CONFERIR-SALDO] Saldo BRBTC encontrado:', saldoBrbtc);
+
+      // 3. Comparar saldos
+      const comparacao = compararSaldos(usuarioTcr, saldoBrbtc);
+      setSaldoComparacao(comparacao);
+
+      console.log('[CONFERIR-SALDO] Comparação realizada:', comparacao);
+
+      // 4. Feedback para o usuário
+      const brlMsg = comparacao.brl.diferenca === 0 ? 'BRL OK' : `BRL diferença ${comparacao.brl.diferenca}`;
+      const usdtMsg = comparacao.usdt.diferenca === 0 ? 'USDT OK' : `USDT diferença ${comparacao.usdt.diferenca}`;
+      
+      if (comparacao.brl.diferenca === 0 && comparacao.usdt.diferenca === 0) {
+        toast.success('Conferência OK!', { 
+          description: `Usuário ${idUsuarioExtraido}: Todos os saldos estão corretos` 
+        });
+      } else {
+        toast.warning('Diferenças encontradas', { 
+          description: `Usuário ${idUsuarioExtraido}: ${brlMsg} | ${usdtMsg}` 
+        });
+      }
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      console.error('[CONFERIR-SALDO] Erro na conferência:', error);
+      
+      toast.error('Erro na conferência de saldo', {
+        description: errorMessage,
+        duration: 6000
+      });
+      
+      setSaldoComparacao(null);
+    } finally {
+      setIsCheckingSaldo(false);
+    }
+  };
+
+  // ✨ NOVA FUNÇÃO: Buscar Depósitos Internos BRBTC
+  const handleBuscarDepositosInternos = async () => {
+    if (!extractRecord) {
+      toast.error('Nenhum registro selecionado');
+      return;
+    }
+
+    // Extrair ID do usuário
+    const idUsuarioExtraido = extrairIdUsuario(extractRecord.descCliente || '');
+    if (!idUsuarioExtraido) {
+      toast.error('ID do usuário não identificado', {
+        description: 'Não foi possível extrair o ID do usuário da descrição do cliente'
+      });
+      return;
+    }
+
+    setIsLoadingDepositos(true);
+    setDepositosInternos(null);
+
+    try {
+      console.log('[DEPOSITOS-INTERNOS] Iniciando busca para usuário:', idUsuarioExtraido);
+
+      // Obter token JWT do usuário logado
+      const token = TOKEN_STORAGE.get();
+      if (!token) {
+        throw new Error('Usuário não autenticado. Faça login novamente.');
+      }
+
+      // Preparar parâmetros da requisição
+      const searchParams = new URLSearchParams();
+      searchParams.append('id_usuario', idUsuarioExtraido.toString());
+      searchParams.append('limit', '100'); // Padrão
+      searchParams.append('order', 'desc'); // Mais recentes primeiro
+
+      const apiUrl = `https://vps80270.cloudpublic.com.br:8081/BRBTC/depositos-internos?${searchParams.toString()}`;
+
+      console.log('[DEPOSITOS-INTERNOS] Fazendo requisição:', {
+        url: apiUrl,
+        id_usuario: idUsuarioExtraido
+      });
+
+      // Fazer requisição para API BRBTC
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        signal: AbortSignal.timeout(30000) // 30 segundos de timeout
+      });
+
+      let responseData: any;
+      let responseText: string = '';
+      
+      try {
+        responseText = await response.text();
+        console.log('[DEPOSITOS-INTERNOS] Resposta bruta da API:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: responseText
+        });
+        
+        responseData = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        console.error('[DEPOSITOS-INTERNOS] Erro ao fazer parse da resposta:', parseError);
+        responseData = { error: `Resposta inválida da API: ${responseText}` };
+      }
+
+      if (!response.ok) {
+        // Extrair mensagem de erro específica
+        let errorMessage = 'Erro desconhecido na API';
+        
+        if (responseData) {
+          errorMessage = responseData.error || 
+                       responseData.message || 
+                       responseData.erro || 
+                       responseData.mensagem ||
+                       `Erro HTTP ${response.status}: ${response.statusText}`;
+        }
+        
+        console.error('[DEPOSITOS-INTERNOS] Erro detalhado da API:', {
+          status: response.status,
+          statusText: response.statusText,
+          responseData,
+          extractedError: errorMessage
+        });
+
+        throw new Error(errorMessage);
+      }
+
+      // Processar dados da resposta - múltiplas possibilidades de estrutura
+      console.log('[DEPOSITOS-INTERNOS] Estrutura completa da resposta:', responseData);
+      
+      let depositos = [];
+      
+      // Tentar diferentes estruturas de resposta
+      if (responseData.dados && responseData.dados.depositos && Array.isArray(responseData.dados.depositos)) {
+        depositos = responseData.dados.depositos;
+      } else if (responseData.dados && Array.isArray(responseData.dados)) {
+        depositos = responseData.dados;
+      } else if (responseData.data && responseData.data.depositos && Array.isArray(responseData.data.depositos)) {
+        depositos = responseData.data.depositos;
+      } else if (responseData.data && Array.isArray(responseData.data)) {
+        depositos = responseData.data;
+      } else if (responseData.depositos && Array.isArray(responseData.depositos)) {
+        depositos = responseData.depositos;
+      } else if (responseData.response && responseData.response.data && Array.isArray(responseData.response.data)) {
+        depositos = responseData.response.data;
+      } else if (responseData.response && Array.isArray(responseData.response)) {
+        depositos = responseData.response;
+      } else if (Array.isArray(responseData)) {
+        depositos = responseData;
+      } else {
+        // Se não encontrou array, pode ser que os depósitos estejam em outra propriedade
+        console.log('[DEPOSITOS-INTERNOS] Tentando extrair depósitos de outras propriedades...');
+        
+        // Listar todas as propriedades da resposta para debug
+        Object.keys(responseData).forEach(key => {
+          console.log(`[DEPOSITOS-INTERNOS] Propriedade "${key}":`, responseData[key]);
+          if (Array.isArray(responseData[key])) {
+            console.log(`[DEPOSITOS-INTERNOS] Encontrado array na propriedade "${key}" com ${responseData[key].length} itens`);
+            if (depositos.length === 0) {
+              depositos = responseData[key];
+            }
+          }
+        });
+      }
+
+      setDepositosInternos(depositos);
+      console.log('[DEPOSITOS-INTERNOS] Depósitos mapeados:', depositos);
+      console.log('[DEPOSITOS-INTERNOS] Total de depósitos encontrados:', depositos.length);
+
+      // Feedback para o usuário
+      if (Array.isArray(depositos)) {
+        if (depositos.length > 0) {
+          toast.success(`${depositos.length} depósito(s) interno(s) encontrado(s)`, {
+            description: `Usuário ${idUsuarioExtraido}: Dados carregados com sucesso`
+          });
+        } else {
+          toast.info('Nenhum depósito interno encontrado', {
+            description: `Usuário ${idUsuarioExtraido}: Sem registros na faixa consultada`
+          });
+        }
+      } else {
+        toast.warning('Estrutura de dados inesperada', {
+          description: `Usuário ${idUsuarioExtraido}: Dados recebidos mas em formato não reconhecido`
+        });
+      }
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      console.error('[DEPOSITOS-INTERNOS] Erro na busca:', error);
+      
+      // Tratamento de erros específicos
+      let errorDetails = '';
+      if (errorMessage.includes('não autenticado') || errorMessage.includes('token')) {
+        errorDetails = 'Faça login novamente.';
+      } else if (errorMessage.includes('usuário não encontrado')) {
+        errorDetails = 'Verifique se o ID do usuário está correto.';
+      } else if (errorMessage.includes('não autorizado')) {
+        errorDetails = 'Você não tem permissão para acessar estes dados.';
+      } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        errorDetails = 'Verifique sua conexão com a internet.';
+      } else if (errorMessage.includes('timeout')) {
+        errorDetails = 'Tente novamente em alguns instantes.';
+      }
+      
+      toast.error('Erro ao buscar depósitos internos', {
+        description: `${errorMessage}${errorDetails ? ` ${errorDetails}` : ''}`,
+        duration: 6000
+      });
+      
+      setDepositosInternos(null);
+    } finally {
+      setIsLoadingDepositos(false);
     }
   };
 
@@ -104,6 +392,12 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     setVersaoSimplificada(true);
     setDuplicataModalOpen(false);
     setSelectedDuplicataRecord(null);
+    setShowConfirmModal(false);
+    setConfirmAction(null);
+    setSaldoComparacao(null);
+    setIsCheckingSaldo(false);
+    setDepositosInternos(null);
+    setIsLoadingDepositos(false);
     onClose(false);
   };
 
@@ -123,6 +417,45 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleString('pt-BR');
+  };
+
+  // Componentes auxiliares para exibição da conferência de saldo
+  const CurrencyValue = ({ amount, currency, className = "" }: { amount: number; currency: 'BRL' | 'USDT'; className?: string }) => {
+    const colorClass = currency === 'BRL' 
+      ? 'text-green-600 dark:text-green-400' 
+      : 'text-blue-600 dark:text-blue-400';
+    
+    return (
+      <span className={`font-mono text-sm ${colorClass} ${className}`}>
+        {currency === 'BRL' ? `R$ ${amount.toFixed(2)}` : `${amount.toFixed(8)} USDT`}
+      </span>
+    );
+  };
+
+  const DifferenceIndicator = ({ diferenca, currency }: { diferenca: number; currency: 'BRL' | 'USDT' }) => {
+    if (diferenca === 0) {
+      return (
+        <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+          <CheckCircle className="h-3 w-3" />
+          <span className="text-xs font-medium">OK</span>
+        </div>
+      );
+    }
+
+    const isPositive = diferenca > 0;
+    const Icon = isPositive ? TrendingUp : TrendingDown;
+    const colorClass = isPositive 
+      ? 'text-orange-600 dark:text-orange-400' 
+      : 'text-red-600 dark:text-red-400';
+
+    return (
+      <div className={`flex items-center gap-1 ${colorClass}`}>
+        <Icon className="h-3 w-3" />
+        <span className="text-xs font-medium">
+          {isPositive ? '+' : ''}{currency === 'BRL' ? diferenca.toFixed(2) : diferenca.toFixed(8)}
+        </span>
+      </div>
+    );
   };
 
   // Verificar se temos um ID de depósito válido para diagnóstico
@@ -183,17 +516,48 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     // Opcional: recarregar dados ou notificar componente pai
   };
 
+  // ✨ NOVA FUNÇÃO: Compensação BRBTC
+  const handleCompensacaoBRBTC = () => {
+    if (!extractRecord) {
+      toast.error('Nenhum registro selecionado');
+      return;
+    }
+
+    // Validar elegibilidade
+    const validacao = validarElegibilidadeBRBTC(extractRecord);
+    if (!validacao.elegivel) {
+      toast.error('Registro não elegível para compensação BRBTC', {
+        description: validacao.motivos.join(', ')
+      });
+      return;
+    }
+
+    // Abrir modal de confirmação personalizado
+    setConfirmAction(() => async () => {
+    // Executar compensação
+    const sucesso = await executarCompensacaoBRBTC(extractRecord);
+    
+    if (sucesso) {
+        // Não fechar o modal automaticamente, deixar o usuário decidir
+        toast.success('Compensação Saldo Real realizada com sucesso!', {
+          description: 'Modal permanece aberto para outras ações'
+        });
+    }
+      setShowConfirmModal(false);
+    });
+    setShowConfirmModal(true);
+  };
+
   const automaticDepositId = getDepositId();
   const depositId = useManualId && manualDepositId ? parseInt(manualDepositId) : automaticDepositId;
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] sm:w-[90vw] md:w-[85vw] lg:w-[80vw] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Brain className="h-5 w-5 text-primary" />
             Sistema Inteligente de Compensação - BMP-531
-            {versaoSimplificada && <Badge variant="outline" className="bg-green-50 text-green-700">✨ Nova Versão</Badge>}
           </DialogTitle>
           <DialogDescription>
             {versaoSimplificada 
@@ -207,7 +571,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
         {extractRecord && (
           <Card className="bg-muted/30">
             <CardContent className="p-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <div>
                   <Label className="text-xs text-muted-foreground">Valor do Registro</Label>
                   <p className="font-semibold text-green-600">{formatCurrency(extractRecord.value)}</p>
@@ -251,40 +615,22 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
               </TabsList>
               
               {/* ✨ Seletor de Versão */}
-              <div className="flex items-center gap-2">
-                <Label htmlFor="versao-select" className="text-xs text-muted-foreground whitespace-nowrap">
-                  Versão:
-                </Label>
-                <Select value={versaoSimplificada ? "nova" : "compativel"} onValueChange={(value) => setVersaoSimplificada(value === "nova")}>
-                  <SelectTrigger id="versao-select" className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="nova">✨ Nova</SelectItem>
-                    <SelectItem value="compativel">🔄 Compatível</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+
             </div>
             
             {/* Tab Gerenciar Duplicatas */}
             <TabsContent value="diagnostico" className="space-y-4">
-              <Alert className="mb-4">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>🔍 Gerenciar Duplicatas:</strong> Busque e exclua movimentações duplicadas com base no valor da transação selecionada. O sistema buscará automaticamente por duplicatas do mesmo valor para o usuário identificado.
-                </AlertDescription>
-              </Alert>
+
               
               {extractRecord ? (
                 <div className="space-y-4">
                   {/* Informações para busca de duplicatas */}
-                  <Card className="bg-blue-50 border-blue-200">
+                  <Card className="bg-muted/30">
                     <CardContent className="p-4">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                         <div>
                           <Label className="text-xs text-muted-foreground">Valor para busca</Label>
-                          <p className="font-semibold text-blue-600">{formatCurrency(extractRecord.value)}</p>
+                          <p className="font-semibold text-green-600">{formatCurrency(extractRecord.value)}</p>
                         </div>
                         <div>
                           <Label className="text-xs text-muted-foreground">ID do Usuário</Label>
@@ -295,7 +641,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                             }
                           </p>
                         </div>
-                        <div className="col-span-2">
+                        <div className="col-span-1 sm:col-span-2">
                           <Label className="text-xs text-muted-foreground">Descrição do Cliente</Label>
                           <p className="text-xs">{extractRecord.descCliente || 'Não informado'}</p>
                         </div>
@@ -303,24 +649,255 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                     </CardContent>
                   </Card>
                   
+                  {/* Botões de ação */}
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {/* Botão para abrir modal de duplicatas */}
-                  <div className="text-center">
                     <Button 
                       onClick={handleGerenciarDuplicatas}
-                      className="bg-red-500 hover:bg-red-600 text-white"
+                        className="bg-blue-500 hover:bg-blue-600 text-white"
                       disabled={!extractRecord.descCliente || extrairIdUsuario(extractRecord.descCliente || '') === 0}
                     >
-                      <Trash2 className="h-4 w-4 mr-2" />
+                        <Search className="h-4 w-4 mr-2" />
                       Buscar e Gerenciar Duplicatas
                     </Button>
+
+                      {/* Novo botão para conferir saldo */}
+                      <Button 
+                        onClick={handleConferirSaldo}
+                        variant="outline"
+                        className="border-green-200 text-green-700 hover:bg-green-50"
+                        disabled={!extractRecord.descCliente || extrairIdUsuario(extractRecord.descCliente || '') === 0 || isCheckingSaldo}
+                      >
+                        {isCheckingSaldo ? (
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span>Verificando...</span>
+                          </div>
+                        ) : (
+                          <>
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Conferir Saldo do Usuário
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Novo botão para buscar depósitos internos */}
+                      <Button 
+                        onClick={handleBuscarDepositosInternos}
+                        variant="outline"
+                        className="border-purple-200 text-purple-700 hover:bg-purple-50"
+                        disabled={!extractRecord.descCliente || extrairIdUsuario(extractRecord.descCliente || '') === 0 || isLoadingDepositos}
+                      >
+                        {isLoadingDepositos ? (
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span>Buscando...</span>
+                          </div>
+                        ) : (
+                          <>
+                            <FileText className="h-4 w-4 mr-2" />
+                            Depósitos Internos BRBTC
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
                     {(!extractRecord.descCliente || extrairIdUsuario(extractRecord.descCliente || '') === 0) && (
-                      <p className="text-xs text-muted-foreground mt-2">
+                      <p className="text-xs text-muted-foreground text-center">
                         ID do usuário não identificado na descrição do cliente
                       </p>
                     )}
+
+                    {/* Exibição do resultado da conferência de saldo */}
+                    {saldoComparacao && (
+                      <Card className="bg-gradient-to-r from-green-50 to-blue-50 border-green-200">
+                        <CardContent className="p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <CheckCircle className="h-5 w-5 text-green-600" />
+                            <h4 className="text-sm font-semibold text-green-800">
+                              Resultado da Conferência de Saldo
+                            </h4>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                            {/* BRL */}
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-gray-600">Saldo BRL (TCR):</span>
+                                <CurrencyValue amount={saldoComparacao.brl.local} currency="BRL" />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-gray-600">Saldo BRL (BRBTC):</span>
+                                <CurrencyValue amount={saldoComparacao.brl.externo} currency="BRL" />
+                              </div>
+                              <div className="flex items-center justify-between border-t pt-2">
+                                <span className="font-medium text-gray-800">Diferença:</span>
+                                <DifferenceIndicator diferenca={saldoComparacao.brl.diferenca} currency="BRL" />
+                              </div>
+                            </div>
+
+                            {/* USDT */}
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-gray-600">Saldo USDT (TCR):</span>
+                                <CurrencyValue amount={saldoComparacao.usdt.local} currency="USDT" />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-gray-600">Saldo USDT (BRBTC):</span>
+                                <CurrencyValue amount={saldoComparacao.usdt.externo} currency="USDT" />
+                              </div>
+                              <div className="flex items-center justify-between border-t pt-2">
+                                <span className="font-medium text-gray-800">Diferença:</span>
+                                <DifferenceIndicator diferenca={saldoComparacao.usdt.diferenca} currency="USDT" />
+                              </div>
+                            </div>
                   </div>
                   
-                  <div className="mt-6 pt-4 border-t">
+                          {/* Status geral */}
+                          <div className="mt-4 p-3 rounded-lg bg-white border">
+                            <div className="flex items-center gap-2">
+                              {saldoComparacao.brl.diferenca === 0 && saldoComparacao.usdt.diferenca === 0 ? (
+                                <>
+                                  <CheckCircle className="h-4 w-4 text-green-600" />
+                                  <span className="text-green-800 font-medium">✅ Saldos conferem</span>
+                                </>
+                              ) : (
+                                <>
+                                  <AlertTriangle className="h-4 w-4 text-orange-600" />
+                                  <span className="text-orange-800 font-medium">⚠️ Diferenças encontradas</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Exibição dos depósitos internos BRBTC */}
+                    {depositosInternos !== null && (
+                      <Card className="bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200">
+                        <CardContent className="p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <FileText className="h-5 w-5 text-purple-600" />
+                            <h4 className="text-sm font-semibold text-purple-800">
+                              Depósitos Internos BRBTC ({Array.isArray(depositosInternos) ? depositosInternos.length : 0} encontrados)
+                            </h4>
+                          </div>
+
+                          {Array.isArray(depositosInternos) && depositosInternos.length > 0 ? (
+                            <div className="space-y-3 max-h-64 overflow-y-auto">
+                              {depositosInternos.slice(0, 10).map((deposito, index) => {
+                                // Log do objeto individual para debug
+                                console.log(`[DEPOSITOS-INTERNOS] Depósito ${index}:`, deposito);
+                                
+                                return (
+                                  <div key={index} className="bg-white p-3 rounded-lg border border-purple-100">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                                      {/* Valor */}
+                                      {deposito.amount && (
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-gray-600">Valor:</span>
+                                          <span className="font-mono text-purple-700 font-medium">
+                                            R$ {Number(deposito.amount).toFixed(2)}
+                                          </span>
+                                        </div>
+                                      )}
+                                      
+                                      {/* Data */}
+                                      {deposito.timestamp && (
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-gray-600">Data:</span>
+                                          <span className="text-gray-800 text-xs">
+                                            {new Date(deposito.timestamp * 1000).toLocaleString('pt-BR')}
+                                          </span>
+                                        </div>
+                                      )}
+                                      
+                                      {/* ID */}
+                                      {deposito.id && (
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-gray-600">ID:</span>
+                                          <span className="font-mono text-xs text-gray-600">
+                                            {deposito.id}
+                                          </span>
+                                        </div>
+                                      )}
+                                      
+                                      {/* Moeda */}
+                                      {deposito.coin && (
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-gray-600">Moeda:</span>
+                                          <Badge variant="outline" className="text-xs uppercase">
+                                            {deposito.coin}
+                                          </Badge>
+                                        </div>
+                                      )}
+                                      
+                                      {/* Documento De/Para */}
+                                      {(deposito.fromUserDocument || deposito.toUserDocument) && (
+                                        <div className="col-span-1 sm:col-span-2">
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            {deposito.fromUserDocument && (
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-gray-600 text-xs">De:</span>
+                                                <span className="font-mono text-xs text-gray-700">
+                                                  {deposito.fromUserDocument}
+                                                </span>
+                                              </div>
+                                            )}
+                                            {deposito.toUserDocument && (
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-gray-600 text-xs">Para:</span>
+                                                <span className="font-mono text-xs text-gray-700">
+                                                  {deposito.toUserDocument}
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                      
+                                      {/* Campos extras se existirem */}
+                                      {Object.keys(deposito).filter(key => 
+                                        !['amount', 'timestamp', 'id', 'coin', 'fromUserDocument', 'toUserDocument'].includes(key)
+                                      ).slice(0, 2).map(key => (
+                                        <div key={key} className="flex items-center justify-between">
+                                          <span className="text-gray-600 capitalize text-xs">{key}:</span>
+                                          <span className="text-xs text-gray-700 break-words max-w-32">
+                                            {typeof deposito[key] === 'object' ? JSON.stringify(deposito[key]) : String(deposito[key])}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              
+                              {Array.isArray(depositosInternos) && depositosInternos.length > 10 && (
+                                <div className="text-center p-2 bg-white rounded border border-purple-100">
+                                  <span className="text-xs text-purple-600">
+                                    ... e mais {Array.isArray(depositosInternos) ? depositosInternos.length - 10 : 0} depósito(s). Mostrando os 10 mais recentes.
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-center p-4 bg-white rounded border border-purple-100">
+                              <AlertTriangle className="h-8 w-8 text-purple-300 mx-auto mb-2" />
+                              <p className="text-sm text-purple-600">Nenhum depósito interno encontrado</p>
+                              <p className="text-xs text-purple-500 mt-1">
+                                Este usuário não possui depósitos internos registrados no período consultado.
+                              </p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                  
+                  
+                  <div className="mt-4">
                     <Button 
                       variant="outline" 
                       onClick={() => setActiveTab("manual")}
@@ -344,22 +921,10 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
             
             {/* Tab Compensação Manual */}
             <TabsContent value="manual" className="space-y-4">
-              <Alert className="border-red-200 bg-red-50">
-                <AlertCircle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="text-red-800">
-                  <strong>⚠️ COMPENSAÇÃO MANUAL - ÚLTIMO RECURSO</strong>
-                  <br />
-                  Esta ação credita saldo diretamente sem rastreamento do dinheiro real. Use apenas quando:
-                  <ul className="mt-2 ml-4 list-disc">
-                    <li>O diagnóstico inteligente não funcionou</li>
-                    <li>Todas as ações automáticas falharam</li>
-                    <li>Foi confirmado que o dinheiro realmente chegou mas não foi processado</li>
-                  </ul>
-                </AlertDescription>
-              </Alert>
+
 
               <form onSubmit={handleManualSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* ID do Usuário */}
                   <div className="space-y-2">
                     <Label htmlFor="id_usuario" className="flex items-center gap-1">
@@ -398,7 +963,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {/* Tipo de Movimentação */}
                   <div className="space-y-2">
                     <Label>Tipo Movimentação *</Label>
@@ -453,7 +1018,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Documento Depositante */}
                   <div className="space-y-2">
                     <Label htmlFor="documento_depositante">Documento Depositante</Label>
@@ -500,14 +1065,30 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
         </div>
 
         <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={handleClose} disabled={isLoading}>
+          <Button variant="outline" onClick={handleClose} disabled={isLoading || isLoadingBRBTC}>
             Fechar
           </Button>
+          
+          {/* ✨ NOVO: Botão Compensação BRBTC */}
+          {activeTab === "manual" && extractRecord && validarElegibilidadeBRBTC(extractRecord).elegivel && (
+            <Button 
+              onClick={handleCompensacaoBRBTC} 
+              disabled={isLoading || isLoadingBRBTC}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isLoadingBRBTC ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <CheckCircle className="h-4 w-4 mr-2" />
+              )}
+              {isLoadingBRBTC ? 'Processando...' : 'Compensação Saldo Real'}
+            </Button>
+          )}
           
           {activeTab === "manual" && (
             <Button 
               onClick={handleManualSubmit} 
-              disabled={isLoading || !formData.id_usuario || !quantiaInput || parseFloat(quantiaInput) <= 0}
+              disabled={isLoading || isLoadingBRBTC || !formData.id_usuario || !quantiaInput || parseFloat(quantiaInput) <= 0}
               className="bg-red-600 hover:bg-red-700"
             >
               {isLoading ? (
@@ -515,11 +1096,81 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
               ) : (
                 <CheckCircle className="h-4 w-4 mr-2" />
               )}
-              {isLoading ? 'Processando...' : 'Executar Compensação Manual'}
+              {isLoading ? 'Processando...' : 'Compensação Saldo Visual'}
             </Button>
           )}
         </DialogFooter>
       </DialogContent>
+      
+      {/* Modal de Confirmação Personalizado */}
+      <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-orange-500" />
+              Confirmar Compensação Saldo Real
+            </DialogTitle>
+            <DialogDescription>
+              Esta ação irá processar o depósito via API BRBTC
+            </DialogDescription>
+          </DialogHeader>
+          
+          {extractRecord && (
+            <div className="space-y-4">
+              <Alert className="border-orange-200 bg-orange-50">
+                <AlertTriangle className="h-4 w-4 text-orange-600" />
+                <AlertDescription className="text-orange-800">
+                  <strong>⚠️ Atenção:</strong> Esta ação creditará automaticamente o saldo do usuário.
+                </AlertDescription>
+              </Alert>
+              
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="font-medium text-gray-600">Valor:</span>
+                  <span className="font-bold text-green-600">
+                    R$ {Math.abs(extractRecord.value).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium text-gray-600">Cliente:</span>
+                  <span className="text-gray-800">{extractRecord.client}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium text-gray-600">Transação:</span>
+                  <span className="font-mono text-xs text-gray-600">{extractRecord.id}</span>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowConfirmModal(false)}
+              disabled={isLoadingBRBTC}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={() => confirmAction && confirmAction()}
+              disabled={isLoadingBRBTC}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isLoadingBRBTC ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Processando...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Confirmar Compensação
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       {/* Modal de Duplicatas */}
       {selectedDuplicataRecord && (
