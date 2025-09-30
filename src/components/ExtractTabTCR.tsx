@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign, Trash2, Building2 } from "lucide-react";
+import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,13 +13,11 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
-import { useCorpX } from "@/contexts/CorpXContext";
+import CompensationModalInteligente from "@/components/CompensationModalInteligente";
+import { TCRVerificacaoService } from "@/services/tcrVerificacao";
 
-// Componente completo para o Extrato CorpX (baseado no BMP 531)
-export default function ExtractTabCorpX() {
-  const { selectedAccount, taxDocument } = useCorpX();
-  
+// Componente completo para o Extrato TCR (baseado no CorpX)
+export default function ExtractTabTCR() {
   // Estados para controle de dados
   const [isLoading, setIsLoading] = useState(false);
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
@@ -52,29 +50,33 @@ export default function ExtractTabCorpX() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(true);
-  const ITEMS_PER_PAGE = 100; // 🚀 100 registros por página (limite da API CorpX)
+  const ITEMS_PER_PAGE = 100; // 🚀 100 registros por página (limite da API TCR)
   
   // Estados para modal
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // ✅ Estados para funcionalidade OTC
-  const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
-  const [selectedExtractRecord, setSelectedExtractRecord] = useState<any>(null);
-  const [creditedRecords, setCreditedRecords] = useState<Set<string>>(new Set());
+  // ✅ Estados para funcionalidade Compensação Inteligente (MODAL COMPLETO)
+  const [compensationModalOpen, setCompensationModalOpen] = useState(false);
+  const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<any>(null);
 
-  // ✅ Conversão de dados já processados do serviço CorpX
-  const convertCorpXToStandardFormat = (transaction: any) => {
-    //console.log('[CORPX-CONVERSAO] 🔄 Convertendo transação processada:', transaction);
+  // ✅ Conversão de dados já processados do serviço TCR
+  const convertTCRToStandardFormat = (transaction: any) => {
+    //console.log('[TCR-CONVERSAO] 🔄 Convertendo transação processada:', transaction);
     
     // Agora os dados já vêm processados do backend com estrutura:
     // { id, date, description, amount, type: "credit"|"debit", balance }
 
     // Extrair cliente da descrição (ex: "TRANSF ENVIADA PIX - Felipe Bernardo Costa")
     const descricao = transaction.description || '';
-    const cliente = descricao.includes(' - ') 
+    let cliente = descricao.includes(' - ') 
       ? descricao.split(' - ')[1] || 'Cliente não identificado'
       : 'Cliente não identificado';
+    
+    // ✅ Se temos dados do pagador no _original, usar o nome completo
+    if (transaction._original?.payerName) {
+      cliente = transaction._original.payerName;
+    }
 
     const resultado = {
       id: transaction.id || Date.now().toString(),
@@ -82,26 +84,26 @@ export default function ExtractTabCorpX() {
       value: transaction.amount || 0,
       type: transaction.type === 'credit' ? 'CRÉDITO' : 'DÉBITO',
       client: cliente,
-      document: '', // CorpX não retorna documento separado
-      code: transaction.id || '',
+      document: transaction._original?.payerDocument || '', // Documento do pagador se disponível
+      code: transaction._original?.nrMovimento || transaction.id || '',
       descCliente: descricao,
-      identified: true, // CorpX sempre identifica transações
+      identified: true, // TCR sempre identifica transações
       descricaoOperacao: descricao,
-      // Campos originais para debug
-      _original: transaction
+      // ✅ Campos originais COMPLETOS para funcionalidades como verificação de endtoend
+      _original: transaction._original || transaction
     };
     
-    //console.log('[CORPX-CONVERSAO] ✅ Resultado da conversão:', resultado);
+    //console.log('[TCR-CONVERSAO] ✅ Resultado da conversão:', resultado);
     return resultado;
   };
 
-  // ✅ Aplicar filtros (igual ao BMP 531)
+  // ✅ Aplicar filtros (igual ao CorpX)
   const filteredAndSortedTransactions = useMemo(() => {
-    //console.log('[CORPX-FILTROS] 🔄 Processando', allTransactions.length, 'transações...');
+    //console.log('[TCR-FILTROS] 🔄 Processando', allTransactions.length, 'transações...');
     
-    let filtered = allTransactions.map(convertCorpXToStandardFormat);
+    let filtered = allTransactions.map(convertTCRToStandardFormat);
       
-    //console.log('[CORPX-FILTROS] ✅ Após conversão:', filtered.length, 'transações válidas');
+    //console.log('[TCR-FILTROS] ✅ Após conversão:', filtered.length, 'transações válidas');
 
     // Filtros de busca
     filtered = filtered.filter((transaction) => {
@@ -134,7 +136,7 @@ export default function ExtractTabCorpX() {
           
           matchesDate = transactionDate >= fromDate && transactionDate <= toDate;
         } catch (error) {
-          //console.warn('[CORPX-FILTROS] Erro ao filtrar data:', transaction.dateTime, error);
+          //console.warn('[TCR-FILTROS] Erro ao filtrar data:', transaction.dateTime, error);
           matchesDate = true; // Em caso de erro, incluir a transação
         }
       }
@@ -142,7 +144,7 @@ export default function ExtractTabCorpX() {
       return matchesName && matchesValue && matchesDescCliente && matchesType && matchesDate;
     });
     
-    //console.log('[CORPX-FILTROS] 🎯 Após filtros de busca:', filtered.length, 'transações');
+    //console.log('[TCR-FILTROS] 🎯 Após filtros de busca:', filtered.length, 'transações');
 
     // ✅ Aplicar ordenação
     if (sortBy === "date" && sortOrder !== "none") {
@@ -155,7 +157,7 @@ export default function ExtractTabCorpX() {
       filtered.sort((a, b) => sortOrder === "asc" ? a.value - b.value : b.value - a.value);
     }
     
-    //console.log('[CORPX-FILTROS] 🎉 RESULTADO FINAL:', filtered.length, 'transações para exibir');
+    //console.log('[TCR-FILTROS] 🎉 RESULTADO FINAL:', filtered.length, 'transações para exibir');
 
     return filtered;
   }, [allTransactions, searchName, searchValue, searchDescCliente, transactionTypeFilter, dateFrom, dateTo, sortBy, sortOrder]);
@@ -163,7 +165,7 @@ export default function ExtractTabCorpX() {
   // ✅ Paginação server-side (sem slice local)
   const displayTransactions = filteredAndSortedTransactions; // Exibir todos os dados da página atual
   
-  //console.log('[CORPX-PAGINACAO] 📄 Página', currentPage, 'de', totalPages, '-', displayTransactions.length, 'transações na tela');
+  //console.log('[TCR-PAGINACAO] 📄 Página', currentPage, 'de', totalPages, '-', displayTransactions.length, 'transações na tela');
 
   // ✅ Totalizadores
   const debitCount = filteredAndSortedTransactions.filter(t => t.type === 'DÉBITO').length;
@@ -174,13 +176,12 @@ export default function ExtractTabCorpX() {
 
 
   // ✅ Carregar transações (com filtros de período)
-  const loadCorpXTransactions = async (customDateFrom?: Date, customDateTo?: Date, page: number = 1) => {
+  const loadTCRTransactions = async (customDateFrom?: Date, customDateTo?: Date, page: number = 1) => {
     try {
       setIsLoading(true);
       setError("");
       
-      // Remove formatação do CNPJ para usar apenas números na API
-      const cnpj = taxDocument.replace(/\D/g, '');
+      const cnpj = "53781325000115"; // CNPJ da TCR
       
       // ✅ Usar datas customizadas (dos filtros) ou datas selecionadas ou período padrão de 3 dias
       let dataInicio, dataFim;
@@ -211,16 +212,16 @@ export default function ExtractTabCorpX() {
       };
       
       
-      const { consultarExtratoCorpX } = await import('@/services/corpx');
-      const resultado = await consultarExtratoCorpX(params);
+      const { consultarExtratoTCR } = await import('@/services/tcr');
+      const resultado = await consultarExtratoTCR(params);
       
-      //console.log('[CORPX-EXTRATO-UI] Resultado:', resultado);
+      //console.log('[TCR-EXTRATO-UI] Resultado:', resultado);
       
       // ✅ PAGINAÇÃO SERVER-SIDE: Substituir ou acumular dados
       if (resultado && !resultado.erro && resultado.transactions) {
         const transacoes = resultado.transactions;
         
-        console.log(`[CORPX-EXTRATO-UI] ✅ Página ${page}: ${transacoes.length} transações recebidas`);
+        console.log(`[TCR-EXTRATO-UI] ✅ Página ${page}: ${transacoes.length} transações recebidas`);
         
         // 🚀 SUBSTITUIR dados para cada página (não acumular)
         setAllTransactions(transacoes);
@@ -232,7 +233,7 @@ export default function ExtractTabCorpX() {
         
         
         toast.success(`Página ${page}: ${transacoes.length} transações`, {
-          description: "Extrato CORPX carregado",
+          description: "Extrato TCR carregado",
           duration: 1500
         });
       } else {
@@ -244,7 +245,7 @@ export default function ExtractTabCorpX() {
       }
       
     } catch (err: any) {
-      console.error('[CORPX-EXTRATO-UI] ❌ Erro:', err);
+      console.error('[TCR-EXTRATO-UI] ❌ Erro:', err);
       setError(err.message || 'Erro ao carregar extrato');
       setAllTransactions([]);
       toast.error("Erro ao carregar extrato", {
@@ -260,7 +261,7 @@ export default function ExtractTabCorpX() {
   const handlePageChange = async (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
-      await loadCorpXTransactions(dateFrom, dateTo, newPage);
+      await loadTCRTransactions(dateFrom, dateTo, newPage);
     }
   };
 
@@ -280,7 +281,7 @@ export default function ExtractTabCorpX() {
       
       
       // Passar as datas para a API (sempre página 1 para novos filtros)
-      loadCorpXTransactions(dateFrom, dateTo, 1);
+      loadTCRTransactions(dateFrom, dateTo, 1);
     } else if (dateFrom || dateTo) {
       toast.error("Selecione ambas as datas", {
         description: "Data inicial e final são obrigatórias para filtro por período",
@@ -288,7 +289,7 @@ export default function ExtractTabCorpX() {
       });
     } else {
       // Sem filtros de data, usar padrão (sempre página 1)
-      loadCorpXTransactions(undefined, undefined, 1);
+      loadTCRTransactions(undefined, undefined, 1);
     }
   };
 
@@ -304,7 +305,7 @@ export default function ExtractTabCorpX() {
     setSortBy("date");
     setSortOrder("desc");
     setCurrentPage(1);
-    loadCorpXTransactions(undefined, undefined, 1);
+    loadTCRTransactions(undefined, undefined, 1);
     toast.success("Filtros limpos!", {
       description: "Retornado ao período padrão de 3 dias",
       duration: 2000
@@ -327,7 +328,7 @@ export default function ExtractTabCorpX() {
       const date = new Date(dateString);
       
       if (isNaN(date.getTime())) {
-        //console.warn('[CORPX-UI] Data inválida:', dateString);
+        //console.warn('[TCR-UI] Data inválida:', dateString);
         return dateString;
       }
       
@@ -339,7 +340,7 @@ export default function ExtractTabCorpX() {
         minute: '2-digit'
       });
     } catch (error) {
-      //console.warn('[CORPX-UI] Erro ao formatar data:', dateString, error);
+      //console.warn('[TCR-UI] Erro ao formatar data:', dateString, error);
       return dateString;
     }
   };
@@ -368,7 +369,7 @@ export default function ExtractTabCorpX() {
         transaction.document || '',
         transaction.descCliente || '',
         transaction.code || '',
-        'CORPX'
+        'TCR'
       ]);
 
       // Criar conteúdo CSV
@@ -390,7 +391,7 @@ export default function ExtractTabCorpX() {
       
       // Gerar nome do arquivo com data atual
       const dataAtual = new Date().toISOString().split('T')[0];
-      const nomeArquivo = `extrato_corpx_${dataAtual}.csv`;
+      const nomeArquivo = `extrato_tcr_${dataAtual}.csv`;
       
       if (link.download !== undefined) {
         const url = URL.createObjectURL(blob);
@@ -409,7 +410,7 @@ export default function ExtractTabCorpX() {
       });
 
     } catch (error) {
-      console.error('[CORPX-CSV] Erro ao exportar CSV:', error);
+      console.error('[TCR-CSV] Erro ao exportar CSV:', error);
       toast.error("Erro ao exportar CSV", {
         description: "Não foi possível gerar o arquivo de exportação",
         duration: 4000
@@ -417,99 +418,122 @@ export default function ExtractTabCorpX() {
     }
   };
 
-  // ✅ Funções para OTC
-  const isRecordCredited = (transaction: any): boolean => {
-    const recordKey = `corpx-${transaction.id}`;
-    return creditedRecords.has(recordKey);
+  // ✅ Funções para Duplicatas e Verificação
+  const extrairIdUsuario = (descCliente: string): string => {
+    // Padrão: Usuario 1234; ou similar - extrair número após "Usuario"
+    const match = descCliente?.match(/Usuario\s+(\d+)/i);
+    return match ? match[1] : '';
   };
 
-  const handleCreditToOTC = async (transaction: any, event: React.MouseEvent) => {
-    event.stopPropagation(); // Evitar que abra o modal de detalhes
+  const extrairEndToEnd = (transaction: any): string => {
+    // Buscar endtoend nos dados da transação TCR
+    return transaction._original?.endToEndId || transaction._original?.e2eId || transaction.code || '';
+  };
+
+  const handleGerenciarDuplicatas = (transaction: any, event: React.MouseEvent) => {
+    event.stopPropagation();
     
-    // Verificar se já foi creditado antes de abrir modal
-    if (isRecordCredited(transaction)) {
-      toast.error('Registro já creditado', {
-        description: 'Este registro do extrato já foi creditado para um cliente OTC'
+    // ✅ Converter para formato MovimentoExtrato esperado pelo modal
+    const extractRecord = {
+      id: transaction.id,
+      dateTime: transaction.dateTime,
+      value: transaction.value,
+      type: transaction.type,
+      client: transaction.client,
+      document: transaction.document || '',
+      code: transaction.code,
+      descCliente: transaction.descCliente,
+      identified: transaction.identified || true,
+      descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente
+    };
+    
+    setSelectedCompensationRecord(extractRecord);
+    setCompensationModalOpen(true);
+  };
+
+  const handleCompensationSuccess = () => {
+    // Recarregar dados após operação
+    loadTCRTransactions(dateFrom, dateTo, 1);
+    toast.success("Operação realizada com sucesso!");
+  };
+
+  const handleVerificarTransacao = async (transaction: any, event: React.MouseEvent) => {
+    event.stopPropagation();
+    
+    // ✅ Converter para formato MovimentoExtrato esperado pelo modal
+    let extractRecord = {
+      id: transaction.id,
+      dateTime: transaction.dateTime,
+      value: transaction.value,
+      type: transaction.type,
+      client: transaction.client,
+      document: transaction.document || '',
+      code: transaction.code,
+      descCliente: transaction.descCliente,
+      identified: transaction.identified || true,
+      descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente
+    };
+    
+    // ✅ Buscar id_usuario automaticamente via endtoend
+    try {
+      toast.info('Buscando usuário...', {
+        description: 'Verificando endtoend da transação via API'
       });
-      return;
+      
+      const resultado = await TCRVerificacaoService.verificarTransacaoTCR(transaction);
+      
+      if (resultado.encontrou && resultado.id_usuario) {
+        // ✅ ENCONTROU! Modificar descCliente para incluir o ID do usuário
+        extractRecord.descCliente = `Usuario ${resultado.id_usuario}; ${extractRecord.descCliente}`;
+        
+        toast.success(`Usuário encontrado: ID ${resultado.id_usuario}`, {
+          description: 'Abrindo modal com todas as funcionalidades'
+        });
+      } else {
+        // ❌ Não encontrou - mostrar aviso mas abrir modal mesmo assim
+        toast.warning('Usuário não encontrado automaticamente', {
+          description: 'Modal aberto - você pode informar o ID manualmente'
+        });
+      }
+    } catch (error) {
+      console.error('[TCR-VERIFICACAO] Erro:', error);
+      toast.error('Erro na verificação automática', {
+        description: 'Modal aberto - você pode informar o ID manualmente'
+      });
     }
     
-    setSelectedExtractRecord(transaction);
-    setCreditOTCModalOpen(true);
-  };
-
-  const handleCloseCreditOTCModal = (wasSuccessful?: boolean) => {
-    // Se operação foi realizada com sucesso, marcar como creditado
-    if (wasSuccessful && selectedExtractRecord) {
-      const recordKey = `corpx-${selectedExtractRecord.id}`;
-      setCreditedRecords(prev => new Set(prev).add(recordKey));
-    }
-    
-    setCreditOTCModalOpen(false);
-    setSelectedExtractRecord(null);
+    // ✅ SEMPRE abrir o modal (com ou sem id_usuario encontrado)
+    setSelectedCompensationRecord(extractRecord);
+    setCompensationModalOpen(true);
   };
 
   // ✅ Carregar dados ao montar o componente com período padrão de 3 dias
   useEffect(() => {
     // Usar as datas padrão já definidas no estado
-    loadCorpXTransactions(dateFrom, dateTo, 1);
+    loadTCRTransactions(dateFrom, dateTo, 1);
   }, []); // Manter [] para executar apenas na montagem
-
-  // 🔄 Recarregar extrato automaticamente quando tax_document mudar
-  useEffect(() => {
-    const cnpjNumerico = taxDocument.replace(/\D/g, '');
-    if (cnpjNumerico && cnpjNumerico.length === 14) {
-      console.log('[CORPX-EXTRATO] 🔄 Tax document alterado, recarregando extrato...', cnpjNumerico);
-      // Reset pagination and load first page with current date filters
-      setCurrentPage(1);
-      loadCorpXTransactions(dateFrom, dateTo, 1);
-      toast.info("Atualizando extrato para nova conta...");
-    }
-  }, [taxDocument, dateFrom, dateTo]); // Recarrega quando taxDocument ou datas mudarem
 
   return (
     <div className="space-y-6">
-      {/* Feedback Visual da Conta Selecionada */}
-      <Card className="bg-card border border-border">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-500/10">
-              <Building2 className="h-5 w-5 text-blue-600" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-foreground">
-                Consultando extrato de: <span className="font-semibold">{selectedAccount.razaoSocial}</span>
-              </p>
-              <p className="text-xs text-muted-foreground font-mono">
-                CNPJ: {selectedAccount.cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}
-              </p>
-            </div>
-            <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">
-              Ativa
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Filtros de Pesquisa - CorpX */}
+      {/* Filtros de Pesquisa - TCR */}
       <Card className="bg-card border border-border shadow-2xl rounded-3xl overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-muted/20 to-muted/30 border-b border-border pb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 shadow-lg">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-green-500 to-green-600 shadow-lg">
                 <Filter className="h-5 w-5 text-white" />
               </div>
               <div>
                 <CardTitle className="text-xl font-bold text-card-foreground">
-                  Filtros de Pesquisa - CorpX
+                  Filtros de Pesquisa - TCR
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">
                   Personalize sua consulta de extratos
                 </p>
               </div>
             </div>
-            <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs font-medium">
-              CORPX
+            <Badge className="bg-green-100 text-green-800 border-green-200 text-xs font-medium">
+              TCR
             </Badge>
           </div>
         </CardHeader>
@@ -524,7 +548,7 @@ export default function ExtractTabCorpX() {
                   <Button
                     variant="outline"
                     disabled={isLoading}
-                    className={`w-full h-12 justify-start text-left font-normal rounded-xl border-border hover:border-purple-500 transition-colors bg-input ${!dateFrom ? "text-muted-foreground" : ""}`}
+                    className={`w-full h-12 justify-start text-left font-normal rounded-xl border-border hover:border-green-500 transition-colors bg-input ${!dateFrom ? "text-muted-foreground" : ""}`}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {dateFrom ? format(dateFrom, "PPP", { locale: ptBR }) : "Selecionar data"}
@@ -548,7 +572,7 @@ export default function ExtractTabCorpX() {
                   <Button
                     variant="outline"
                     disabled={isLoading}
-                    className={`w-full h-12 justify-start text-left font-normal rounded-xl border-border hover:border-purple-500 transition-colors bg-input ${!dateTo ? "text-muted-foreground" : ""}`}
+                    className={`w-full h-12 justify-start text-left font-normal rounded-xl border-border hover:border-green-500 transition-colors bg-input ${!dateTo ? "text-muted-foreground" : ""}`}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {dateTo ? format(dateTo, "PPP", { locale: ptBR }) : "Selecionar data"}
@@ -572,7 +596,7 @@ export default function ExtractTabCorpX() {
                 value={searchName}
                 onChange={(e) => setSearchName(e.target.value)}
                 disabled={isLoading}
-                className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
+                className="h-12 rounded-xl border-border hover:border-green-500 transition-colors bg-input"
               />
             </div>
 
@@ -583,7 +607,7 @@ export default function ExtractTabCorpX() {
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
                 disabled={isLoading}
-                className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
+                className="h-12 rounded-xl border-border hover:border-green-500 transition-colors bg-input"
               />
             </div>
           </div>
@@ -597,14 +621,14 @@ export default function ExtractTabCorpX() {
                 value={searchDescCliente}
                 onChange={(e) => setSearchDescCliente(e.target.value)}
                 disabled={isLoading}
-                className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
+                className="h-12 rounded-xl border-border hover:border-green-500 transition-colors bg-input"
               />
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-semibold text-card-foreground">Tipo de transação</label>
               <Select value={transactionTypeFilter} onValueChange={(value: "todos" | "debito" | "credito") => setTransactionTypeFilter(value)}>
-                <SelectTrigger className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input">
+                <SelectTrigger className="h-12 rounded-xl border-border hover:border-green-500 transition-colors bg-input">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -618,7 +642,7 @@ export default function ExtractTabCorpX() {
             <div className="space-y-2">
               <label className="text-sm font-semibold text-card-foreground">Ordenar por</label>
               <Select value={sortBy} onValueChange={(value: "value" | "date" | "none") => setSortBy(value)}>
-                <SelectTrigger className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input">
+                <SelectTrigger className="h-12 rounded-xl border-border hover:border-green-500 transition-colors bg-input">
                   <SelectValue placeholder="Sem ordenação" />
                 </SelectTrigger>
                 <SelectContent>
@@ -632,7 +656,7 @@ export default function ExtractTabCorpX() {
             <div className="space-y-2">
               <label className="text-sm font-semibold text-card-foreground">Ordem</label>
               <Select value={sortOrder} onValueChange={(value: "asc" | "desc" | "none") => setSortOrder(value)}>
-                <SelectTrigger className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input" disabled={sortBy === "none"}>
+                <SelectTrigger className="h-12 rounded-xl border-border hover:border-green-500 transition-colors bg-input" disabled={sortBy === "none"}>
                   <SelectValue placeholder="Padrão" />
                 </SelectTrigger>
                 <SelectContent>
@@ -649,7 +673,7 @@ export default function ExtractTabCorpX() {
             <Button 
               onClick={handleAplicarFiltros} 
               disabled={isLoading}
-              className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl px-6 py-3 font-semibold shadow-lg hover:shadow-xl transition-all duration-200"
+              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl px-6 py-3 font-semibold shadow-lg hover:shadow-xl transition-all duration-200"
             >
               <Filter className="h-4 w-4 mr-2" />
               Aplicar Filtros
@@ -658,16 +682,16 @@ export default function ExtractTabCorpX() {
               onClick={handleLimparFiltros} 
               variant="outline" 
               disabled={isLoading}
-              className="rounded-xl px-6 py-3 font-semibold border-border hover:border-purple-500 transition-colors"
+              className="rounded-xl px-6 py-3 font-semibold border-border hover:border-green-500 transition-colors"
             >
               <X className="h-4 w-4 mr-2" />
               Limpar
             </Button>
             <Button 
-              onClick={() => loadCorpXTransactions(dateFrom, dateTo, currentPage)} 
+              onClick={() => loadTCRTransactions(dateFrom, dateTo, currentPage)} 
               variant="outline" 
               disabled={isLoading}
-              className="rounded-xl px-6 py-3 font-semibold border-border hover:border-purple-500 transition-colors"
+              className="rounded-xl px-6 py-3 font-semibold border-border hover:border-green-500 transition-colors"
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -689,17 +713,17 @@ export default function ExtractTabCorpX() {
         </CardContent>
       </Card>
 
-      {/* Tabela de Transações - CorpX */}
+      {/* Tabela de Transações - TCR */}
       <Card className="bg-card border border-border shadow-2xl rounded-3xl overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-muted/20 to-muted/30 border-b border-border pb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 shadow-lg">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-green-500 to-green-600 shadow-lg">
                 <FileText className="h-5 w-5 text-white" />
               </div>
               <div>
                 <CardTitle className="text-xl font-bold text-card-foreground">
-                  Extrato de Transações CORPX
+                  Extrato de Transações TCR
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">
                   {filteredAndSortedTransactions.length} registros encontrados • {debitCount} débitos • {creditCount} créditos
@@ -724,7 +748,7 @@ export default function ExtractTabCorpX() {
                 )}
               </div>
             </div>
-            <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs font-medium">
+            <Badge className="bg-green-100 text-green-800 border-green-200 text-xs font-medium">
               {filteredAndSortedTransactions.length} registros
             </Badge>
           </div>
@@ -734,14 +758,14 @@ export default function ExtractTabCorpX() {
           {isLoading ? (
             <div className="flex items-center justify-center p-8">
               <Loader2 className="h-6 w-6 animate-spin mr-2" />
-              <span>Carregando transações CORPX...</span>
+              <span>Carregando transações TCR...</span>
             </div>
           ) : error ? (
             <div className="text-center p-8">
               <AlertCircle className="h-12 w-12 mx-auto text-red-500 mb-4" />
               <h3 className="text-lg font-semibold text-card-foreground mb-2">Erro ao carregar extrato</h3>
               <p className="text-muted-foreground mb-4">{error}</p>
-              <Button onClick={() => loadCorpXTransactions(dateFrom, dateTo, 1)} variant="outline">
+              <Button onClick={() => loadTCRTransactions(dateFrom, dateTo, 1)} variant="outline">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Tentar novamente
               </Button>
@@ -802,12 +826,12 @@ export default function ExtractTabCorpX() {
                                 {transaction.client}
                               </div>
                               {transaction.document && (
-                                <div className="text-xs text-purple-600">
+                                <div className="text-xs text-green-600">
                                   Doc: {transaction.document}
                                 </div>
                               )}
                               <div className="text-xs text-muted-foreground">
-                                CORPX
+                                TCR
                               </div>
                             </div>
                           </TableCell>
@@ -828,8 +852,8 @@ export default function ExtractTabCorpX() {
                               <Badge className="bg-green-100 text-green-800 border-green-200 rounded-full px-2 py-1 text-xs font-semibold">
                                 ✓
                               </Badge>
-                              <Badge className="bg-purple-50 text-purple-700 border-purple-200 rounded-full px-2 py-1 text-xs font-semibold">
-                                CORPX
+                              <Badge className="bg-green-50 text-green-700 border-green-200 rounded-full px-2 py-1 text-xs font-semibold">
+                                TCR
                               </Badge>
                             </div>
                           </TableCell>
@@ -856,34 +880,29 @@ export default function ExtractTabCorpX() {
                             </div>
                           </TableCell>
                           
-                          {/* ✅ Coluna de Ações - Botão +OTC */}
+                          {/* ✅ Coluna de Ações - Botões Verificar e Duplicatas */}
                           <TableCell className="py-3">
-                            <div className="flex items-center justify-center">
+                            <div className="flex items-center justify-center gap-1">
+                              {transaction.type === 'DÉBITO' && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => handleGerenciarDuplicatas(transaction, e)}
+                                  className="h-7 px-2 text-xs bg-red-50 hover:bg-red-100 text-red-700 border-red-200 hover:border-red-300"
+                                >
+                                  <Trash2 className="h-3 w-3 mr-1" />
+                                  Duplicatas
+                                </Button>
+                              )}
                               {transaction.type === 'CRÉDITO' && (
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={(e) => handleCreditToOTC(transaction, e)}
-                                  disabled={isRecordCredited(transaction)}
-                                  className={cn(
-                                    "h-7 px-2 text-xs transition-all",
-                                    isRecordCredited(transaction)
-                                      ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                      : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
-                                  )}
-                                  title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
+                                  onClick={(e) => handleVerificarTransacao(transaction, e)}
+                                  className="h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300"
                                 >
-                                  {isRecordCredited(transaction) ? (
-                                    <>
-                                      <Check className="h-3 w-3 mr-1" />
-                                      Creditado
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Plus className="h-3 w-3 mr-1" />
-                                      OTC
-                                    </>
-                                  )}
+                                  <DollarSign className="h-3 w-3 mr-1" />
+                                  Verificar
                                 </Button>
                               )}
                             </div>
@@ -920,8 +939,8 @@ export default function ExtractTabCorpX() {
                         <span className={`font-bold text-lg font-mono ${transaction.type === 'DÉBITO' ? "text-red-600" : "text-green-600"}`}>
                           {transaction.type === 'DÉBITO' ? "-" : "+"}{formatCurrency(transaction.value)}
                         </span>
-                        <Badge className="bg-purple-50 text-purple-700 border-purple-200 rounded-full px-2 py-1 text-xs font-semibold">
-                          CORPX
+                        <Badge className="bg-green-50 text-green-700 border-green-200 rounded-full px-2 py-1 text-xs font-semibold">
+                          TCR
                         </Badge>
                       </div>
                       
@@ -946,34 +965,31 @@ export default function ExtractTabCorpX() {
                           {transaction.code}
                         </span>
                         
-                        {/* ✅ Botão +OTC Mobile */}
-                        {transaction.type === 'CRÉDITO' && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => handleCreditToOTC(transaction, e)}
-                            disabled={isRecordCredited(transaction)}
-                            className={cn(
-                              "h-7 px-2 text-xs transition-all",
-                              isRecordCredited(transaction)
-                                ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                            )}
-                            title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
-                          >
-                            {isRecordCredited(transaction) ? (
-                              <>
-                                <Check className="h-3 w-3 mr-1" />
-                                Creditado
-                              </>
-                            ) : (
-                              <>
-                                <Plus className="h-3 w-3 mr-1" />
-                                OTC
-                              </>
-                            )}
-                          </Button>
-                        )}
+                        {/* ✅ Botões Verificar e Duplicatas Mobile */}
+                        <div className="flex gap-1 mt-2">
+                          {transaction.type === 'DÉBITO' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => handleGerenciarDuplicatas(transaction, e)}
+                              className="h-7 px-2 text-xs bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Duplicatas
+                            </Button>
+                          )}
+                          {transaction.type === 'CRÉDITO' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => handleVerificarTransacao(transaction, e)}
+                              className="h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                            >
+                              <DollarSign className="h-3 w-3 mr-1" />
+                              Verificar
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -1024,7 +1040,7 @@ export default function ExtractTabCorpX() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Detalhes da Transação CORPX
+              Detalhes da Transação TCR
             </DialogTitle>
           </DialogHeader>
           {selectedTransaction && (
@@ -1070,11 +1086,11 @@ export default function ExtractTabCorpX() {
         </DialogContent>
       </Dialog>
 
-      {/* ✅ Modal OTC */}
-      <CreditExtractToOTCModal
-        isOpen={creditOTCModalOpen}
-        onClose={handleCloseCreditOTCModal}
-        extractRecord={selectedExtractRecord}
+      {/* ✅ Modal Compensação Inteligente - EXATAMENTE o mesmo do BMP-531 */}
+      <CompensationModalInteligente
+        isOpen={compensationModalOpen}
+        onClose={() => setCompensationModalOpen(false)}
+        extractRecord={selectedCompensationRecord}
       />
     </div>
   );

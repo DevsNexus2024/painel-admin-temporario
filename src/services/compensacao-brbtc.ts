@@ -55,19 +55,34 @@ const BRBTC_API_CONFIG = {
 export const extrairIdUsuario = (extractRecord: MovimentoExtrato): number => {
   if (!extractRecord) return 0;
   
-  // 1. Tentar extrair da descrição do cliente (BMP-531)
-  if (extractRecord.descCliente) {
-    const match = extractRecord.descCliente.match(/xU(\d+)/i);
-    if (match) return parseInt(match[1], 10);
+  // ✅ Função atualizada para reconhecer TODOS os formatos (igual ao modal)
+  const textoParaPesquisar = extractRecord.descCliente || '';
+  
+  if (textoParaPesquisar) {
+    // 1. ✅ NOVO: Padrão "Usuario 1122;" (busca automática por endtoend TCR)
+    const matchUsuario = textoParaPesquisar.match(/Usuario\s+(\d+)/i);
+    if (matchUsuario) {
+      return parseInt(matchUsuario[1], 10);
+    }
+    
+    // 2. ✅ ANTIGO: Padrão "caas436344xU1122;" (formato original BMP-531)
+    const matchXU = textoParaPesquisar.match(/xU(\d+)/i);
+    if (matchXU) {
+      return parseInt(matchXU[1], 10);
+    }
   }
   
-  // 2. Tentar extrair da descrição da operação
+  // 3. Fallback: Tentar extrair da descrição da operação
   if (extractRecord.descricaoOperacao) {
-    const match = extractRecord.descricaoOperacao.match(/U(\d+)/i);
-    if (match) return parseInt(match[1], 10);
+    const matchOp = extractRecord.descricaoOperacao.match(/Usuario\s+(\d+)|xU(\d+)|U(\d+)/i);
+    if (matchOp) {
+      // Pegar o primeiro grupo que não é undefined
+      const id = matchOp[1] || matchOp[2] || matchOp[3];
+      if (id) return parseInt(id, 10);
+    }
   }
   
-  // 3. Tentar extrair de qualquer texto relacionado ao usuário
+  // 4. Último fallback: busca geral
   const allText = [
     extractRecord.client,
     extractRecord.descCliente,
@@ -75,11 +90,10 @@ export const extrairIdUsuario = (extractRecord: MovimentoExtrato): number => {
   ].filter(Boolean).join(' ');
   
   if (allText) {
-    const match = allText.match(/(?:usuario|user).*?(\d+)/i);
+    const match = allText.match(/(?:usuario|user)\s*(\d+)/i);
     if (match) return parseInt(match[1], 10);
   }
   
-  console.warn('[BRBTC] Não foi possível extrair ID do usuário:', extractRecord);
   return 0;
 };
 
@@ -160,10 +174,6 @@ export const realizarCompensacaoBRBTC = async (
     // Preparar dados da requisição
     const requestData = converterParaBRBTCRequest(extractRecord, observacoes);
     
-    console.log('[BRBTC] Enviando compensação:', {
-      url: `${BRBTC_API_CONFIG.baseUrl}${BRBTC_API_CONFIG.endpoint}`,
-      data: requestData
-    });
     
     // Fazer requisição para API BRBTC
     const response = await fetch(`${BRBTC_API_CONFIG.baseUrl}${BRBTC_API_CONFIG.endpoint}`, {
@@ -180,16 +190,9 @@ export const realizarCompensacaoBRBTC = async (
     
     try {
       responseText = await response.text();
-      console.log('[BRBTC] Resposta bruta da API:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        body: responseText
-      });
       
       responseData = responseText ? JSON.parse(responseText) : {};
     } catch (parseError) {
-      console.error('[BRBTC] Erro ao fazer parse da resposta:', parseError);
       responseData = { error: `Resposta inválida da API: ${responseText}` };
     }
     
@@ -220,18 +223,10 @@ export const realizarCompensacaoBRBTC = async (
         }
       }
       
-      console.error('[BRBTC] Erro detalhado da API:', {
-        status: response.status,
-        statusText: response.statusText,
-        responseData,
-        extractedError: errorMessage
-      });
       
       throw new Error(errorMessage);
     }
     
-    // Log de sucesso
-    console.log('[BRBTC] Compensação realizada com sucesso:', responseData);
     
     // Toast de sucesso
     toast.success('Compensação BRBTC realizada com sucesso!', {
@@ -269,12 +264,6 @@ export const realizarCompensacaoBRBTC = async (
       errorMessage = String(error);
     }
     
-    console.error('[BRBTC] Erro na compensação:', {
-      error: errorMessage,
-      errorDetails,
-      fullError: error,
-      extractRecord
-    });
     
     // Toast de erro mais informativo
     toast.error('Erro na Compensação Saldo Real', {

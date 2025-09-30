@@ -55,15 +55,15 @@ const BMP531_CONFIG = {
     pixQrCodeEstatico: '/bmp-531/pix/qrcode/estatico',
   },
   
-  // 🔑 Dados bancários das variáveis de ambiente - TODOS do .env
+  // 🔑 Dados bancários das variáveis de ambiente - TCR (não TTF)
   dadosBancarios: {
-    agencia: PUBLIC_ENV.BMP_AGENCIA_TTF,
-    agencia_digito: PUBLIC_ENV.BMP_AGENCIA_DIGITO_TTF,
-    conta: PUBLIC_ENV.BMP_CONTA_TTF,
-    conta_digito: PUBLIC_ENV.BMP_CONTA_DIGITO_TTF,
-    conta_pgto: PUBLIC_ENV.BMP_CONTA_PGTO_TTF,
-    tipo_conta: PUBLIC_ENV.BMP_TIPO_CONTA_TTF,
-    modelo_conta: PUBLIC_ENV.BMP_MODELO_CONTA_TTF,
+    agencia: PUBLIC_ENV.BMP_AGENCIA_TCR,
+    agencia_digito: PUBLIC_ENV.BMP_AGENCIA_DIGITO_TCR,
+    conta: PUBLIC_ENV.BMP_CONTA_TCR,
+    conta_digito: PUBLIC_ENV.BMP_CONTA_DIGITO_TCR,
+    conta_pgto: PUBLIC_ENV.BMP_CONTA_PGTO_TCR,
+    tipo_conta: PUBLIC_ENV.BMP_TIPO_CONTA_TCR,
+    modelo_conta: PUBLIC_ENV.BMP_MODELO_CONTA_TCR,
     // pix_key será fornecida pelo usuário ou configuração do backend
   },
   
@@ -342,9 +342,9 @@ async function makeRequest<T>(
 
 /**
  * 💰 Consulta saldo da conta BMP 531
- * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'ttf') 
+ * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'tcr') 
  */
-export async function getBmp531Saldo(accountType: 'tcr' | 'ttf' = 'ttf'): Promise<Bmp531SaldoResponse> {
+export async function getBmp531Saldo(accountType: 'tcr' | 'ttf' = 'tcr'): Promise<Bmp531SaldoResponse> {
   // ✅ SEGURO: Log sem dados bancários sensíveis
   logger.info('Consultando saldo bancário', {
     accountType: accountType.toUpperCase()
@@ -365,13 +365,13 @@ export async function getBmp531Saldo(accountType: 'tcr' | 'ttf' = 'ttf'): Promis
  * ✅ Sem limite de registros - busca todos os dados disponíveis
  * ✅ Suporte à paginação igual ao gerenciador de contas original
  * @param filtros - Filtros de data e paginação
- * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'ttf')
+ * @param accountType - Tipo de conta: 'tcr' ou 'ttf' (padrão: 'tcr')
  */
 export async function getBmp531Extrato(filtros?: {
   de?: string;
   ate?: string;
   cursor?: number;
-}, accountType: 'tcr' | 'ttf' = 'ttf'): Promise<Bmp531ExtratoResponse> {
+}, accountType: 'tcr' | 'ttf' = 'tcr'): Promise<Bmp531ExtratoResponse> {
   let endpoint = BMP531_CONFIG.endpoints.extrato;
   
   // ✅ PARÂMETROS CORRETOS para rota /statement
@@ -752,7 +752,7 @@ export function getBmp531EndpointUrl(endpoint: keyof typeof BMP531_CONFIG.endpoi
  * ✅ Suporte para contas TCR e TTF
  */
 export const Bmp531Service = {
-  // Conta - Compatibilidade (usa TTF por padrão)
+  // Conta - Compatibilidade (usa TCR por padrão)
   getSaldo: getBmp531Saldo,
   getExtrato: getBmp531Extrato,
   

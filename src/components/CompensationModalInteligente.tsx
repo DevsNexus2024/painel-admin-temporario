@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, DollarSign, User, FileText, Calendar, CheckCircle, AlertCircle, Search, Brain, Trash2, AlertTriangle, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Loader2, DollarSign, User, FileText, Calendar, CheckCircle, AlertCircle, Search, Brain, Trash2, AlertTriangle, TrendingUp, TrendingDown, Minus, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { MovimentoExtrato } from "@/services/extrato";
 import { CompensationData, useCompensation, CompensationService } from "@/services/compensation";
@@ -26,6 +27,7 @@ interface CompensationModalInteligenteProps {
 }
 
 export default function CompensationModalInteligente({ isOpen, onClose, extractRecord }: CompensationModalInteligenteProps) {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState<Partial<CompensationData>>({});
   const [quantiaInput, setQuantiaInput] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -52,6 +54,11 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
   // Estados para depósitos internos BRBTC
   const [isLoadingDepositos, setIsLoadingDepositos] = useState(false);
   const [depositosInternos, setDepositosInternos] = useState<any[] | null>(null);
+  
+  // ✅ Estados para entrada manual de ID
+  const [idUsuarioManual, setIdUsuarioManual] = useState<string>('');
+  const [usarIdManual, setUsarIdManual] = useState(false);
+  
 
   // Inicializar dados do formulário quando o modal abrir
   useEffect(() => {
@@ -87,6 +94,8 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       setIsCheckingSaldo(false);
       setDepositosInternos(null);
       setIsLoadingDepositos(false);
+      setIdUsuarioManual('');
+      setUsarIdManual(false);
     }
   }, [isOpen, extractRecord]);
 
@@ -128,11 +137,11 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       return;
     }
 
-    // Extrair ID do usuário
-    const idUsuarioExtraido = extrairIdUsuario(extractRecord.descCliente || '');
+    // ✅ Obter ID do usuário (automático ou manual)
+    const idUsuarioExtraido = obterIdUsuario();
     if (!idUsuarioExtraido) {
-      toast.error('ID do usuário não identificado', {
-        description: 'Não foi possível extrair o ID do usuário da descrição do cliente'
+      toast.error('ID do usuário necessário', {
+        description: 'Informe o ID do usuário manualmente para usar esta funcionalidade'
       });
       return;
     }
@@ -141,10 +150,8 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     setSaldoComparacao(null);
 
     try {
-      console.log('[CONFERIR-SALDO] Iniciando conferência para usuário:', idUsuarioExtraido);
 
       // 1. Buscar saldo visual do TCR
-      console.log('[CONFERIR-SALDO] Buscando saldo visual TCR...');
       const saldoTcrResponse = await TcrSaldosService.listarUsuariosSaldos({
         id_usuario: idUsuarioExtraido,
         pagina: 1,
@@ -156,14 +163,12 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
         throw new Error(`Usuário ${idUsuarioExtraido} não encontrado no TCR`);
       }
 
-      console.log('[CONFERIR-SALDO] Saldo TCR encontrado:', usuarioTcr.saldos);
 
       // 2. Buscar saldo real do Brasil Bitcoin
       if (!usuarioTcr.id_brasil_bitcoin) {
         throw new Error(`Usuário ${idUsuarioExtraido} não possui conta Brasil Bitcoin configurada`);
       }
 
-      console.log('[CONFERIR-SALDO] Buscando saldo real Brasil Bitcoin...');
       const saldoBrbtcResponse = await TcrSaldosService.consultarSaldoBrbtc(usuarioTcr.id_brasil_bitcoin);
       const saldoBrbtc = saldoBrbtcResponse.response.data;
 
@@ -211,11 +216,11 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       return;
     }
 
-    // Extrair ID do usuário
-    const idUsuarioExtraido = extrairIdUsuario(extractRecord.descCliente || '');
+    // ✅ Obter ID do usuário (automático ou manual)
+    const idUsuarioExtraido = obterIdUsuario();
     if (!idUsuarioExtraido) {
-      toast.error('ID do usuário não identificado', {
-        description: 'Não foi possível extrair o ID do usuário da descrição do cliente'
+      toast.error('ID do usuário necessário', {
+        description: 'Informe o ID do usuário manualmente para usar esta funcionalidade'
       });
       return;
     }
@@ -497,9 +502,47 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
   
   // Função para extrair ID do usuário do campo descCliente
   const extrairIdUsuario = (descCliente: string): number => {
-    // Padrão: caas436344xU1122; ou similar - extrair número após "xU"
-    const match = descCliente?.match(/xU(\d+)/i);
-    return match ? parseInt(match[1], 10) : 0;
+    if (!descCliente) return 0;
+    
+    // ✅ NOVO: Padrão "Usuario 1122;" (busca automática por endtoend)
+    const matchUsuario = descCliente.match(/Usuario\s+(\d+)/i);
+    if (matchUsuario) {
+      return parseInt(matchUsuario[1], 10);
+    }
+    
+    // ✅ ANTIGO: Padrão "caas436344xU1122;" (formato original)
+    const matchXU = descCliente.match(/xU(\d+)/i);
+    if (matchXU) {
+      return parseInt(matchXU[1], 10);
+    }
+    
+    return 0;
+  };
+  
+  // ✅ Função para obter ID do usuário (automático ou manual)
+  const obterIdUsuario = (): number => {
+    if (usarIdManual && idUsuarioManual) {
+      const idManual = parseInt(idUsuarioManual, 10);
+      return isNaN(idManual) ? 0 : idManual;
+    }
+    
+    return extractRecord?.descCliente ? extrairIdUsuario(extractRecord.descCliente) : 0;
+  };
+  
+  // ✅ Função para confirmar ID manual
+  const handleConfirmarIdManual = () => {
+    const id = parseInt(idUsuarioManual, 10);
+    if (isNaN(id) || id <= 0) {
+      toast.error('ID inválido', {
+        description: 'Informe um número válido maior que zero'
+      });
+      return;
+    }
+    
+    setUsarIdManual(true);
+    toast.success(`ID ${id} confirmado`, {
+      description: 'Agora todas as funcionalidades estão disponíveis'
+    });
   };
   
   // Função para abrir modal de duplicatas
@@ -516,6 +559,26 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     // Opcional: recarregar dados ou notificar componente pai
   };
 
+  // ✨ NOVA FUNÇÃO: Análise Detalhada do Usuário
+  const handleAnalisarUsuario = () => {
+    const idUsuario = obterIdUsuario();
+    
+    if (!idUsuario) {
+      toast.error('ID do usuário necessário', {
+        description: 'Informe o ID do usuário para acessar a análise detalhada'
+      });
+      return;
+    }
+
+    // ✅ CORREÇÃO: Abrir em nova guia/aba ao invés de navegar na mesma
+    const url = `/analise-usuario/${idUsuario}`;
+    window.open(url, '_blank');
+    
+    toast.success('Abrindo análise detalhada...', {
+      description: `Redirecionando para análise do usuário ${idUsuario}`
+    });
+  };
+
   // ✨ NOVA FUNÇÃO: Compensação BRBTC
   const handleCompensacaoBRBTC = () => {
     if (!extractRecord) {
@@ -523,8 +586,23 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       return;
     }
 
-    // Validar elegibilidade
-    const validacao = validarElegibilidadeBRBTC(extractRecord);
+    // ✅ Verificar se temos ID do usuário (automático ou manual)
+    const idUsuario = obterIdUsuario();
+    if (!idUsuario) {
+      toast.error('ID do usuário necessário', {
+        description: 'Informe o ID do usuário para realizar a compensação BRBTC'
+      });
+      return;
+    }
+
+    // ✅ Criar um extractRecord modificado com o ID correto para a validação
+    const extractRecordComId = {
+      ...extractRecord,
+      descCliente: `Usuario ${idUsuario}; ${extractRecord.descCliente || ''}`
+    };
+
+    // Validar elegibilidade com o registro modificado
+    const validacao = validarElegibilidadeBRBTC(extractRecordComId);
     if (!validacao.elegivel) {
       toast.error('Registro não elegível para compensação BRBTC', {
         description: validacao.motivos.join(', ')
@@ -534,8 +612,8 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
 
     // Abrir modal de confirmação personalizado
     setConfirmAction(() => async () => {
-    // Executar compensação
-    const sucesso = await executarCompensacaoBRBTC(extractRecord);
+    // Executar compensação com o registro que contém o ID correto
+    const sucesso = await executarCompensacaoBRBTC(extractRecordComId);
     
     if (sucesso) {
         // Não fechar o modal automaticamente, deixar o usuário decidir
@@ -635,10 +713,17 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                         <div>
                           <Label className="text-xs text-muted-foreground">ID do Usuário</Label>
                           <p className="font-mono text-xs">
-                            {extractRecord.descCliente 
-                              ? extrairIdUsuario(extractRecord.descCliente) || 'Não identificado' 
-                              : 'Não informado'
-                            }
+                            {(() => {
+                              const id = obterIdUsuario();
+                              if (id > 0) {
+                                return (
+                                  <span className="text-green-600 font-medium">
+                                    {id} {usarIdManual ? '(manual)' : '(automático)'}
+                                  </span>
+                                );
+                              }
+                              return 'Não identificado';
+                            })()}
                           </p>
                         </div>
                         <div className="col-span-1 sm:col-span-2">
@@ -656,7 +741,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                     <Button 
                       onClick={handleGerenciarDuplicatas}
                         className="bg-blue-500 hover:bg-blue-600 text-white"
-                      disabled={!extractRecord.descCliente || extrairIdUsuario(extractRecord.descCliente || '') === 0}
+                      disabled={obterIdUsuario() === 0}
                     >
                         <Search className="h-4 w-4 mr-2" />
                       Buscar e Gerenciar Duplicatas
@@ -667,7 +752,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                         onClick={handleConferirSaldo}
                         variant="outline"
                         className="border-green-200 text-green-700 hover:bg-green-50"
-                        disabled={!extractRecord.descCliente || extrairIdUsuario(extractRecord.descCliente || '') === 0 || isCheckingSaldo}
+                        disabled={obterIdUsuario() === 0 || isCheckingSaldo}
                       >
                         {isCheckingSaldo ? (
                           <div className="flex items-center gap-2">
@@ -687,7 +772,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                         onClick={handleBuscarDepositosInternos}
                         variant="outline"
                         className="border-purple-200 text-purple-700 hover:bg-purple-50"
-                        disabled={!extractRecord.descCliente || extrairIdUsuario(extractRecord.descCliente || '') === 0 || isLoadingDepositos}
+                        disabled={obterIdUsuario() === 0 || isLoadingDepositos}
                       >
                         {isLoadingDepositos ? (
                           <div className="flex items-center gap-2">
@@ -703,10 +788,37 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                       </Button>
                     </div>
 
-                    {(!extractRecord.descCliente || extrairIdUsuario(extractRecord.descCliente || '') === 0) && (
-                      <p className="text-xs text-muted-foreground text-center">
-                        ID do usuário não identificado na descrição do cliente
-                      </p>
+                    {/* ✅ Seção para entrada manual quando ID não é identificado */}
+                    {obterIdUsuario() === 0 && (
+                      <Card className="bg-amber-50 border-amber-200">
+                        <CardContent className="p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <AlertTriangle className="h-4 w-4 text-amber-600" />
+                            <span className="text-sm font-medium text-amber-800">ID do usuário não identificado</span>
+                          </div>
+                          <p className="text-xs text-amber-700 mb-3">
+                            Informe o ID do usuário manualmente para acessar todas as funcionalidades:
+                          </p>
+                          <div className="flex gap-2">
+                            <Input
+                              type="number"
+                              placeholder="Ex: 1122"
+                              value={idUsuarioManual}
+                              onChange={(e) => setIdUsuarioManual(e.target.value)}
+                              className="flex-1"
+                              min="1"
+                            />
+                            <Button 
+                              onClick={handleConfirmarIdManual}
+                              disabled={!idUsuarioManual}
+                              size="sm"
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Confirmar
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
                     )}
 
                     {/* Exibição do resultado da conferência de saldo */}
@@ -1069,11 +1181,25 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
             Fechar
           </Button>
           
+          {/* ✨ NOVO: Botão Analisar Usuário */}
+          {obterIdUsuario() > 0 && (
+            <Button 
+              onClick={handleAnalisarUsuario} 
+              disabled={isLoading || isLoadingBRBTC}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Analisar Usuário
+            </Button>
+          )}
+          
           {/* ✨ NOVO: Botão Compensação BRBTC */}
-          {activeTab === "manual" && extractRecord && validarElegibilidadeBRBTC(extractRecord).elegivel && (
+          {activeTab === "manual" && extractRecord && (
+            obterIdUsuario() > 0 || validarElegibilidadeBRBTC(extractRecord).elegivel
+          ) && (
             <Button 
               onClick={handleCompensacaoBRBTC} 
-              disabled={isLoading || isLoadingBRBTC}
+              disabled={isLoading || isLoadingBRBTC || obterIdUsuario() === 0}
               className="bg-green-600 hover:bg-green-700 text-white"
             >
               {isLoadingBRBTC ? (
@@ -1184,7 +1310,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
             dateTime: selectedDuplicataRecord.dateTime,
             type: selectedDuplicataRecord.type
           }}
-          idUsuario={extrairIdUsuario(selectedDuplicataRecord.descCliente || '')}
+          idUsuario={obterIdUsuario()}
           onDuplicataExcluida={handleDuplicataExcluida}
         />
       )}

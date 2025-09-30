@@ -1,4 +1,4 @@
-// services/corpx.ts - Serviço CORPX Banking
+// services/tcr.ts - Serviço TCR Banking (baseado no CorpX)
 // Baseado no guia oficial de integração frontend
 import { api } from '@/config/api';
 import type {
@@ -18,17 +18,17 @@ import type {
   CorpXCreateAccountRequest,
   CorpXCreateAccountResponse,
   CorpXErrorResponse
-} from '@/types/corpx';
+} from '@/types/corpx'; // Reutilizando os types do CorpX
 
-// Estrutura de resposta padrão do backend CorpX
-interface CorpXBackendResponse<T = any> {
+// Estrutura de resposta padrão do backend TCR (mesmo formato do CorpX)
+interface TCRBackendResponse<T = any> {
   error: boolean;
   message: string;
   data?: T;
   details?: string;
 }
 
-const CORPX_CONFIG = {
+const TCR_CONFIG = {
   endpoints: {
     // 💰 CONTA / SALDO (rotas corretas do backend)
     consultarSaldo: '/api/corpx/account/saldo',
@@ -112,21 +112,21 @@ async function checkTokenStatus(): Promise<{
  * Consultar Saldo
  * Endpoint: GET /api/corpx/account/saldo?tax_document=CNPJ
  */
-export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoResponse | null> {
+export async function consultarSaldoTCR(cnpj: string): Promise<CorpXSaldoResponse | null> {
   try {
     
     // ✅ Verificar status do token ANTES da requisição
     const tokenStatus = await checkTokenStatus();
-    //console.log('[CORPX-SALDO] 🔍 Status do token:', tokenStatus);
+    //console.log('[TCR-SALDO] 🔍 Status do token:', tokenStatus);
     
     if (!tokenStatus.isValid) {
-      console.error('[CORPX-SALDO] ❌ Token inválido ou expirado!', tokenStatus);
+      console.error('[TCR-SALDO] ❌ Token inválido ou expirado!', tokenStatus);
       throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
     }
     
     // ✅ Aviso se token expira em menos de 5 minutos
     if (tokenStatus.timeToExpiry < 300) {
-      console.warn('[CORPX-SALDO] ⚠️ Token expira em breve:', {
+      console.warn('[TCR-SALDO] ⚠️ Token expira em breve:', {
         timeToExpiry: tokenStatus.timeToExpiry,
         minutes: Math.floor(tokenStatus.timeToExpiry / 60)
       });
@@ -138,11 +138,11 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
     
     
     if (!userToken) {
-      console.error('[CORPX-SALDO] ❌ Token de autenticação não encontrado!');
+      console.error('[TCR-SALDO] ❌ Token de autenticação não encontrado!');
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const requestUrl = `${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.consultarSaldo}?tax_document=${cnpj}`;
+    const requestUrl = `${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.consultarSaldo}?tax_document=${cnpj}`;
     const requestHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -155,10 +155,9 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
       headers: requestHeaders
     });
 
-
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[CORPX-SALDO] ❌ HTTP Error Details:', {
+      console.error('[TCR-SALDO] ❌ HTTP Error Details:', {
         status: response.status,
         statusText: response.statusText,
         errorBody: errorText,
@@ -168,10 +167,10 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-SALDO] ✅ Resposta completa recebida:', responseData);
+    //console.log('[TCR-SALDO] ✅ Resposta completa recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as CorpXBackendResponse<any>;
+    const backendResponse = responseData as TCRBackendResponse<any>;
     
     if (backendResponse.error === false && backendResponse.data) {
       // Adaptar dados do backend para a interface esperada
@@ -183,7 +182,7 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
         limiteBloqueado: 0 // Campo padrão
       } as CorpXSaldoResponse;
     } else {
-      console.error('[CORPX-SALDO] Erro na resposta:', backendResponse.message);
+      console.error('[TCR-SALDO] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         saldo: 0,
@@ -194,7 +193,7 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
     }
     
   } catch (error: any) {
-    console.error('[CORPX-SALDO] 💥 Erro detalhado ao consultar saldo:', {
+    console.error('[TCR-SALDO] 💥 Erro detalhado ao consultar saldo:', {
       message: error.message,
       name: error.name,
       stack: error.stack,
@@ -205,7 +204,7 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
     
     // ✅ Se erro 401, verificar se token expirou
     if (error.message.includes('401')) {
-      console.warn('[CORPX-SALDO] 🔐 Erro 401 detectado - possível token expirado');
+      console.warn('[TCR-SALDO] 🔐 Erro 401 detectado - possível token expirado');
       
       // Tentar obter informações do token
       try {
@@ -217,7 +216,7 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
           const payload = JSON.parse(atob(currentToken.split('.')[1]));
           const now = Math.floor(Date.now() / 1000);
           
-          console.warn('[CORPX-SALDO] 🔍 Token analysis:', {
+          console.warn('[TCR-SALDO] 🔍 Token analysis:', {
             hasToken: !!currentToken,
             tokenExp: payload.exp,
             currentTime: now,
@@ -227,7 +226,7 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
           });
         }
       } catch (tokenError) {
-        console.error('[CORPX-SALDO] ❌ Erro ao analisar token:', tokenError);
+        console.error('[TCR-SALDO] ❌ Erro ao analisar token:', tokenError);
       }
     }
     
@@ -246,9 +245,9 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
  * Consultar Extrato
  * Endpoint: POST /api/corpx/account/extrato
  */
-export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise<CorpXExtratoResponse | null> {
+export async function consultarExtratoTCR(params: CorpXExtratoParams): Promise<CorpXExtratoResponse | null> {
   try {
-    //console.log('[CORPX-EXTRATO] Consultando extrato CORPX...', params);
+    //console.log('[TCR-EXTRATO] Consultando extrato TCR...', params);
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
@@ -268,12 +267,12 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       ...(params.dataFim && { datafim: params.dataFim })
     };
     
-    //console.log('[CORPX-EXTRATO] 🧪 TESTE: Paginação real CorpX - página', params.page || 1);
+    //console.log('[TCR-EXTRATO] 🧪 TESTE: Paginação real TCR - página', params.page || 1);
     
-    //console.log('[CORPX-EXTRATO] Request body enviado:', requestBody);
-    //console.log('[CORPX-EXTRATO] URL da requisição:', `${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.consultarExtrato}`);
+    //console.log('[TCR-EXTRATO] Request body enviado:', requestBody);
+    //console.log('[TCR-EXTRATO] URL da requisição:', `${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.consultarExtrato}`);
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.consultarExtrato}`, {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.consultarExtrato}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -283,29 +282,29 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       body: JSON.stringify(requestBody)
     });
 
-    //console.log('[CORPX-EXTRATO] Status da resposta HTTP:', response.status, response.statusText);
+    //console.log('[TCR-EXTRATO] Status da resposta HTTP:', response.status, response.statusText);
     
     if (!response.ok) {
       let errorDetails;
       try {
         const errorText = await response.text();
-        console.error('[CORPX-EXTRATO] ❌ Erro HTTP RAW:', errorText);
+        console.error('[TCR-EXTRATO] ❌ Erro HTTP RAW:', errorText);
         
         // Tentar fazer parse do JSON do erro
         try {
           errorDetails = JSON.parse(errorText);
-          console.error('[CORPX-EXTRATO] ❌ Erro HTTP JSON:', errorDetails);
+          console.error('[TCR-EXTRATO] ❌ Erro HTTP JSON:', errorDetails);
         } catch {
           errorDetails = { message: errorText };
         }
       } catch (readError) {
-        console.error('[CORPX-EXTRATO] ❌ Erro ao ler resposta:', readError);
+        console.error('[TCR-EXTRATO] ❌ Erro ao ler resposta:', readError);
         errorDetails = { message: 'Erro ao ler resposta do servidor' };
       }
       
       // Log específico para erro 400
       if (response.status === 400) {
-        console.error('[CORPX-EXTRATO] 🚨 ERRO 400 DETALHADO:', {
+        console.error('[TCR-EXTRATO] 🚨 ERRO 400 DETALHADO:', {
           status: response.status,
           statusText: response.statusText,
           headers: Object.fromEntries(response.headers.entries()),
@@ -318,10 +317,10 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-EXTRATO] Resposta completa recebida:', responseData);
+    //console.log('[TCR-EXTRATO] Resposta completa recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as CorpXBackendResponse<any>;
+    const backendResponse = responseData as TCRBackendResponse<any>;
     
     
     if (backendResponse.error === false && backendResponse.data) {
@@ -331,29 +330,29 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       if (Array.isArray(backendResponse.data)) {
         rawTransactions = backendResponse.data;
       } else if (backendResponse.data.extrato && Array.isArray(backendResponse.data.extrato)) {
-        // ✅ CORREÇÃO: CorpX retorna dados em data.extrato
-        //console.log('[CORPX-EXTRATO] ✅ Encontrou data.extrato com', backendResponse.data.extrato.length, 'transações');
+        // ✅ CORREÇÃO: TCR retorna dados em data.extrato
+        //console.log('[TCR-EXTRATO] ✅ Encontrou data.extrato com', backendResponse.data.extrato.length, 'transações');
         rawTransactions = backendResponse.data.extrato;
       } else if (backendResponse.data.transactions && Array.isArray(backendResponse.data.transactions)) {
         rawTransactions = backendResponse.data.transactions;
       } else if (backendResponse.data.items && Array.isArray(backendResponse.data.items)) {
         rawTransactions = backendResponse.data.items;
       } else {
-        //console.log('[CORPX-EXTRATO] ❌ Dados não estão em formato de array:', backendResponse.data);
-        //console.log('[CORPX-EXTRATO] 🔍 Estrutura encontrada:', Object.keys(backendResponse.data));
+        //console.log('[TCR-EXTRATO] ❌ Dados não estão em formato de array:', backendResponse.data);
+        //console.log('[TCR-EXTRATO] 🔍 Estrutura encontrada:', Object.keys(backendResponse.data));
         rawTransactions = [];
       }
       
-      //console.log('[CORPX-EXTRATO] Transações encontradas:', rawTransactions.length);
+      //console.log('[TCR-EXTRATO] Transações encontradas:', rawTransactions.length);
       
-      // ✅ CORREÇÃO: Adaptar dados CorpX para a interface esperada
+      // ✅ CORREÇÃO: Adaptar dados TCR para a interface esperada
       const transactions = rawTransactions.map((item: any, index: number) => {
         // Pular item "Saldo Atual"
         if (item.data === "Saldo Atual" || item.descricao === "Saldo Atual") {
           return null;
         }
 
-        // ✅ MAPEAMENTO CORRETO para estrutura CorpX
+        // ✅ MAPEAMENTO CORRETO para estrutura TCR
         const valorString = item.valor || '0';
         const valor = parseFloat(valorString.toString());
         const dataHora = item.data && item.hora ? `${item.data} ${item.hora}` : item.data;
@@ -364,7 +363,25 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
           description: item.descricao || 'Transação',
           amount: Math.abs(valor),
           type: (item.tipo === 'C') ? 'credit' as const : 'debit' as const,
-          balance: 0 // CorpX não retorna saldo por transação
+          balance: 0, // TCR não retorna saldo por transação
+          // ✅ PRESERVAR dados originais completos para funcionalidades como verificação de endtoend
+          _original: {
+            ...item,
+            endToEndId: item.idEndToEnd, // Mapear idEndToEnd para endToEndId também
+            e2eId: item.idEndToEnd, // Alias para diferentes formatos
+            // Dados do pagador para referência
+            payerDocument: item.payer?.document,
+            payerName: item.payer?.fullName,
+            // Dados do beneficiário para referência  
+            beneficiaryDocument: item.beneficiary?.document,
+            beneficiaryPixKey: item.beneficiary?.pixKey,
+            // Outros dados úteis
+            nrMovimento: item.nrMovimento,
+            valor: item.valor,
+            tipo: item.tipo,
+            data: item.data,
+            hora: item.hora
+          }
         };
         
         return transaction;
@@ -372,7 +389,7 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       
       const result = {
         erro: false,
-        page: 1, // CorpX não usa paginação por agora
+        page: 1, // TCR não usa paginação por agora
         totalPages: 1, // Backend não retorna totalPages
         transactions
       } as CorpXExtratoResponse;
@@ -380,11 +397,11 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       
       return result;
     } else {
-      console.error('[CORPX-EXTRATO] Erro na resposta:', backendResponse.message || 'Resposta sem dados');
+      console.error('[TCR-EXTRATO] Erro na resposta:', backendResponse.message || 'Resposta sem dados');
       
       // ✅ Verificar se ainda assim há dados para retornar
       if (responseData && (Array.isArray(responseData) || responseData.length > 0)) {
-        //console.log('[CORPX-EXTRATO] Tentando processar dados diretos da resposta...');
+        //console.log('[TCR-EXTRATO] Tentando processar dados diretos da resposta...');
         const directData = Array.isArray(responseData) ? responseData : [responseData];
         
         const transactions = directData.map((item: any, index: number) => ({
@@ -413,7 +430,7 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
     }
     
   } catch (error: any) {
-    console.error('[CORPX-EXTRATO] Erro ao consultar extrato:', {
+    console.error('[TCR-EXTRATO] Erro ao consultar extrato:', {
       message: error.message,
       status: error.response?.status,
       data: error.response?.data,
@@ -435,9 +452,9 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
  * Criar Conta
  * Endpoint: POST /api/corpx/account/criar
  */
-export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise<CorpXCreateAccountResponse | null> {
+export async function criarContaTCR(dados: CorpXCreateAccountRequest): Promise<CorpXCreateAccountResponse | null> {
   try {
-    //console.log('[CORPX-CONTA] Criando conta CORPX...', dados);
+    //console.log('[TCR-CONTA] Criando conta TCR...', dados);
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
@@ -453,7 +470,7 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
       tax_document: dados.tax_document
     };
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.criarConta}`, {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.criarConta}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -468,10 +485,10 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-CONTA] Resposta recebida:', responseData);
+    //console.log('[TCR-CONTA] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as CorpXBackendResponse<any>;
+    const backendResponse = responseData as TCRBackendResponse<any>;
     
     if (backendResponse.error === false) {
       return {
@@ -480,7 +497,7 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
         account_id: backendResponse.data?.id || null
       } as CorpXCreateAccountResponse;
     } else {
-      console.error('[CORPX-CONTA] Erro na resposta:', backendResponse.message);
+      console.error('[TCR-CONTA] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         message: backendResponse.message
@@ -488,7 +505,7 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
     }
     
   } catch (error: any) {
-    console.error('[CORPX-CONTA] Erro ao criar conta:', error.response?.data);
+    console.error('[TCR-CONTA] Erro ao criar conta:', error.response?.data);
     return null;
   }
 }
@@ -501,9 +518,9 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
  * Listar Chaves PIX
  * Endpoint: GET /api/corpx/pix/chaves?tax_document=CNPJ
  */
-export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysResponse | null> {
+export async function listarChavesPixTCR(cnpj: string): Promise<CorpXPixKeysResponse | null> {
   try {
-    //console.log('[CORPX-PIX-CHAVES] Listando chaves PIX...', cnpj);
+    //console.log('[TCR-PIX-CHAVES] Listando chaves PIX...', cnpj);
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
@@ -513,7 +530,7 @@ export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysRe
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.listarChavesPix}?tax_document=${cnpj}`, {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.listarChavesPix}?tax_document=${cnpj}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -527,13 +544,13 @@ export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysRe
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-PIX-CHAVES] Resposta recebida:', responseData);
+    //console.log('[TCR-PIX-CHAVES] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: [...] }
-    const backendResponse = responseData as CorpXBackendResponse<any[]>;
+    const backendResponse = responseData as TCRBackendResponse<any[]>;
     
     if (backendResponse.error === false && backendResponse.data) {
-      //console.log('[CORPX-PIX-CHAVES] 📊 Dados brutos da API:', backendResponse.data);
+      //console.log('[TCR-PIX-CHAVES] 📊 Dados brutos da API:', backendResponse.data);
       
       const chaves = backendResponse.data.map((item: any, index: number) => {
         
@@ -554,7 +571,7 @@ export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysRe
         chaves
       } as CorpXPixKeysResponse;
     } else {
-      console.error('[CORPX-PIX-CHAVES] Erro na resposta:', backendResponse.message);
+      console.error('[TCR-PIX-CHAVES] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         chaves: []
@@ -562,7 +579,7 @@ export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysRe
     }
     
   } catch (error: any) {
-    console.error('[CORPX-PIX-CHAVES] Erro ao listar chaves:', error.response?.data);
+    console.error('[TCR-PIX-CHAVES] Erro ao listar chaves:', error.response?.data);
     return null;
   }
 }
@@ -571,9 +588,9 @@ export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysRe
  * Criar Chave PIX
  * Endpoint: POST /api/corpx/pix/chave
  */
-export async function criarChavePixCorpX(dados: CorpXCreatePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
+export async function criarChavePixTCR(dados: CorpXCreatePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
   try {
-    //console.log('[CORPX-PIX-CRIAR] Criando chave PIX...', dados);
+    //console.log('[TCR-PIX-CRIAR] Criando chave PIX...', dados);
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
@@ -583,7 +600,7 @@ export async function criarChavePixCorpX(dados: CorpXCreatePixKeyRequest): Promi
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.criarChavePix}`, {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.criarChavePix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -598,10 +615,10 @@ export async function criarChavePixCorpX(dados: CorpXCreatePixKeyRequest): Promi
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-PIX-CRIAR] Resposta recebida:', responseData);
+    //console.log('[TCR-PIX-CRIAR] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as CorpXBackendResponse<any>;
+    const backendResponse = responseData as TCRBackendResponse<any>;
     
     if (backendResponse.error === false) {
       return {
@@ -609,7 +626,7 @@ export async function criarChavePixCorpX(dados: CorpXCreatePixKeyRequest): Promi
         message: backendResponse.message
       } as CorpXCreatePixKeyResponse;
     } else {
-      console.error('[CORPX-PIX-CRIAR] Erro na resposta:', backendResponse.message);
+      console.error('[TCR-PIX-CRIAR] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         message: backendResponse.message
@@ -617,7 +634,7 @@ export async function criarChavePixCorpX(dados: CorpXCreatePixKeyRequest): Promi
     }
     
   } catch (error: any) {
-    console.error('[CORPX-PIX-CRIAR] Erro ao criar chave:', error.response?.data);
+    console.error('[TCR-PIX-CRIAR] Erro ao criar chave:', error.response?.data);
     return null;
   }
 }
@@ -629,9 +646,9 @@ export async function criarChavePixCorpX(dados: CorpXCreatePixKeyRequest): Promi
  * Nota: Como api.delete não suporta body, usamos uma requisição customizada
  * mas ainda aproveitando o sistema de autenticação do projeto
  */
-export async function cancelarChavePixCorpX(dados: CorpXDeletePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
+export async function cancelarChavePixTCR(dados: CorpXDeletePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
   try {
-    //console.log('[CORPX-PIX-CANCELAR] Cancelando chave PIX...', dados);
+    //console.log('[TCR-PIX-CANCELAR] Cancelando chave PIX...', dados);
     
     // ✅ Usar TOKEN_STORAGE diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
@@ -641,7 +658,7 @@ export async function cancelarChavePixCorpX(dados: CorpXDeletePixKeyRequest): Pr
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.cancelarChavePix}`, {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.cancelarChavePix}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -656,10 +673,10 @@ export async function cancelarChavePixCorpX(dados: CorpXDeletePixKeyRequest): Pr
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-PIX-CANCELAR] Resposta recebida:', responseData);
+    //console.log('[TCR-PIX-CANCELAR] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as CorpXBackendResponse<any>;
+    const backendResponse = responseData as TCRBackendResponse<any>;
     
     if (backendResponse.error === false) {
       return {
@@ -667,7 +684,7 @@ export async function cancelarChavePixCorpX(dados: CorpXDeletePixKeyRequest): Pr
         message: backendResponse.message
       } as CorpXCreatePixKeyResponse;
     } else {
-      console.error('[CORPX-PIX-CANCELAR] Erro na resposta:', backendResponse.message);
+      console.error('[TCR-PIX-CANCELAR] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         message: backendResponse.message
@@ -675,7 +692,7 @@ export async function cancelarChavePixCorpX(dados: CorpXDeletePixKeyRequest): Pr
     }
     
   } catch (error: any) {
-    console.error('[CORPX-PIX-CANCELAR] Erro ao cancelar chave:', error);
+    console.error('[TCR-PIX-CANCELAR] Erro ao cancelar chave:', error);
     return null;
   }
 }
@@ -688,9 +705,9 @@ export async function cancelarChavePixCorpX(dados: CorpXDeletePixKeyRequest): Pr
  * Criar Transferência PIX
  * Endpoint: POST /api/corpx/pix/transferencia
  */
-export async function criarTransferenciaPixCorpX(dados: CorpXPixTransferRequest): Promise<CorpXPixTransferResponse | null> {
+export async function criarTransferenciaPixTCR(dados: CorpXPixTransferRequest): Promise<CorpXPixTransferResponse | null> {
   try {
-    //console.log('[CORPX-PIX-TRANSFER] Criando transferência PIX...', dados);
+    //console.log('[TCR-PIX-TRANSFER] Criando transferência PIX...', dados);
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
@@ -700,7 +717,7 @@ export async function criarTransferenciaPixCorpX(dados: CorpXPixTransferRequest)
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.criarTransferenciaPix}`, {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.criarTransferenciaPix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -715,10 +732,10 @@ export async function criarTransferenciaPixCorpX(dados: CorpXPixTransferRequest)
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-PIX-TRANSFER] Resposta recebida:', responseData);
+    //console.log('[TCR-PIX-TRANSFER] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as CorpXBackendResponse<any>;
+    const backendResponse = responseData as TCRBackendResponse<any>;
     
     if (backendResponse.error === false && backendResponse.data) {
       const data = backendResponse.data;
@@ -738,7 +755,7 @@ export async function criarTransferenciaPixCorpX(dados: CorpXPixTransferRequest)
         Valor: dados.valor.toString()
       } as CorpXPixTransferResponse;
     } else {
-      console.error('[CORPX-PIX-TRANSFER] Erro na resposta:', backendResponse.message);
+      console.error('[TCR-PIX-TRANSFER] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         type: '',
@@ -757,7 +774,7 @@ export async function criarTransferenciaPixCorpX(dados: CorpXPixTransferRequest)
     }
     
   } catch (error: any) {
-    console.error('[CORPX-PIX-TRANSFER] Erro ao criar transferência:', error.response?.data);
+    console.error('[TCR-PIX-TRANSFER] Erro ao criar transferência:', error.response?.data);
     return null;
   }
 }
@@ -766,9 +783,9 @@ export async function criarTransferenciaPixCorpX(dados: CorpXPixTransferRequest)
  * Confirmar Transferência PIX
  * Endpoint: GET /api/corpx/pix/transferencia/confirmar?endtoend=X&tax_document=Y
  */
-export async function confirmarTransferenciaPixCorpX(dados: CorpXPixConfirmRequest): Promise<CorpXPixConfirmResponse | null> {
+export async function confirmarTransferenciaPixTCR(dados: CorpXPixConfirmRequest): Promise<CorpXPixConfirmResponse | null> {
   try {
-    //console.log('[CORPX-PIX-CONFIRM] Confirmando transferência PIX...', dados);
+    //console.log('[TCR-PIX-CONFIRM] Confirmando transferência PIX...', dados);
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
@@ -778,7 +795,7 @@ export async function confirmarTransferenciaPixCorpX(dados: CorpXPixConfirmReque
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const url = `${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.confirmarTransferenciaPix}?endtoend=${dados.endtoend}&tax_document=${dados.tax_document}`;
+    const url = `${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.confirmarTransferenciaPix}?endtoend=${dados.endtoend}&tax_document=${dados.tax_document}`;
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -793,10 +810,10 @@ export async function confirmarTransferenciaPixCorpX(dados: CorpXPixConfirmReque
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-PIX-CONFIRM] Resposta recebida:', responseData);
+    //console.log('[TCR-PIX-CONFIRM] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as CorpXBackendResponse<any>;
+    const backendResponse = responseData as TCRBackendResponse<any>;
     
     if (backendResponse.error === false && backendResponse.data) {
       // Adaptar dados do backend para interface esperada
@@ -815,18 +832,18 @@ export async function confirmarTransferenciaPixCorpX(dados: CorpXPixConfirmReque
         "Data": data.transactionDate || new Date().toISOString(),
         "Valor": `R$ ${parseFloat(data.amount || data.valor || '0').toFixed(2).replace('.', ',')}`,
         "Código da transação": data.idEndToEnd || dados.endtoend,
-        "De": data.pagadorNome || "Conta CorpX",
+        "De": data.pagadorNome || "Conta TCR",
         "CPF/CNPJ": data.recebedorDocument || "***",
         "Para": data.recebedorNome || "Beneficiário",
         "Descrição": data.descricao || ""
       } as CorpXPixConfirmResponse;
     } else {
-      console.error('[CORPX-PIX-CONFIRM] Erro na resposta:', backendResponse.message);
+      console.error('[TCR-PIX-CONFIRM] Erro na resposta:', backendResponse.message);
       return null;
     }
     
   } catch (error: any) {
-    console.error('[CORPX-PIX-CONFIRM] Erro ao confirmar transferência:', error.response?.data);
+    console.error('[TCR-PIX-CONFIRM] Erro ao confirmar transferência:', error.response?.data);
     return null;
   }
 }
@@ -839,9 +856,9 @@ export async function confirmarTransferenciaPixCorpX(dados: CorpXPixConfirmReque
  * Gerar QR Code PIX
  * Endpoint: POST /api/corpx/pix/qrcode
  */
-export async function gerarQRCodePixCorpX(dados: CorpXQRCodeRequest): Promise<CorpXQRCodeResponse | null> {
+export async function gerarQRCodePixTCR(dados: CorpXQRCodeRequest): Promise<CorpXQRCodeResponse | null> {
   try {
-    //console.log('[CORPX-PIX-QR] Gerando QR Code PIX...', dados);
+    //console.log('[TCR-PIX-QR] Gerando QR Code PIX...', dados);
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
@@ -851,7 +868,7 @@ export async function gerarQRCodePixCorpX(dados: CorpXQRCodeRequest): Promise<Co
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.gerarQRCodePix}`, {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.gerarQRCodePix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -866,92 +883,12 @@ export async function gerarQRCodePixCorpX(dados: CorpXQRCodeRequest): Promise<Co
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-PIX-QR] Resposta recebida:', responseData);
+    //console.log('[TCR-PIX-QR] Resposta recebida:', responseData);
     
     return responseData as CorpXQRCodeResponse;
     
   } catch (error: any) {
-    console.error('[CORPX-PIX-QR] Erro ao gerar QR Code:', error.response?.data);
-    return null;
-  }
-}
-
-/**
- * Executar transferência PIX completa
- * POST /api/corpx/pix/transferencia-completa
- */
-export async function executarTransferenciaCompletaCorpX(dados: any): Promise<any | null> {
-  try {
-    console.log('[CORPX-PIX-COMPLETA] Executando transferência PIX completa...', dados);
-    
-    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
-    const userToken = TOKEN_STORAGE.get();
-    
-    if (!userToken) {
-      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
-    }
-    
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/corpx/pix/transferencia-completa`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${userToken}`
-      },
-      body: JSON.stringify(dados)
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const responseData = await response.json();
-    console.log('[CORPX-PIX-COMPLETA] Resposta recebida:', responseData);
-    
-    return responseData;
-    
-  } catch (error: any) {
-    console.error('[CORPX-PIX-COMPLETA] Erro ao executar transferência completa:', error.response?.data);
-    return null;
-  }
-}
-
-/**
- * Executar transferência PIX completa programada
- * POST /api/corpx/pix/transferencia-completa-programada
- */
-export async function executarTransferenciaCompletaProgramadaCorpX(dados: any): Promise<any | null> {
-  try {
-    console.log('[CORPX-PIX-PROGRAMADA] Executando transferência PIX programada...', dados);
-    
-    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
-    const userToken = TOKEN_STORAGE.get();
-    
-    if (!userToken) {
-      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
-    }
-    
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/corpx/pix/transferencia-completa-programada`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${userToken}`
-      },
-      body: JSON.stringify(dados)
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const responseData = await response.json();
-    console.log('[CORPX-PIX-PROGRAMADA] Resposta recebida:', responseData);
-    
-    return responseData;
-    
-  } catch (error: any) {
-    console.error('[CORPX-PIX-PROGRAMADA] Erro ao executar transferência programada:', error.response?.data);
+    console.error('[TCR-PIX-QR] Erro ao gerar QR Code:', error.response?.data);
     return null;
   }
 }
@@ -959,21 +896,21 @@ export async function executarTransferenciaCompletaProgramadaCorpX(dados: any): 
 /**
  * 🎯 FLUXO COMPLETO - Enviar PIX
  */
-export async function enviarPixCompletoCorpX(
+export async function enviarPixCompletoTCR(
   dadosTransferencia: CorpXPixTransferRequest
 ): Promise<{ criacao: CorpXPixTransferResponse; confirmacao: CorpXPixConfirmResponse } | null> {
   try {
-    //console.log('[CORPX-PIX-COMPLETO] Iniciando fluxo completo PIX...', dadosTransferencia);
+    //console.log('[TCR-PIX-COMPLETO] Iniciando fluxo completo PIX...', dadosTransferencia);
     
     // 1. Criar transferência
-    const criacao = await criarTransferenciaPixCorpX(dadosTransferencia);
+    const criacao = await criarTransferenciaPixTCR(dadosTransferencia);
     
     if (!criacao || criacao.erro) {
       throw new Error('Erro ao criar transferência');
     }
 
     // 2. Confirmar transferência
-    const confirmacao = await confirmarTransferenciaPixCorpX({
+    const confirmacao = await confirmarTransferenciaPixTCR({
       endtoend: criacao.endtoend,
       tax_document: dadosTransferencia.tax_document
     });
@@ -982,7 +919,7 @@ export async function enviarPixCompletoCorpX(
       throw new Error('Erro ao confirmar transferência');
     }
 
-    //console.log('[CORPX-PIX-COMPLETO] Fluxo completo executado com sucesso');
+    //console.log('[TCR-PIX-COMPLETO] Fluxo completo executado com sucesso');
 
     return {
       criacao,
@@ -990,7 +927,7 @@ export async function enviarPixCompletoCorpX(
     };
     
   } catch (error: any) {
-    console.error('[CORPX-PIX-COMPLETO] Erro no fluxo completo:', error);
+    console.error('[TCR-PIX-COMPLETO] Erro no fluxo completo:', error);
     return null;
   }
 }
@@ -1002,7 +939,7 @@ export async function enviarPixCompletoCorpX(
 /**
  * Formatar valor para display
  */
-export function formatarValorCorpX(valor: number): string {
+export function formatarValorTCR(valor: number): string {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL'
@@ -1012,7 +949,7 @@ export function formatarValorCorpX(valor: number): string {
 /**
  * Validar CNPJ (apenas números)
  */
-export function validarCNPJCorpX(cnpj: string): boolean {
+export function validarCNPJTCR(cnpj: string): boolean {
   const cnpjLimpo = cnpj.replace(/\D/g, '');
   return cnpjLimpo.length === 14;
 }
@@ -1020,7 +957,7 @@ export function validarCNPJCorpX(cnpj: string): boolean {
 /**
  * Formatar chave PIX baseado no tipo
  */
-export function formatarChavePixCorpX(chave: string, tipo: number): string {
+export function formatarChavePixTCR(chave: string, tipo: number): string {
   switch (tipo) {
     case 2: // Telefone
       return chave.startsWith('+55') ? chave : `+55${chave}`;
@@ -1036,7 +973,7 @@ export function formatarChavePixCorpX(chave: string, tipo: number): string {
 /**
  * Tratamento de erros padronizado
  */
-export function tratarErroCorpX(error: any): string {
+export function tratarErroTCR(error: any): string {
   if (error.response) {
     switch (error.response.status) {
       case 400:
@@ -1059,38 +996,38 @@ export function tratarErroCorpX(error: any): string {
 // ==================== EXPORT PRINCIPAL ====================
 
 /**
- * Serviço principal CORPX Banking
- * Baseado no guia oficial de integração frontend
+ * Serviço principal TCR Banking
+ * Baseado no guia oficial de integração frontend (clone do CorpX)
  * ✅ Implementação completa conforme API
  */
-export const CorpXService = {
+export const TCRService = {
   // 💰 CONTA / SALDO
-  consultarSaldo: consultarSaldoCorpX,
-  consultarExtrato: consultarExtratoCorpX,
-  criarConta: criarContaCorpX,
+  consultarSaldo: consultarSaldoTCR,
+  consultarExtrato: consultarExtratoTCR,
+  criarConta: criarContaTCR,
   
   // 🔑 CHAVES PIX
-  listarChavesPix: listarChavesPixCorpX,
-  criarChavePix: criarChavePixCorpX,
-  cancelarChavePix: cancelarChavePixCorpX,
+  listarChavesPix: listarChavesPixTCR,
+  criarChavePix: criarChavePixTCR,
+  cancelarChavePix: cancelarChavePixTCR,
   
   // 💸 TRANSFERÊNCIAS PIX
-  criarTransferenciaPix: criarTransferenciaPixCorpX,
-  confirmarTransferenciaPix: confirmarTransferenciaPixCorpX,
-  enviarPixCompleto: enviarPixCompletoCorpX,
+  criarTransferenciaPix: criarTransferenciaPixTCR,
+  confirmarTransferenciaPix: confirmarTransferenciaPixTCR,
+  enviarPixCompleto: enviarPixCompletoTCR,
   
   // 📱 QR CODE PIX
-  gerarQRCodePix: gerarQRCodePixCorpX,
+  gerarQRCodePix: gerarQRCodePixTCR,
   
   // 📝 HELPERS
-  formatarValor: formatarValorCorpX,
-  validarCNPJ: validarCNPJCorpX,
-  formatarChavePix: formatarChavePixCorpX,
-  tratarErro: tratarErroCorpX,
+  formatarValor: formatarValorTCR,
+  validarCNPJ: validarCNPJTCR,
+  formatarChavePix: formatarChavePixTCR,
+  tratarErro: tratarErroTCR,
 } as const;
 
 // Exports compatíveis com versão anterior
-export const getCorpXSaldo = consultarSaldoCorpX;
-export const getCorpXExtrato = consultarExtratoCorpX;
+export const getTCRSaldo = consultarSaldoTCR;
+export const getTCRExtrato = consultarExtratoTCR;
 
-export default CorpXService;
+export default TCRService;

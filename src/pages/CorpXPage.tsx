@@ -1,11 +1,14 @@
-import React from "react";
+import React, { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { FileText, SendHorizontal, Key, QrCode, Plus, Search, RefreshCw, Copy, Trash2 } from "lucide-react";
+import { FileText, SendHorizontal, Key, QrCode, Plus, Search, RefreshCw, Copy, Trash2, Building2, Loader2, Check, X, AlertCircle } from "lucide-react";
 
 // Componentes
 import TopBarCorpX from "@/components/TopBarCorpX";
 import ExtractTabCorpX from "@/components/ExtractTabCorpX";
+
+// Contexto
+import { CorpXProvider, useCorpX, CORPX_ACCOUNTS } from "@/contexts/CorpXContext";
 
 // Componentes UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,81 +16,665 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 
-// Componente temporário para Ações PIX (replicando layout BMP 531)
+// Componente PIX Normal
+function PixNormalComponent() {
+  const { selectedAccount } = useCorpX();
+  const [isLoading, setIsLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    key: '',
+    tipo: '2', // PIX
+    valor: '',
+    nome: '',
+    description: ''
+  });
+
+  const formatCurrency = (value: string) => {
+    const numbers = value.replace(/\D/g, '');
+    const amount = parseFloat(numbers) / 100;
+    return amount.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+  };
+
+  const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '');
+    const formattedValue = formatCurrency(value);
+    setFormData(prev => ({ ...prev, valor: formattedValue }));
+  };
+
+  // Função utilitária para limpar formatação de documentos/chaves
+  const limparFormatacao = (valor: string) => {
+    if (!valor) return '';
+    return valor.replace(/\D/g, ''); // Remove tudo que não é número
+  };
+
+  const executarPix = async () => {
+    if (!formData.key || !formData.valor) {
+      toast.error("Chave PIX e valor são obrigatórios");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
+      
+      const payload = {
+        tax_document: limparFormatacao(selectedAccount.cnpj), // Remove formatação
+        key: limparFormatacao(formData.key), // Remove formatação da chave também
+        tipo: parseInt(formData.tipo),
+        valor: valorNumerico,
+        nome: formData.nome || undefined,
+        description: formData.description || undefined
+      };
+
+
+      const { executarTransferenciaCompletaCorpX } = await import('@/services/corpx');
+      const result = await executarTransferenciaCompletaCorpX(payload);
+
+      if (!result || result.error) {
+        toast.error(result?.message || "Erro ao executar PIX");
+        return;
+      }
+
+      toast.success("PIX executado com sucesso!");
+      // Reset form
+      setFormData({
+        key: '',
+        tipo: '2',
+        valor: '',
+        nome: '',
+        description: ''
+      });
+    } catch (error) {
+      toast.error("Erro ao executar PIX");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-blue-600/5"></div>
+      <CardHeader className="relative pb-4">
+        <CardTitle className="text-lg flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-blue-500/10">
+            <SendHorizontal className="h-5 w-5 text-blue-600" />
+          </div>
+          Enviar PIX
+          <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-medium">
+            CORPX
+          </Badge>
+        </CardTitle>
+        <CardDescription>
+          Transferência instantânea por chave PIX
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="relative space-y-4">
+        {/* Feedback Visual da Conta */}
+        <div className="p-3 bg-muted/30 rounded-lg border">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">{selectedAccount.razaoSocial}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                CNPJ: {selectedAccount.cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="pix-key">Chave PIX Destinatário</Label>
+            <Input
+              id="pix-key"
+              value={formData.key}
+              onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
+              placeholder="email@exemplo.com, CPF, CNPJ, celular ou chave aleatória"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="pix-tipo">Tipo de Transferência</Label>
+            <Select value={formData.tipo} onValueChange={(value) => setFormData(prev => ({ ...prev, tipo: value }))}>
+              <SelectTrigger id="pix-tipo">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Interna</SelectItem>
+                <SelectItem value="2">PIX</SelectItem>
+                <SelectItem value="3">Copia e Cola</SelectItem>
+                <SelectItem value="5">PIX com Dados</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="pix-valor">Valor</Label>
+            <Input
+              id="pix-valor"
+              value={formData.valor}
+              onChange={handleValueChange}
+              placeholder="R$ 0,00"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="pix-nome">Nome Destinatário (Opcional)</Label>
+            <Input
+              id="pix-nome"
+              value={formData.nome}
+              onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+              placeholder="Nome do destinatário"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="pix-desc">Descrição (Opcional)</Label>
+            <Input
+              id="pix-desc"
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Descrição da transferência"
+            />
+          </div>
+        </div>
+
+        <Button 
+          onClick={executarPix}
+          disabled={isLoading}
+          className="w-full"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Executando PIX...
+            </>
+          ) : (
+            'Executar PIX'
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Modal de Progresso PIX Programado
+function PixProgressModal({ isOpen, onClose, progressData }: {
+  isOpen: boolean;
+  onClose: () => void;
+  progressData: {
+    current: number;
+    total: number;
+    currentValue: number;
+    totalProcessed: number;
+    status: 'processing' | 'completed' | 'error';
+    transactions: Array<{
+      id: number;
+      status: 'pending' | 'processing' | 'success' | 'error';
+      value: number;
+      message?: string;
+    }>;
+  };
+}) {
+  const progressPercentage = Math.round((progressData.current / progressData.total) * 100);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <RefreshCw className={`h-5 w-5 ${progressData.status === 'processing' ? 'animate-spin text-blue-500' : 'text-green-500'}`} />
+            PIX Programado em Execução
+          </DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-6">
+          {/* Barra de Progresso Principal */}
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span>Progresso Geral</span>
+              <span>{progressData.current} de {progressData.total} transações</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-3">
+              <div 
+                className="bg-blue-500 h-3 rounded-full transition-all duration-300"
+                style={{ width: `${progressPercentage}%` }}
+              />
+            </div>
+            <div className="text-center text-lg font-bold text-blue-600">
+              {progressPercentage}%
+            </div>
+          </div>
+
+          {/* Estatísticas */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center p-3 bg-blue-50 rounded-lg">
+              <div className="text-2xl font-bold text-blue-600">{progressData.current}</div>
+              <div className="text-sm text-blue-800">Processadas</div>
+            </div>
+            <div className="text-center p-3 bg-green-50 rounded-lg">
+              <div className="text-2xl font-bold text-green-600">
+                {progressData.totalProcessed.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </div>
+              <div className="text-sm text-green-800">Total Enviado</div>
+            </div>
+            <div className="text-center p-3 bg-orange-50 rounded-lg">
+              <div className="text-2xl font-bold text-orange-600">{progressData.total - progressData.current}</div>
+              <div className="text-sm text-orange-800">Restantes</div>
+            </div>
+          </div>
+
+          {/* Lista de Transações */}
+          <div className="max-h-60 overflow-y-auto space-y-2">
+            <h4 className="font-medium text-sm text-muted-foreground">Transações:</h4>
+            {progressData.transactions.map((transaction) => (
+              <div key={transaction.id} className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${
+                    transaction.status === 'success' ? 'bg-green-500' :
+                    transaction.status === 'error' ? 'bg-red-500' :
+                    transaction.status === 'processing' ? 'bg-blue-500 animate-pulse' :
+                    'bg-gray-300'
+                  }`} />
+                  <span className="text-sm">Transação #{transaction.id}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-mono">
+                    {transaction.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                  {transaction.status === 'processing' && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {transaction.status === 'success' && <Check className="h-3 w-3 text-green-500" />}
+                  {transaction.status === 'error' && <X className="h-3 w-3 text-red-500" />}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Status Atual */}
+          {progressData.status === 'processing' && (
+            <div className="flex items-center justify-center gap-2 p-3 bg-blue-50 rounded-lg">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+              <span className="text-blue-700">
+                Processando transação {progressData.current + 1} de {progressData.total}...
+              </span>
+            </div>
+          )}
+
+          {progressData.status === 'completed' && (
+            <div className="flex items-center justify-center gap-2 p-3 bg-green-50 rounded-lg">
+              <Check className="h-4 w-4 text-green-500" />
+              <span className="text-green-700">
+                Todas as transações foram processadas com sucesso!
+              </span>
+            </div>
+          )}
+
+          {progressData.status === 'error' && (
+            <div className="flex items-center justify-center gap-2 p-3 bg-red-50 rounded-lg">
+              <AlertCircle className="h-4 w-4 text-red-500" />
+              <span className="text-red-700">
+                Erro durante o processamento. Verifique as transações acima.
+              </span>
+            </div>
+          )}
+        </div>
+
+        {progressData.status !== 'processing' && (
+          <div className="flex justify-end">
+            <Button onClick={onClose}>Fechar</Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Componente PIX Programado
+function PixProgramadoComponent() {
+  const { selectedAccount } = useCorpX();
+  const [isLoading, setIsLoading] = useState(false);
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [progressData, setProgressData] = useState({
+    current: 0,
+    total: 0,
+    currentValue: 0,
+    totalProcessed: 0,
+    status: 'processing' as 'processing' | 'completed' | 'error',
+    transactions: [] as Array<{
+      id: number;
+      status: 'pending' | 'processing' | 'success' | 'error';
+      value: number;
+      message?: string;
+    }>
+  });
+  const [formData, setFormData] = useState({
+    chave_destino: '',
+    tipo: '2', // PIX
+    montante: '',
+    valor: '',
+    intervalo: '5000',
+    nome: '',
+    description: ''
+  });
+
+  const formatCurrency = (value: string) => {
+    const numbers = value.replace(/\D/g, '');
+    const amount = parseFloat(numbers) / 100;
+    return amount.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+  };
+
+  const handleMontanteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '');
+    const formattedValue = formatCurrency(value);
+    setFormData(prev => ({ ...prev, montante: formattedValue }));
+  };
+
+  const handleValorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '');
+    const formattedValue = formatCurrency(value);
+    setFormData(prev => ({ ...prev, valor: formattedValue }));
+  };
+
+  const calcularTransacoes = () => {
+    const montanteNum = parseFloat(formData.montante.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+    const valorNum = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+    if (valorNum === 0) return 0;
+    return Math.ceil(montanteNum / valorNum);
+  };
+
+  // Função utilitária para limpar formatação de documentos/chaves
+  const limparFormatacaoProgramado = (valor: string) => {
+    if (!valor) return '';
+    return valor.replace(/\D/g, ''); // Remove tudo que não é número
+  };
+
+  // Simular progresso das transações
+  const simulateProgress = async (totalTransactions: number, valorPorTransacao: number, intervalo: number) => {
+    const transactions = Array.from({ length: totalTransactions }, (_, i) => ({
+      id: i + 1,
+      status: 'pending' as const,
+      value: valorPorTransacao,
+      message: ''
+    }));
+
+    setProgressData({
+      current: 0,
+      total: totalTransactions,
+      currentValue: valorPorTransacao,
+      totalProcessed: 0,
+      status: 'processing',
+      transactions
+    });
+
+    setShowProgressModal(true);
+
+    // Simular processamento de cada transação
+    for (let i = 0; i < totalTransactions; i++) {
+      // Atualizar transação atual como "processando"
+      setProgressData(prev => ({
+        ...prev,
+        transactions: prev.transactions.map((t, idx) => 
+          idx === i ? { ...t, status: 'processing' } : t
+        )
+      }));
+
+      // Aguardar intervalo
+      await new Promise(resolve => setTimeout(resolve, Math.max(intervalo, 1000)));
+
+      // Simular sucesso (95% de chance) ou erro (5% de chance)
+      const isSuccess = Math.random() > 0.05;
+      
+      setProgressData(prev => ({
+        ...prev,
+        current: i + 1,
+        totalProcessed: prev.totalProcessed + (isSuccess ? valorPorTransacao : 0),
+        transactions: prev.transactions.map((t, idx) => 
+          idx === i ? { 
+            ...t, 
+            status: isSuccess ? 'success' : 'error',
+            message: isSuccess ? 'Transação processada com sucesso' : 'Erro no processamento'
+          } : t
+        )
+      }));
+    }
+
+    // Finalizar
+    setProgressData(prev => ({
+      ...prev,
+      status: 'completed'
+    }));
+  };
+
+  const executarPixProgramado = async () => {
+    if (!formData.chave_destino || !formData.montante || !formData.valor) {
+      toast.error("Chave PIX, montante e valor são obrigatórios");
+      return;
+    }
+
+    const montanteNumerico = parseFloat(formData.montante.replace(/[^\d,]/g, '').replace(',', '.'));
+    const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
+
+    if (valorNumerico > montanteNumerico) {
+      toast.error("Valor por transação não pode ser maior que o montante total");
+      return;
+    }
+
+    const totalTransactions = Math.ceil(montanteNumerico / valorNumerico);
+    const intervalo = parseInt(formData.intervalo);
+
+    setIsLoading(true);
+    
+    try {
+      const payload = {
+        tax_document: limparFormatacaoProgramado(selectedAccount.cnpj), // Remove formatação
+        chave_destino: limparFormatacaoProgramado(formData.chave_destino), // Remove formatação da chave
+        tipo: parseInt(formData.tipo),
+        montante: montanteNumerico,
+        valor: valorNumerico,
+        intervalo: intervalo,
+        nome: formData.nome || undefined,
+        description: formData.description || undefined
+      };
+
+
+      // Iniciar simulação de progresso
+      simulateProgress(totalTransactions, valorNumerico, intervalo);
+
+      // Executar a API real em paralelo
+      const { executarTransferenciaCompletaProgramadaCorpX } = await import('@/services/corpx');
+      
+      // Executar API em background enquanto mostra progresso
+      executarTransferenciaCompletaProgramadaCorpX(payload)
+        .then(result => {
+          if (!result || result.error) {
+            // Atualizar progresso para erro se a API falhar
+            setProgressData(prev => ({ ...prev, status: 'error' }));
+          }
+        })
+        .catch(error => {
+          setProgressData(prev => ({ ...prev, status: 'error' }));
+        });
+
+      // Reset form após iniciar
+      setFormData({
+        chave_destino: '',
+        tipo: '2',
+        montante: '',
+        valor: '',
+        intervalo: '5000',
+        nome: '',
+        description: ''
+      });
+
+    } catch (error) {
+      toast.error("Erro ao executar PIX programado");
+      setShowProgressModal(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-transparent to-purple-600/5"></div>
+      <CardHeader className="relative pb-4">
+        <CardTitle className="text-lg flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-purple-500/10">
+            <RefreshCw className="h-5 w-5 text-purple-600" />
+          </div>
+          PIX Programado
+          <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs font-medium">
+            CORPX
+          </Badge>
+        </CardTitle>
+        <CardDescription>
+          Múltiplas transferências automatizadas
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="relative space-y-4">
+        {/* Feedback Visual da Conta */}
+        <div className="p-3 bg-muted/30 rounded-lg border">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">{selectedAccount.razaoSocial}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                CNPJ: {selectedAccount.cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="prog-key">Chave PIX Destinatário</Label>
+            <Input
+              id="prog-key"
+              value={formData.chave_destino}
+              onChange={(e) => setFormData(prev => ({ ...prev, chave_destino: e.target.value }))}
+              placeholder="email@exemplo.com, CPF, CNPJ, celular ou chave aleatória"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="prog-montante">Montante Total</Label>
+              <Input
+                id="prog-montante"
+                value={formData.montante}
+                onChange={handleMontanteChange}
+                placeholder="R$ 0,00"
+              />
+            </div>
+            <div>
+              <Label htmlFor="prog-valor">Valor por Transação</Label>
+              <Input
+                id="prog-valor"
+                value={formData.valor}
+                onChange={handleValorChange}
+                placeholder="R$ 0,00"
+              />
+            </div>
+          </div>
+
+          {formData.montante && formData.valor && (
+            <div className="p-2 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-sm text-blue-800">
+                <strong>{calcularTransacoes()} transações</strong> serão executadas
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="prog-tipo">Tipo</Label>
+              <Select value={formData.tipo} onValueChange={(value) => setFormData(prev => ({ ...prev, tipo: value }))}>
+                <SelectTrigger id="prog-tipo">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Interna</SelectItem>
+                  <SelectItem value="2">PIX</SelectItem>
+                  <SelectItem value="3">Copia e Cola</SelectItem>
+                  <SelectItem value="5">PIX com Dados</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="prog-intervalo">Intervalo (ms)</Label>
+              <Input
+                id="prog-intervalo"
+                value={formData.intervalo}
+                onChange={(e) => setFormData(prev => ({ ...prev, intervalo: e.target.value }))}
+                placeholder="5000"
+                type="number"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="prog-nome">Nome Destinatário (Opcional)</Label>
+            <Input
+              id="prog-nome"
+              value={formData.nome}
+              onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+              placeholder="Nome do destinatário"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="prog-desc">Descrição (Opcional)</Label>
+            <Input
+              id="prog-desc"
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Descrição das transferências"
+            />
+          </div>
+        </div>
+
+        <Button 
+          onClick={executarPixProgramado}
+          disabled={isLoading}
+          className="w-full"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Executando PIX Programado...
+            </>
+          ) : (
+            'Executar PIX Programado'
+          )}
+        </Button>
+      </CardContent>
+
+      {/* Modal de Progresso */}
+      <PixProgressModal 
+        isOpen={showProgressModal}
+        onClose={() => setShowProgressModal(false)}
+        progressData={progressData}
+      />
+    </Card>
+  );
+}
+
+// Aba de Ações PIX atualizada
 function PixActionsTabCorpX() {
   return (
     <div className="w-full max-w-7xl mx-auto">
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
-        {/* Enviar por Chave */}
-        <Card className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-blue-600/5"></div>
-          <CardHeader className="relative pb-4">
-            <CardTitle className="text-lg flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-500/10">
-                <SendHorizontal className="h-5 w-5 text-blue-600" />
-              </div>
-              Enviar PIX
-              <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-medium">
-                CORPX
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              Transferência por chave PIX
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="relative">
-            <div className="space-y-4">
-              <div className="p-4 border rounded-lg text-center">
-                <p className="text-sm text-muted-foreground">
-                  Funcionalidade em desenvolvimento
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Aguardando integração com API CORPX
-                </p>
-              </div>
-              <Button className="w-full" disabled>
-                Configurar PIX
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Pagar QR Code */}
-        <Card className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 via-transparent to-green-600/5"></div>
-          <CardHeader className="relative pb-4">
-            <CardTitle className="text-lg flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-green-500/10">
-                <QrCode className="h-5 w-5 text-green-600" />
-              </div>
-              Pagar QR Code
-              <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-medium">
-                CORPX
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              Pagamento via código QR
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="relative">
-            <div className="space-y-4">
-              <div className="p-4 border rounded-lg text-center">
-                <p className="text-sm text-muted-foreground">
-                  Funcionalidade em desenvolvimento
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Aguardando integração com API CORPX
-                </p>
-              </div>
-              <Button className="w-full" disabled>
-                Escanear QR Code
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <PixNormalComponent />
+        <PixProgramadoComponent />
       </div>
     </div>
   );
@@ -95,6 +682,7 @@ function PixActionsTabCorpX() {
 
 // Componente para criar chaves PIX
 function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
+  const { selectedAccount, taxDocument } = useCorpX();
   const [tipoChave, setTipoChave] = React.useState<string>("");
   const [valorChave, setValorChave] = React.useState<string>("");
   const [isCreating, setIsCreating] = React.useState(false);
@@ -154,9 +742,9 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
 
       setIsCreating(true);
 
-      const cnpj = "14283885000198"; // CNPJ fixo para teste
+      // Remove formatação do CNPJ para usar apenas números na API
+      const cnpj = taxDocument.replace(/\D/g, '');
       
-      //console.log('[CORPX-PIX-CREATE-UI] Criando chave:', { tipo: tipoChave, valor: valorChave });
 
       const { criarChavePixCorpX } = await import('@/services/corpx');
       
@@ -166,16 +754,14 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
         tipo: parseInt(tipoChave)
       };
 
-      // Adicionar key apenas se necessário
+      // Adicionar key apenas se necessário (sem formatação)
       if (tipoChave !== "5" && valorChave.trim()) {
-        dadosRequisicao.key = valorChave.trim();
+        dadosRequisicao.key = valorChave.replace(/\D/g, ''); // Remove formatação da chave
       }
 
-      //console.log('[CORPX-PIX-CREATE-UI] Dados da requisição:', dadosRequisicao);
 
       const resultado = await criarChavePixCorpX(dadosRequisicao);
 
-      //console.log('[CORPX-PIX-CREATE-UI] Resultado:', resultado);
 
       if (resultado && !resultado.erro) {
         toast.success("Chave PIX criada com sucesso!", {
@@ -193,7 +779,6 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
       }
 
     } catch (err: any) {
-      console.error('[CORPX-PIX-CREATE-UI] ❌ Erro:', err);
       toast.error("Erro ao criar chave PIX", {
         description: err.message || "Verifique os dados e tente novamente",
         duration: 4000
@@ -245,6 +830,19 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="relative space-y-4">
+        {/* Feedback Visual da Conta */}
+        <div className="p-3 bg-muted/30 rounded-lg border">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">{selectedAccount.razaoSocial}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                CNPJ: {selectedAccount.cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Seletor de tipo */}
         <div className="space-y-2">
           <Label htmlFor="tipo-chave">Tipo da Chave PIX</Label>
@@ -348,6 +946,7 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
 
 // Componente funcional para Chaves PIX CorpX
 function PixKeysTabCorpX() {
+  const { taxDocument } = useCorpX();
   const [chaves, setChaves] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string>("");
@@ -371,22 +970,19 @@ function PixKeysTabCorpX() {
       setIsLoading(true);
       setError("");
       
-      const cnpj = "14283885000198"; // CNPJ fixo para teste
+      // Remove formatação do CNPJ para usar apenas números na API
+      const cnpj = taxDocument.replace(/\D/g, '');
       
-      //console.log('[CORPX-PIX-CHAVES-UI] Carregando chaves PIX para CNPJ:', cnpj);
       
       const { listarChavesPixCorpX } = await import('@/services/corpx');
       const resultado = await listarChavesPixCorpX(cnpj);
       
-      //console.log('[CORPX-PIX-CHAVES-UI] Resultado:', resultado);
       
       // ✅ CORREÇÃO: Agora o serviço retorna dados processados corretamente
       if (resultado && !resultado.erro && resultado.chaves) {
-        //console.log('[CORPX-PIX-CHAVES-UI] 📊 Chaves recebidas do serviço:', resultado.chaves);
         
         // ✅ Aplicar mapeamento final para a interface (tipo string)
         const chavesMapeadas = resultado.chaves.map((chave: any, index: number) => {
-          console.log(`[CORPX-PIX-CHAVES-UI] 🔄 Processando chave ${index}:`, chave);
           
           return {
             ...chave,
@@ -396,15 +992,11 @@ function PixKeysTabCorpX() {
         });
         
         setChaves(chavesMapeadas);
-        console.log(`[CORPX-PIX-CHAVES-UI] ✅ ${chavesMapeadas.length} chaves processadas:`, chavesMapeadas);
       } else {
         setChaves([]);
-        //console.log('[CORPX-PIX-CHAVES-UI] ⚠️ Nenhuma chave encontrada');
-        //console.log('[CORPX-PIX-CHAVES-UI] 📋 Estrutura recebida:', resultado);
       }
       
     } catch (err: any) {
-      console.error('[CORPX-PIX-CHAVES-UI] ❌ Erro:', err);
       setError(err.message || 'Erro ao carregar chaves PIX');
       setChaves([]);
     } finally {
@@ -416,6 +1008,15 @@ function PixKeysTabCorpX() {
   React.useEffect(() => {
     carregarChaves();
   }, []);
+
+  // 🔄 Recarregar chaves PIX automaticamente quando tax_document mudar
+  React.useEffect(() => {
+    const cnpjNumerico = taxDocument.replace(/\D/g, '');
+    if (cnpjNumerico && cnpjNumerico.length === 14) {
+      carregarChaves();
+      toast.info("Atualizando chaves PIX para nova conta...");
+    }
+  }, [taxDocument]); // Recarrega quando taxDocument mudar
 
   // ✅ Formatar tipo de chave para exibição
   const formatarTipoChave = (type: string) => {
@@ -430,10 +1031,8 @@ function PixKeysTabCorpX() {
 
   // ✅ Formatar chave para exibição (mascarar dados sensíveis)
   const formatarChave = (key: string, type: string) => {
-    //console.log('[CORPX-PIX-FORMAT] 🔍 Formatando chave:', { key, type, keyType: typeof key });
     
     if (!key || key === undefined || key === null || key === '') {
-      //console.log('[CORPX-PIX-FORMAT] ❌ Chave inválida detectada:', key);
       return "Chave inválida";
     }
     
@@ -453,13 +1052,10 @@ function PixKeysTabCorpX() {
       // Chave aleatória (UUID): mostrar formatada
       if (keyStr.length === 36 && keyStr.includes('-')) {
         // UUID format: 36df47d2-cbbf-42cd-a6ef-a2c09eb0cea4
-        //console.log('[CORPX-PIX-FORMAT] ✅ UUID detectado:', keyStr);
         return keyStr;
       }
-      //console.log('[CORPX-PIX-FORMAT] ✅ Chave aleatória:', keyStr);
       return keyStr;
     }
-    //console.log('[CORPX-PIX-FORMAT] ✅ Chave padrão:', keyStr);
     return keyStr; // Fallback: mostrar completa
   };
 
@@ -612,7 +1208,78 @@ function PixKeysTabCorpX() {
   );
 }
 
-export default function CorpXPage() {
+// Componente para seleção da conta CORPX
+function AccountSelector() {
+  const { selectedAccount, setSelectedAccount } = useCorpX();
+
+  const handleAccountChange = (accountId: string) => {
+    const account = CORPX_ACCOUNTS.find(acc => acc.id === accountId);
+    if (account) {
+      setSelectedAccount(account);
+      toast.success(`Conta alterada para: ${account.razaoSocial}`);
+    }
+  };
+
+  const formatCNPJ = (cnpj: string) => {
+    return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  };
+
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Building2 className="h-5 w-5" />
+          Seleção da Conta CORPX
+        </CardTitle>
+        <CardDescription>
+          Selecione a conta que deseja consultar
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="account-select">Conta</Label>
+            <Select value={selectedAccount.id} onValueChange={handleAccountChange}>
+              <SelectTrigger id="account-select">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CORPX_ACCOUNTS.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    <div className="flex flex-col">
+                      <span className="font-medium">{account.razaoSocial}</span>
+                      <span className="text-sm text-muted-foreground font-mono">
+                        {formatCNPJ(account.cnpj)}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* Informações da conta selecionada */}
+          <div className="p-3 bg-muted/50 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">{selectedAccount.razaoSocial}</p>
+                <p className="text-xs text-muted-foreground font-mono">
+                  CNPJ: {formatCNPJ(selectedAccount.cnpj)}
+                </p>
+              </div>
+              <Badge variant="secondary" className="text-xs">
+                Ativa
+              </Badge>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Componente interno que usa o contexto
+function CorpXContent() {
   // CORPX sempre tem suporte completo a PIX
   const bankFeatures = {
     provider: 'corpx',
@@ -627,6 +1294,8 @@ export default function CorpXPage() {
       <TopBarCorpX />
       
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
+        {/* Seleção da Conta */}
+        <AccountSelector />
         {/* Layout Principal - Tabs no Topo */}
         <Tabs defaultValue="extract" className="w-full">
           <div className="flex items-center justify-between mb-6">
@@ -673,5 +1342,14 @@ export default function CorpXPage() {
         </Tabs>
       </div>
     </div>
+  );
+}
+
+// Export default que envolve tudo no CorpXProvider
+export default function CorpXPage() {
+  return (
+    <CorpXProvider>
+      <CorpXContent />
+    </CorpXProvider>
   );
 }

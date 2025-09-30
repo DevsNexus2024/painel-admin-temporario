@@ -1,4 +1,4 @@
-import { User } from '@/services/auth';
+import { User } from '@/types/auth';
 import { logger } from '@/utils/logger';
 
 // 🔧 CONFIGURAÇÃO DE AMBIENTE - Determinada por variáveis de ambiente

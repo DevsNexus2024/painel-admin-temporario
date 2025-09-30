@@ -1,17 +1,12 @@
-import React, { useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SendHorizontal, RefreshCcw, Loader2, DollarSign, Lock, CheckCircle, AlertCircle } from "lucide-react";
-import { useCorpXSaldo } from "@/hooks/useCorpXSaldo";
-import { CorpXService } from "@/services/corpx";
-import { useCorpX } from "@/contexts/CorpXContext";
-import { toast } from "sonner";
+import { useTCRSaldo } from "@/hooks/useTCRSaldo";
+import { TCRService } from "@/services/tcr";
 
-export default function TopBarCorpX() {
-  const { taxDocument } = useCorpX();
-  
-  // Remove formatação do CNPJ para usar apenas números na API
-  const cnpjNumerico = taxDocument.replace(/\D/g, '');
+export default function TopBarTCR() {
+  // CNPJ da TCR
+  const cnpjDefault = "53781325000115"; // CNPJ da TCR
   
   const {
     saldo: saldoData,
@@ -19,29 +14,20 @@ export default function TopBarCorpX() {
     error: errorSaldo,
     refresh: handleRefresh,
     lastUpdated
-  } = useCorpXSaldo({ 
-    cnpj: cnpjNumerico,
+  } = useTCRSaldo({ 
+    cnpj: cnpjDefault,
     autoRefresh: false // Refresh manual via botão
   });
 
-  // 🔄 Recarregar saldo automaticamente quando tax_document mudar
-  useEffect(() => {
-    if (cnpjNumerico && cnpjNumerico.length === 14) {
-      console.log('[CORPX-SALDO] 🔄 Tax document alterado, recarregando saldo...', cnpjNumerico);
-      handleRefresh();
-      toast.info("Atualizando saldo para nova conta...");
-    }
-  }, [cnpjNumerico, handleRefresh]);
-
   const formatCurrency = (value: number) => {
-    return CorpXService.formatarValor(value);
+    return TCRService.formatarValor(value);
   };
 
   // Funções para exibir saldos baseadas na nova API
   const getSaldoDisplay = () => {
     if (isLoadingSaldo) return 'Carregando...';
-    if (errorSaldo) return 'Erro ao consultar saldo CORPX';
-    if (saldoData?.erro) return 'Erro na API CORPX';
+    if (errorSaldo) return 'Erro ao consultar saldo TCR';
+    if (saldoData?.erro) return 'Erro na API TCR';
     return formatCurrency(saldoData?.saldo || 0);
   };
 
@@ -60,11 +46,10 @@ export default function TopBarCorpX() {
   };
 
   const getContaInfo = () => {
-    const { selectedAccount } = useCorpX();
     return (
       <div className="text-xs text-muted-foreground">
         <span>
-          {selectedAccount.razaoSocial} • CORPX • BRL • {lastUpdated ? lastUpdated.toLocaleTimeString('pt-BR') : 'Nunca atualizado'}
+          TCR • BRL • {lastUpdated ? lastUpdated.toLocaleTimeString('pt-BR') : 'Nunca atualizado'}
         </span>
       </div>
     );
@@ -85,13 +70,13 @@ export default function TopBarCorpX() {
       {/* Header principal */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-gradient-to-br from-purple-600 to-purple-800 shadow-xl">
+          <div className="p-3 rounded-2xl bg-gradient-to-br from-green-600 to-green-800 shadow-xl">
             <SendHorizontal className="h-6 w-6 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground">CORPX</h1>
-              <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-medium">
+              <h1 className="text-2xl font-bold text-foreground">TCR</h1>
+              <Badge className="bg-green-100 text-green-800 border-green-200 text-xs font-medium">
                 Banking
               </Badge>
               {getStatusIcon()}
@@ -120,7 +105,7 @@ export default function TopBarCorpX() {
         </div>
       </div>
 
-      {/* Cards de saldo - CORPX Nova API */}
+      {/* Cards de saldo - TCR Nova API */}
       <div className="w-full max-w-7xl mx-auto">
         {errorSaldo && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">

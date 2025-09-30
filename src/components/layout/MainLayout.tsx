@@ -14,7 +14,8 @@ import {
     BarChart3,
     Bot,
     Users,
-    ListChecks
+    ListChecks,
+    UserSearch
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -185,6 +186,16 @@ export default function MainLayout() {
                                         to="/bmp-531"
                                         icon={<CreditCard className="h-4 w-4" />}
                                         label="BMP 531 TCR"
+                                    />
+                                    <SidebarLink
+                                        to="/grupo-tcr/tcr"
+                                        icon={<CreditCard className="h-4 w-4" />}
+                                        label="CorpX TCR"
+                                    />
+                                    <SidebarLink
+                                        to="/analise-usuario/32"
+                                        icon={<UserSearch className="h-4 w-4" />}
+                                        label="Análise de Usuário BRBTC"
                                     />
                                 </div>
                             </div>

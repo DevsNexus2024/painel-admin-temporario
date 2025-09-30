@@ -16,6 +16,7 @@ import Cotacoes from "./pages/Cotacoes";
 import GrupoTcrSaldos from "./pages/GrupoTcrSaldos";
 import Bmp531Page from "./pages/Bmp531Page";
 import CorpXPage from "./pages/CorpXPage";
+import TcrPage from "./pages/TcrPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIAMENTE
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
@@ -23,6 +24,7 @@ import OTCClients from "./pages/otc/OTCClients";
 import AdminClientStatement from "./pages/otc/AdminClientStatement.tsx";
 import ClientStatement from "./pages/ClientStatement";
 import EmployeeStatement from "./pages/EmployeeStatement";
+import AnaliseUsuario from "./pages/AnaliseUsuario";
 
 // 🚨 IMPORTAR NOVA ARQUITETURA MULTI-BANCO
 import { initializeBankingSystem } from "@/services/banking";
@@ -132,6 +134,7 @@ const App = () => (
                 <Route path="/extrato_tcr" element={<ExtratoTcr />} />
                 <Route path="/compensacao-depositos" element={<CompensacaoDepositos />} />
                 <Route path="/grupo-tcr/saldos" element={<GrupoTcrSaldos />} />
+                <Route path="/grupo-tcr/tcr" element={<TcrPage />} />
                 <Route path="/bmp-531" element={<Bmp531Page />} />
                 <Route path="/corpx" element={<CorpXPage />} />
                 <Route path="/pagamentos" element={<PaymentsPage />} />
@@ -139,6 +142,7 @@ const App = () => (
                 <Route path="/bot-cotacao" element={<BotCotacao />} />
                 <Route path="/otc" element={<OTCClients />} />
                 <Route path="/otc/admin-statement/:clientId" element={<AdminClientStatement />} />
+                <Route path="/analise-usuario/:id" element={<AnaliseUsuario />} />
               </Route>
               
               {/* Rota 404 */}
