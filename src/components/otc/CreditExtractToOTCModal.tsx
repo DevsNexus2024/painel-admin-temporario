@@ -56,6 +56,10 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isDuplicateChecking, setIsDuplicateChecking] = useState(false);
   const [duplicateInfo, setDuplicateInfo] = useState<any>(null);
+  const [verificationResult, setVerificationResult] = useState<{
+    status: 'checking' | 'success' | 'error' | 'duplicate' | null;
+    message: string;
+  }>({ status: null, message: '' });
 
   // Resetar formulário e verificar duplicação quando modal abrir/fechar
   useEffect(() => {
@@ -66,6 +70,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
       setErrors({});
       setShowConfirmation(false);
       setDuplicateInfo(null);
+      setVerificationResult({ status: null, message: '' });
       
       // 🚨 VERIFICAR DUPLICAÇÃO AUTOMATICAMENTE
       checkForDuplicate();
@@ -76,49 +81,148 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
       setErrors({});
       setShowConfirmation(false);
       setDuplicateInfo(null);
+      setVerificationResult({ status: null, message: '' });
     }
   }, [isOpen, extractRecord]);
 
-  // 🚨 FUNÇÃO PARA VERIFICAR DUPLICAÇÃO
+  // 🆕 FUNÇÃO PARA DETECTAR PROVIDER CORRETAMENTE
+  const detectProvider = (): { provider: string; codigo: string } => {
+    if (!extractRecord) return { provider: 'bmp274', codigo: '' };
+
+    console.log('🔍 [DETECT-PROVIDER] extractRecord._original:', extractRecord._original);
+
+    // 🔵 Detectar CorpX: tem idEndToEnd no _original
+    if (extractRecord._original?.idEndToEnd) {
+      console.log('✅ [DETECT-PROVIDER] CorpX detectado por idEndToEnd:', extractRecord._original.idEndToEnd);
+      return {
+        provider: 'corpx',
+        codigo: extractRecord._original.idEndToEnd
+      };
+    }
+
+    // 🔵 FALLBACK CorpX: verificar se está na rota /corpx
+    if (window.location.pathname.includes('/corpx') && extractRecord._original) {
+      // Se está na rota CorpX mas não tem idEndToEnd direto, procurar em originalItem
+      const idEndToEnd = extractRecord._original.originalItem?.idEndToEnd || extractRecord._original.idEndToEnd;
+      if (idEndToEnd) {
+        console.log('✅ [DETECT-PROVIDER] CorpX detectado por rota + originalItem:', idEndToEnd);
+        return {
+          provider: 'corpx',
+          codigo: idEndToEnd
+        };
+      }
+    }
+
+    // 🟪 Detectar Bitso: tem bitsoData ou endToEndId no _original
+    if (extractRecord.bitsoData || extractRecord._original?.endToEndId) {
+      return {
+        provider: 'bitso',
+        codigo: extractRecord._original?.endToEndId || 
+                extractRecord.bitsoData?.metadados?.end_to_end_id || 
+                extractRecord.code
+      };
+    }
+
+    // 🟡 Detectar BMP: verificar qual tipo baseado no context ou estrutura
+    const providerCtx = bankFeatures.provider?.toLowerCase();
+    
+    if (providerCtx === 'bmp-531' || extractRecord._original?.descCliente) {
+      // BMP-531: tem campo descCliente normalmente
+      return {
+        provider: 'bmp531',
+        codigo: extractRecord._original?.codigoTransacao || extractRecord.code
+      };
+    }
+
+    // BMP-274: fallback padrão
+    console.log('⚠️ [DETECT-PROVIDER] Usando fallback BMP274 para:', extractRecord._original);
+    return {
+      provider: 'bmp274',
+      codigo: extractRecord._original?.codigoTransacao || extractRecord.code
+    };
+  };
+
+  // 🚨 FUNÇÃO PARA VERIFICAR DUPLICAÇÃO (ATUALIZADA - V2)
   const checkForDuplicate = async () => {
     if (!extractRecord) return;
     
     setIsDuplicateChecking(true);
+    setVerificationResult({ status: 'checking', message: 'Verificando se esta transação já foi processada...' });
     
     try {
-      // Determinar identificador único baseado no provedor
-      let externalId: string;
-      let provider: string;
-      let code: string;
+      // 🔍 Detectar provider e código automaticamente
+      const { provider, codigo } = detectProvider();
       
-      if (extractRecord.bitsoData) {
-        // Para Bitso, usar ID da transação
-        externalId = extractRecord.id;
-        provider = 'bitso';
-        code = extractRecord.code;
-      } else {
-        // Para BMP, usar ID da transação
-        externalId = extractRecord.id;
-        provider = 'bmp';
-        code = extractRecord.code;
+      console.log('🔍 [OTC-MODAL] Verificando duplicação:', { provider, codigo, _original: extractRecord._original });
+      
+      // 🆕 USAR NOVO ENDPOINT
+      const result = await otcService.checkDuplicate(provider, codigo);
+      
+      console.log('📝 [OTC-MODAL] Resposta da API:', result);
+      
+      // ✅ Verificar se resposta é válida
+      if (!result) {
+        console.warn('⚠️ [OTC-MODAL] Resposta inválida da API');
+        setVerificationResult({ 
+          status: 'error', 
+          message: 'Erro na verificação. Prossiga com cautela.' 
+        });
+        return;
       }
       
-      // console.log('🔍 Verificando duplicação:', { externalId, provider, code });
+      // 🔧 BACKEND RETORNA DIRETO NA RAIZ (não usa .data para este endpoint)
+      const responseData: any = result.data || result;
       
-      const result = await otcService.checkExtractDuplicate(externalId, provider, code);
-      
-      if (result.data.isDuplicate) {
-        setDuplicateInfo(result.data.operation);
-        // console.log('🚫 Duplicação encontrada:', result.data.operation);
+      if (responseData.is_duplicate) {
+        // Adaptar resposta do novo formato para o antigo (compatibilidade)
+        const detalhes = responseData.details?.detalhes;
+        if (detalhes) {
+          setDuplicateInfo({
+            id: detalhes.transacao_id || detalhes.operacao_id,
+            amount: null,
+            description: responseData.message,
+            created_at: detalhes.data_processamento || detalhes.data_operacao || new Date().toISOString(),
+            client: {
+              id: 0,
+              name: detalhes.cliente_nome || 'Cliente não identificado',
+              document: ''
+            },
+            admin: {
+              id: 0,
+              name: 'Sistema',
+              email: ''
+            }
+          });
+        }
+        
+        setVerificationResult({ 
+          status: 'duplicate', 
+          message: '⚠️ Esta transação já foi processada anteriormente!' 
+        });
+        
+        console.log('🚫 [OTC-MODAL] Duplicação encontrada:', responseData.message);
       } else {
-        // console.log('✅ Nenhuma duplicação encontrada');
+        setVerificationResult({ 
+          status: 'success', 
+          message: '✅ Transação verificada - pode ser creditada com segurança!' 
+        });
+        
+        console.log('✅ [OTC-MODAL] Nenhuma duplicação encontrada');
       }
       
-    } catch (error) {
-      console.error('❌ Erro ao verificar duplicação:', error);
-      toast.error('Erro ao verificar duplicação', {
-        description: 'Não foi possível verificar se este registro já foi creditado'
+    } catch (error: any) {
+      console.error('❌ [OTC-MODAL] Erro ao verificar duplicação:', error);
+      console.error('❌ [OTC-MODAL] Detalhes do erro:', {
+        message: error?.message,
+        response: error?.response?.data,
+        status: error?.response?.status
       });
+      
+      setVerificationResult({ 
+        status: 'error', 
+        message: 'Erro na verificação. Você ainda pode prosseguir, mas verifique manualmente.' 
+      });
+      
     } finally {
       setIsDuplicateChecking(false);
     }
@@ -202,19 +306,46 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
     }
 
     try {
-      // 🚨 PREPARAR DADOS DO EXTRATO PARA CONTROLE DE DUPLICAÇÃO
-      let externalId: string;
-      let provider: string;
-      let code: string;
+      // 🆕 DETECTAR PROVIDER AUTOMATICAMENTE
+      const { provider } = detectProvider();
       
-      if (extractRecord.bitsoData) {
-        externalId = extractRecord.id;
-        provider = 'bitso';
-        code = extractRecord.code;
+      // 🆕 PREPARAR DADOS COMPLETOS PARA ANTI-DUPLICAÇÃO HÍBRIDA
+      let dados_extrato: any;
+      
+      if (provider === 'corpx') {
+        // Para CorpX: usar dados originais ou criar estrutura com idEndToEnd
+        const idEndToEnd = extractRecord._original?.idEndToEnd || extractRecord._original?.originalItem?.idEndToEnd;
+        const nrMovimento = extractRecord._original?.nrMovimento || extractRecord._original?.id;
+        
+        dados_extrato = extractRecord._original?.originalItem || extractRecord._original || {
+          idEndToEnd: idEndToEnd || extractRecord.code,
+          nrMovimento: nrMovimento || extractRecord.id,
+          data: new Date(extractRecord.dateTime).toISOString().split('T')[0],
+          hora: new Date(extractRecord.dateTime).toTimeString().split(' ')[0]
+        };
+        
+        console.log('🔧 [OTC-MODAL] Dados CorpX para backend:', { provider, dados_extrato });
+      } else if (provider === 'bitso') {
+        dados_extrato = extractRecord._original || {
+          endToEndId: extractRecord.code,
+          id: extractRecord.id,
+          dateTime: extractRecord.dateTime
+        };
+      } else if (provider === 'bmp531') {
+        dados_extrato = extractRecord._original || {
+          codigoTransacao: extractRecord.code,
+          codigo: extractRecord.id,
+          nsu: null,
+          dtMovimento: extractRecord.dateTime
+        };
       } else {
-        externalId = extractRecord.id;
-        provider = 'bmp';
-        code = extractRecord.code;
+        // bmp274
+        dados_extrato = extractRecord._original || {
+          codigoTransacao: extractRecord.code,
+          codigo: extractRecord.id,
+          nsu: null,
+          dtMovimento: extractRecord.dateTime
+        };
       }
 
       const operationData = {
@@ -222,14 +353,17 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         operation_type: 'credit' as const,
         amount: extractRecord.value,
         description: customDescription.trim(),
-        // 🚨 DADOS DO EXTRATO PARA CONTROLE DE DUPLICAÇÃO
-        reference_external_id: externalId,
+        // 🆕 NOVOS CAMPOS HÍBRIDOS (PRIORIDADE)
+        dados_extrato,    // Objeto completo do provider
+        provider,         // Provider identificado
+        // 🔄 CAMPOS LEGADOS (FALLBACK)
+        reference_code: extractRecord.code,
+        reference_external_id: extractRecord.id,
         reference_provider: provider,
-        reference_code: code,
         reference_date: extractRecord.dateTime
       };
 
-      // console.log('🚀 [CreditExtractToOTCModal] Enviando dados para backend:', operationData);
+      console.log('🚀 [OTC-MODAL] Enviando operação com dados híbridos:', operationData);
 
       await createOperation(operationData);
       
@@ -239,7 +373,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
       
       onClose(true); // 🚨 NOTIFICAR SUCESSO
     } catch (error) {
-      console.error('Erro ao criar operação:', error);
+      console.error('[OTC-MODAL] Erro ao criar operação:', error);
       
       // Mostrar erro específico de duplicação
       if (error instanceof Error && error.message.includes('já foi creditado')) {
@@ -289,31 +423,79 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         {!showConfirmation ? (
           // Formulário principal
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* 🚨 ALERTA DE DUPLICAÇÃO */}
-            {isDuplicateChecking && (
-              <Alert className="border-amber-200 bg-amber-50">
-                <AlertTriangle className="h-4 w-4 text-amber-600" />
-                <AlertDescription className="text-amber-800">
-                  Verificando se este registro já foi creditado...
-                </AlertDescription>
+            {/* 🆕 FEEDBACK VISUAL DA VERIFICAÇÃO */}
+            {verificationResult.status === 'checking' && (
+              <Alert className="border-blue-200 bg-blue-50">
+                <div className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+                  <AlertDescription className="text-blue-800">
+                    {verificationResult.message}
+                  </AlertDescription>
+                </div>
               </Alert>
             )}
 
-            {duplicateInfo && (
+            {verificationResult.status === 'success' && (
+              <Alert className="border-green-200 bg-green-50">
+                <div className="flex items-center">
+                  <div className="h-4 w-4 bg-green-500 rounded-full mr-3 flex items-center justify-center">
+                    <div className="h-2 w-2 bg-white rounded-full"></div>
+                  </div>
+                  <AlertDescription className="text-green-800 font-medium">
+                    {verificationResult.message}
+                  </AlertDescription>
+                </div>
+              </Alert>
+            )}
+
+            {verificationResult.status === 'duplicate' && (
               <Alert className="border-red-200 bg-red-50">
                 <AlertTriangle className="h-4 w-4 text-red-600" />
                 <AlertDescription className="text-red-800">
                   <div className="space-y-2">
-                    <p className="font-medium">⚠️ Este registro já foi creditado!</p>
-                    <div className="text-sm space-y-1">
-                      <p><strong>Cliente:</strong> {duplicateInfo.client.name}</p>
-                      <p><strong>Valor:</strong> R$ {duplicateInfo.amount?.toFixed(2)}</p>
-                      <p><strong>Data:</strong> {new Date(duplicateInfo.created_at).toLocaleDateString('pt-BR')}</p>
-                      <p><strong>Por:</strong> {duplicateInfo.admin.name}</p>
-                    </div>
+                    <p className="font-medium">{verificationResult.message}</p>
+                    {duplicateInfo && (
+                      <div className="text-sm space-y-1">
+                        <p><strong>Cliente:</strong> {duplicateInfo.client.name}</p>
+                        <p><strong>Valor:</strong> R$ {duplicateInfo.amount?.toFixed(2)}</p>
+                        <p><strong>Data:</strong> {new Date(duplicateInfo.created_at).toLocaleDateString('pt-BR')}</p>
+                        <p><strong>Por:</strong> {duplicateInfo.admin.name}</p>
+                      </div>
+                    )}
                     <p className="mt-2 text-xs text-red-600">
                       Para evitar duplicação, este modal será bloqueado.
                     </p>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {verificationResult.status === 'error' && (
+              <Alert className="border-orange-200 bg-orange-50">
+                <AlertTriangle className="h-4 w-4 text-orange-600" />
+                <AlertDescription className="text-orange-800">
+                  <div className="space-y-3">
+                    <div>
+                      <p className="font-medium">⚠️ Aviso sobre verificação</p>
+                      <p className="text-sm">{verificationResult.message}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={checkForDuplicate}
+                      disabled={isDuplicateChecking}
+                      className="text-orange-700 border-orange-300 hover:bg-orange-100"
+                    >
+                      {isDuplicateChecking ? (
+                        <>
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-orange-600 mr-2"></div>
+                          Verificando...
+                        </>
+                      ) : (
+                        'Tentar Novamente'
+                      )}
+                    </Button>
                   </div>
                 </AlertDescription>
               </Alert>
@@ -533,16 +715,27 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
               </Button>
               <Button
                 type="submit"
-                disabled={isCreating || extractRecord.type !== 'CRÉDITO' || !!duplicateInfo || isDuplicateChecking}
+                disabled={
+                  isCreating || 
+                  extractRecord.type !== 'CRÉDITO' || 
+                  verificationResult.status === 'duplicate' || 
+                  verificationResult.status === 'checking'
+                }
                 className={cn(
                   "transition-all",
-                  duplicateInfo 
+                  verificationResult.status === 'duplicate' || verificationResult.status === 'checking'
                     ? "bg-gray-400 hover:bg-gray-400 cursor-not-allowed" 
-                    : "bg-green-600 hover:bg-green-700"
+                    : verificationResult.status === 'success'
+                    ? "bg-green-600 hover:bg-green-700" 
+                    : "bg-yellow-600 hover:bg-yellow-700"
                 )}
               >
                 <Plus className="w-4 h-4 mr-2" />
-                {duplicateInfo ? 'Já Creditado' : 'Continuar'}
+                {verificationResult.status === 'duplicate' 
+                  ? 'Já Creditado' 
+                  : verificationResult.status === 'checking'
+                  ? 'Verificando...'
+                  : 'Continuar'}
               </Button>
             </div>
           </form>

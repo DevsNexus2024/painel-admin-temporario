@@ -185,7 +185,8 @@ export default function ExtractTableBmp531({ accountType = 'ttf' }: ExtractTable
       identified: !!(nomeCliente || documentoCliente || descClienteFormatado),
       code: (movimento as any).identificadorOperacao || movimento.codigoTransacao || movimento.codigo || Math.random().toString(36).substr(2, 9).toUpperCase(),
       descCliente: descClienteFormatado || undefined, // ✅ Campo específico BMP-531
-      descricaoOperacao: descricaoOperacaoAPI || movimento.descricao || undefined // Campo específico BMP-531
+      descricaoOperacao: descricaoOperacaoAPI || movimento.descricao || undefined, // Campo específico BMP-531
+      _original: movimento // 🔧 PRESERVAR DADOS ORIGINAIS PARA ANTI-DUPLICAÇÃO
     };
     
     return converted;

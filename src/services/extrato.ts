@@ -68,6 +68,10 @@ export interface MovimentoExtrato {
     origem: 'pay-in' | 'payout';
     provider: 'bitso';
   };
+
+  // 🔧 DADOS ORIGINAIS DO PROVIDER
+  // Preserva objeto completo da API para uso em anti-duplicação e debug
+  _original?: any;
 }
 
 export interface ExtratoResponse {
@@ -407,7 +411,8 @@ const formatarMovimentoDoBackend = (item: any, provider?: string): MovimentoExtr
     identified: item.identificado === 'sim' || item.identified === true || item.identified === 'true' || true,
     code: item.identificadorOperacao || item.codigoTransacao || item.codigo || item.code || Math.random().toString(36).substr(2, 9).toUpperCase(),
     descCliente: descClienteFormatado || undefined, // Incluir apenas se existir
-    descricaoOperacao: item.descricaoOperacao || undefined // Campo específico BMP-531
+    descricaoOperacao: item.descricaoOperacao || undefined, // Campo específico BMP-531
+    _original: item // 🔧 PRESERVAR DADOS ORIGINAIS PARA ANTI-DUPLICAÇÃO
   };
   
   return resultado;
@@ -483,7 +488,8 @@ const formatarMovimentoBitso = (item: any): MovimentoExtrato => {
       
       origem: item.origem || 'pay-in',
       provider: 'bitso'
-    }
+    },
+    _original: item // 🔧 PRESERVAR DADOS ORIGINAIS PARA ANTI-DUPLICAÇÃO
   };
 };
 

@@ -420,7 +420,7 @@ class BotCotacaoService {
   async getDashboardStats(): Promise<any> {
     try {
       // Como não há endpoint específico, vamos buscar dos grupos cadastrados
-      const groupsResponse = await this.getRegisteredGroups({}, { page: 1, limit: 100 });
+      const groupsResponse = await this.getRegisteredGroups({}, { page: 1, limit: 500 });
       
       if (groupsResponse.sucesso) {
         const groups = groupsResponse.data?.items || [];
@@ -457,11 +457,11 @@ class BotCotacaoService {
    */
   async syncWhatsAppGroups(): Promise<any> {
     try {
-      // Buscar grupos do WhatsApp
-      const whatsappResponse = await this.getAllWhatsAppGroups({ page: 1, limit: 100 });
+      // Buscar grupos do WhatsApp (limite aumentado para 500)
+      const whatsappResponse = await this.getAllWhatsAppGroups({ page: 1, limit: 500 });
       
-      // Buscar grupos já cadastrados
-      const registeredResponse = await this.getRegisteredGroups({}, { page: 1, limit: 100 });
+      // Buscar grupos já cadastrados (limite aumentado para 500)
+      const registeredResponse = await this.getRegisteredGroups({}, { page: 1, limit: 500 });
 
       if (whatsappResponse.sucesso && registeredResponse.sucesso) {
         const whatsappGroups = whatsappResponse.data?.items || [];

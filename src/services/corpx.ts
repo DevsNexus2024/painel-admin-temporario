@@ -364,7 +364,11 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
           description: item.descricao || 'Transação',
           amount: Math.abs(valor),
           type: (item.tipo === 'C') ? 'credit' as const : 'debit' as const,
-          balance: 0 // CorpX não retorna saldo por transação
+          balance: 0, // CorpX não retorna saldo por transação
+          // 🔧 PRESERVAR DADOS ORIGINAIS PARA ANTI-DUPLICAÇÃO
+          idEndToEnd: item.idEndToEnd, // End-to-End obrigatório para CorpX
+          nrMovimento: item.nrMovimento, // ID do movimento
+          originalItem: item // Preservar dados originais completos
         };
         
         return transaction;

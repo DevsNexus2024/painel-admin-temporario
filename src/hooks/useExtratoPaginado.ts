@@ -428,7 +428,8 @@ const formatarMovimentoDoBackend = (item: any, provider: string): MovimentoExtra
     identified: identified,
     code: code,
     descCliente: descCliente,
-    descricaoOperacao: descricaoOperacao
+    descricaoOperacao: descricaoOperacao,
+    _original: item // 🔧 PRESERVAR DADOS ORIGINAIS PARA ANTI-DUPLICAÇÃO
   };
 };
 
@@ -456,7 +457,8 @@ const formatarMovimentoBitso = (item: any): MovimentoExtrato => {
       metadados: item.metadados,
       origem: item.origem || 'pay-in',
       provider: 'bitso'
-    }
+    },
+    _original: item // 🔧 PRESERVAR DADOS ORIGINAIS PARA ANTI-DUPLICAÇÃO
   };
 };
 

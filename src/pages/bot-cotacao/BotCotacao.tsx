@@ -236,8 +236,8 @@ const BotCotacao: React.FC = () => {
 
   const loadWhatsAppGroups = async () => {
     try {
-      // Carregar TODOS os grupos do WhatsApp (sem limitação)
-      const response = await botCotacaoService.getAllWhatsAppGroups({ page: 1, limit: 100 });
+      // Carregar TODOS os grupos do WhatsApp (limite aumentado para 500)
+      const response = await botCotacaoService.getAllWhatsAppGroups({ page: 1, limit: 500 });
       
       if (response?.sucesso) {
         const groups = response.data?.items || [];
@@ -279,8 +279,8 @@ const BotCotacao: React.FC = () => {
 
   const loadRegisteredGroups = async () => {
     try {
-      // Carregar TODOS os grupos cadastrados (sem limitação de paginação)
-      const response = await botCotacaoService.getRegisteredGroups({}, { page: 1, limit: 100. });
+      // Carregar TODOS os grupos cadastrados (limite aumentado para 500)
+      const response = await botCotacaoService.getRegisteredGroups({}, { page: 1, limit: 500 });
       if (response?.sucesso) {
 
         

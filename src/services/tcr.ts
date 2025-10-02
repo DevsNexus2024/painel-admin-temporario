@@ -46,6 +46,9 @@ const TCR_CONFIG = {
     
     // 📱 QR CODE PIX (TODO: verificar se existe no backend)
     gerarQRCodePix: '/api/corpx/pix/qrcode',
+    
+    // 🔄 PIX PROGRAMADO COM QR
+    pixProgramadoComQR: '/api/corpx/pix/programado-qr',
   }
 } as const;
 
@@ -993,6 +996,47 @@ export function tratarErroTCR(error: any): string {
   return 'Erro de conexão. Verifique sua internet.';
 }
 
+/**
+ * PIX Programado com QR Codes
+ * POST /api/corpx/pix/programado-qr
+ */
+export async function executarPixProgramadoComQRTCR(dados: {
+  tax_document: string;
+  custom_id?: string;
+  montante: number;
+  valor: number;
+  intervalo?: number;
+}): Promise<any | null> {
+  try {
+    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const userToken = TOKEN_STORAGE.get();
+    
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+    
+    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.pixProgramadoComQR}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`
+      },
+      body: JSON.stringify(dados)
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const responseData = await response.json();
+    return responseData;
+    
+  } catch (error: any) {
+    return null;
+  }
+}
+
 // ==================== EXPORT PRINCIPAL ====================
 
 /**
@@ -1018,6 +1062,9 @@ export const TCRService = {
   
   // 📱 QR CODE PIX
   gerarQRCodePix: gerarQRCodePixTCR,
+  
+  // 🔄 PIX PROGRAMADO COM QR
+  executarPixProgramadoComQR: executarPixProgramadoComQRTCR,
   
   // 📝 HELPERS
   formatarValor: formatarValorTCR,

@@ -47,10 +47,10 @@ function PixNormalComponent() {
     setFormData(prev => ({ ...prev, valor: formattedValue }));
   };
 
-  // Função utilitária para limpar formatação de documentos/chaves
-  const limparFormatacao = (valor: string) => {
+  // Função utilitária para limpar formatação de documentos apenas
+  const limparFormatacaoDocumento = (valor: string) => {
     if (!valor) return '';
-    return valor.replace(/\D/g, ''); // Remove tudo que não é número
+    return valor.replace(/\D/g, ''); // Remove tudo que não é número - apenas para CPF/CNPJ
   };
 
   const executarPix = async () => {
@@ -64,8 +64,8 @@ function PixNormalComponent() {
       const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
       
       const payload = {
-        tax_document: limparFormatacao(selectedAccount.cnpj), // Remove formatação
-        key: limparFormatacao(formData.key), // Remove formatação da chave também
+        tax_document: limparFormatacaoDocumento(selectedAccount.cnpj), // Remove formatação do documento
+        key: formData.key, // Mantém a chave PIX original SEM formatação
         tipo: parseInt(formData.tipo),
         valor: valorNumerico,
         nome: formData.nome || undefined,
@@ -391,10 +391,10 @@ function PixProgramadoComponent() {
     return Math.ceil(montanteNum / valorNum);
   };
 
-  // Função utilitária para limpar formatação de documentos/chaves
-  const limparFormatacaoProgramado = (valor: string) => {
+  // Função utilitária para limpar formatação de documentos apenas
+  const limparFormatacaoDocumentoProgramado = (valor: string) => {
     if (!valor) return '';
-    return valor.replace(/\D/g, ''); // Remove tudo que não é número
+    return valor.replace(/\D/g, ''); // Remove tudo que não é número - apenas para CPF/CNPJ
   };
 
   // Simular progresso das transações
@@ -475,8 +475,8 @@ function PixProgramadoComponent() {
     
     try {
       const payload = {
-        tax_document: limparFormatacaoProgramado(selectedAccount.cnpj), // Remove formatação
-        chave_destino: limparFormatacaoProgramado(formData.chave_destino), // Remove formatação da chave
+        tax_document: limparFormatacaoDocumentoProgramado(selectedAccount.cnpj), // Remove formatação do documento
+        chave_destino: formData.chave_destino, // Mantém a chave PIX original SEM formatação
         tipo: parseInt(formData.tipo),
         montante: montanteNumerico,
         valor: valorNumerico,

@@ -138,7 +138,27 @@ export class OTCService {
   }
 
   /**
-   * Verifica se um registro do extrato já foi creditado
+   * 🔍 VERIFICAÇÃO ANTI-DUPLICAÇÃO V2 (NOVO ENDPOINT HÍBRIDO)
+   * Usa o novo endpoint /check-duplicate/:provider/:codigo que é compatível com AntiDuplicacaoService
+   * @param provider - Provider: 'corpx', 'bitso', 'bmp531', 'bmp274'
+   * @param codigo - Código da transação (endToEnd para CorpX/Bitso, codigoTransacao para BMP)
+   */
+  async checkDuplicate(provider: string, codigo: string): Promise<OTCApiResponse<{
+    is_duplicate: boolean;
+    status: 'available' | 'already_processed';
+    message: string;
+    details?: any;
+  }>> {
+    const response = await api.get<OTCApiResponse<any>>(
+      `${OTC_BASE_URL}/check-duplicate/${provider}/${codigo}`
+    );
+    
+    return response.data;
+  }
+
+  /**
+   * Verifica se um registro do extrato já foi creditado (LEGADO)
+   * @deprecated Use checkDuplicate() para verificação com novo sistema anti-duplicação
    */
   async checkExtractDuplicate(externalId: string, provider: string, code?: string): Promise<OTCApiResponse<{
     isDuplicate: boolean;

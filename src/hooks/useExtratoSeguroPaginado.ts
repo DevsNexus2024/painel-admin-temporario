@@ -32,6 +32,7 @@ interface MovimentoExtratoPaginado {
   descCliente?: string;
   descricaoOperacao?: string;
   bitsoData?: any;
+  _original?: any; // 🔧 DADOS ORIGINAIS PARA ANTI-DUPLICAÇÃO
 }
 
 interface PaginaExtrato {
@@ -271,7 +272,8 @@ const formatarMovimentoDoBackend = (item: any, provider: string): MovimentoExtra
     identified: true,
     code: item.identificadorOperacao || item.codigoTransacao || item.codigo || Math.random().toString(36).substr(2, 9).toUpperCase(),
     descCliente: item.descCliente || undefined,
-    descricaoOperacao: item.descricaoOperacao || undefined
+    descricaoOperacao: item.descricaoOperacao || undefined,
+    _original: item // 🔧 PRESERVAR DADOS ORIGINAIS PARA ANTI-DUPLICAÇÃO
   };
 };
 
@@ -300,7 +302,8 @@ const formatarMovimentoBitso = (item: any): MovimentoExtratoPaginado => {
       metadados: item.metadados,
       origem: item.origem || 'pay-in',
       provider: 'bitso'
-    }
+    },
+    _original: item // 🔧 PRESERVAR DADOS ORIGINAIS PARA ANTI-DUPLICAÇÃO
   };
 };
 
