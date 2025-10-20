@@ -17,10 +17,12 @@ import GrupoTcrSaldos from "./pages/GrupoTcrSaldos";
 import Bmp531Page from "./pages/Bmp531Page";
 import CorpXPage from "./pages/CorpXPage";
 import TcrPage from "./pages/TcrPage";
+import CorpXTTFPage from "./pages/CorpXTTFPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIAMENTE
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
 import OTCClients from "./pages/otc/OTCClients";
+import OTCNegociar from "./pages/otc/OTCNegociar";
 import AdminClientStatement from "./pages/otc/AdminClientStatement.tsx";
 import ClientStatement from "./pages/ClientStatement";
 import EmployeeStatement from "./pages/EmployeeStatement";
@@ -135,12 +137,14 @@ const App = () => (
                 <Route path="/compensacao-depositos" element={<CompensacaoDepositos />} />
                 <Route path="/grupo-tcr/saldos" element={<GrupoTcrSaldos />} />
                 <Route path="/grupo-tcr/tcr" element={<TcrPage />} />
+                <Route path="/grupo-tcr/corpx-ttf" element={<CorpXTTFPage />} />
                 <Route path="/bmp-531" element={<Bmp531Page />} />
                 <Route path="/corpx" element={<CorpXPage />} />
                 <Route path="/pagamentos" element={<PaymentsPage />} />
                 <Route path="/cotacoes" element={<Cotacoes />} />
                 <Route path="/bot-cotacao" element={<BotCotacao />} />
                 <Route path="/otc" element={<OTCClients />} />
+                <Route path="/otc/negociar" element={<OTCNegociar />} />
                 <Route path="/otc/admin-statement/:clientId" element={<AdminClientStatement />} />
                 <Route path="/analise-usuario/:id" element={<AnaliseUsuario />} />
               </Route>

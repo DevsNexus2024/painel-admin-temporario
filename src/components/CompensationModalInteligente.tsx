@@ -596,9 +596,11 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     }
 
     // ✅ Criar um extractRecord modificado com o ID correto para a validação
+    // 🔧 IMPORTANTE: Preservar _original que contém o idEndToEnd
     const extractRecordComId = {
       ...extractRecord,
-      descCliente: `Usuario ${idUsuario}; ${extractRecord.descCliente || ''}`
+      descCliente: `Usuario ${idUsuario}; ${extractRecord.descCliente || ''}`,
+      _original: extractRecord._original // Garantir que _original seja preservado
     };
 
     // Validar elegibilidade com o registro modificado

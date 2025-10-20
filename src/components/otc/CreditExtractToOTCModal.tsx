@@ -174,26 +174,26 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
       const responseData: any = result.data || result;
       
       if (responseData.is_duplicate) {
-        // Adaptar resposta do novo formato para o antigo (compatibilidade)
+        // 🔧 MAPEAR CORRETAMENTE OS DADOS DA OPERAÇÃO DUPLICADA
+        const operation = responseData.operation;
         const detalhes = responseData.details?.detalhes;
-        if (detalhes) {
-          setDuplicateInfo({
-            id: detalhes.transacao_id || detalhes.operacao_id,
-            amount: null,
-            description: responseData.message,
-            created_at: detalhes.data_processamento || detalhes.data_operacao || new Date().toISOString(),
-            client: {
-              id: 0,
-              name: detalhes.cliente_nome || 'Cliente não identificado',
-              document: ''
-            },
-            admin: {
-              id: 0,
-              name: 'Sistema',
-              email: ''
-            }
-          });
-        }
+        
+        setDuplicateInfo({
+          id: operation?.id || detalhes?.operacao_id || detalhes?.transacao_id,
+          amount: operation?.amount ? parseFloat(operation.amount) : null,
+          description: operation?.description || responseData.message,
+          created_at: operation?.created_at || detalhes?.data_operacao || detalhes?.data_processamento || new Date().toISOString(),
+          client: {
+            id: operation?.client?.id || 0,
+            name: operation?.client?.name || detalhes?.cliente_nome || 'Cliente não identificado',
+            document: operation?.client?.document || ''
+          },
+          admin: {
+            id: operation?.admin?.id || detalhes?.admin_user_id || 0,
+            name: operation?.admin?.name || 'Sistema',
+            email: operation?.admin?.email || ''
+          }
+        });
         
         setVerificationResult({ 
           status: 'duplicate', 
@@ -458,7 +458,14 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                       <div className="text-sm space-y-1">
                         <p><strong>Cliente:</strong> {duplicateInfo.client.name}</p>
                         <p><strong>Valor:</strong> R$ {duplicateInfo.amount?.toFixed(2)}</p>
-                        <p><strong>Data:</strong> {new Date(duplicateInfo.created_at).toLocaleDateString('pt-BR')}</p>
+                        <p><strong>Data:</strong> {new Date(duplicateInfo.created_at).toLocaleString('pt-BR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit'
+                        })}</p>
                         <p><strong>Por:</strong> {duplicateInfo.admin.name}</p>
                       </div>
                     )}

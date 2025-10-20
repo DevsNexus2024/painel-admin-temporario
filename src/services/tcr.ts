@@ -120,28 +120,16 @@ export async function consultarSaldoTCR(cnpj: string): Promise<CorpXSaldoRespons
     
     // ✅ Verificar status do token ANTES da requisição
     const tokenStatus = await checkTokenStatus();
-    //console.log('[TCR-SALDO] 🔍 Status do token:', tokenStatus);
     
     if (!tokenStatus.isValid) {
-      console.error('[TCR-SALDO] ❌ Token inválido ou expirado!', tokenStatus);
       throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
-    }
-    
-    // ✅ Aviso se token expira em menos de 5 minutos
-    if (tokenStatus.timeToExpiry < 300) {
-      console.warn('[TCR-SALDO] ⚠️ Token expira em breve:', {
-        timeToExpiry: tokenStatus.timeToExpiry,
-        minutes: Math.floor(tokenStatus.timeToExpiry / 60)
-      });
     }
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
     
-    
     if (!userToken) {
-      console.error('[TCR-SALDO] ❌ Token de autenticação não encontrado!');
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
@@ -160,17 +148,10 @@ export async function consultarSaldoTCR(cnpj: string): Promise<CorpXSaldoRespons
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[TCR-SALDO] ❌ HTTP Error Details:', {
-        status: response.status,
-        statusText: response.statusText,
-        errorBody: errorText,
-        url: requestUrl
-      });
       throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
     }
 
     const responseData = await response.json();
-    //console.log('[TCR-SALDO] ✅ Resposta completa recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
     const backendResponse = responseData as TCRBackendResponse<any>;
@@ -185,7 +166,6 @@ export async function consultarSaldoTCR(cnpj: string): Promise<CorpXSaldoRespons
         limiteBloqueado: 0 // Campo padrão
       } as CorpXSaldoResponse;
     } else {
-      console.error('[TCR-SALDO] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         saldo: 0,
@@ -196,42 +176,7 @@ export async function consultarSaldoTCR(cnpj: string): Promise<CorpXSaldoRespons
     }
     
   } catch (error: any) {
-    console.error('[TCR-SALDO] 💥 Erro detalhado ao consultar saldo:', {
-      message: error.message,
-      name: error.name,
-      stack: error.stack,
-      httpStatus: error.response?.status,
-      httpData: error.response?.data,
-      timestamp: new Date().toISOString()
-    });
-    
-    // ✅ Se erro 401, verificar se token expirou
-    if (error.message.includes('401')) {
-      console.warn('[TCR-SALDO] 🔐 Erro 401 detectado - possível token expirado');
-      
-      // Tentar obter informações do token
-      try {
-        const { TOKEN_STORAGE } = await import('@/config/api');
-        const currentToken = TOKEN_STORAGE.get();
-        
-        if (currentToken) {
-          // Decodificar payload do JWT (sem verificação de assinatura, só para debug)
-          const payload = JSON.parse(atob(currentToken.split('.')[1]));
-          const now = Math.floor(Date.now() / 1000);
-          
-          console.warn('[TCR-SALDO] 🔍 Token analysis:', {
-            hasToken: !!currentToken,
-            tokenExp: payload.exp,
-            currentTime: now,
-            isExpired: payload.exp < now,
-            timeToExpiry: payload.exp - now,
-            userId: payload.sub || payload.id || 'unknown'
-          });
-        }
-      } catch (tokenError) {
-        console.error('[TCR-SALDO] ❌ Erro ao analisar token:', tokenError);
-      }
-    }
+    console.error('[TCR-SALDO] Erro ao consultar saldo:', error.message);
     
     // ✅ Retornar estrutura de erro em vez de null
     return {
@@ -250,8 +195,6 @@ export async function consultarSaldoTCR(cnpj: string): Promise<CorpXSaldoRespons
  */
 export async function consultarExtratoTCR(params: CorpXExtratoParams): Promise<CorpXExtratoResponse | null> {
   try {
-    //console.log('[TCR-EXTRATO] Consultando extrato TCR...', params);
-    
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -263,19 +206,20 @@ export async function consultarExtratoTCR(params: CorpXExtratoParams): Promise<C
     // ✅ CORRIGIDO: Incluir filtros de data conforme especificação do backend
     const requestBody = {
       tax_document: params.cnpj,
-      itensporpagina:  500, // Conforme especificação: limite de 500 por página
       page: params.page || 1,
-      // ✅ ADICIONADO: Parâmetros de data conforme backend espera
-      ...(params.dataInicio && { dataini: params.dataInicio }),
-      ...(params.dataFim && { datafim: params.dataFim })
+      // ✅ REMOVIDO: itensporpagina agora vai na query string
+      // ✅ REMOVIDO: Parâmetros de data agora vão na query string
     };
     
-    //console.log('[TCR-EXTRATO] 🧪 TESTE: Paginação real TCR - página', params.page || 1);
+    // ✅ CORREÇÃO CRÍTICA: itensporpagina deve ir na query string, não no body
+    const queryParams = new URLSearchParams();
+    queryParams.append('itensporpagina', '500');
+    if (params.dataInicio) queryParams.append('dataini', params.dataInicio);
+    if (params.dataFim) queryParams.append('datafim', params.dataFim);
     
-    //console.log('[TCR-EXTRATO] Request body enviado:', requestBody);
-    //console.log('[TCR-EXTRATO] URL da requisição:', `${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.consultarExtrato}`);
+    const urlWithParams = `${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.consultarExtrato}?${queryParams.toString()}`;
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.consultarExtrato}`, {
+    const response = await fetch(urlWithParams, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -284,43 +228,24 @@ export async function consultarExtratoTCR(params: CorpXExtratoParams): Promise<C
       },
       body: JSON.stringify(requestBody)
     });
-
-    //console.log('[TCR-EXTRATO] Status da resposta HTTP:', response.status, response.statusText);
     
     if (!response.ok) {
       let errorDetails;
       try {
         const errorText = await response.text();
-        console.error('[TCR-EXTRATO] ❌ Erro HTTP RAW:', errorText);
-        
-        // Tentar fazer parse do JSON do erro
         try {
           errorDetails = JSON.parse(errorText);
-          console.error('[TCR-EXTRATO] ❌ Erro HTTP JSON:', errorDetails);
         } catch {
           errorDetails = { message: errorText };
         }
       } catch (readError) {
-        console.error('[TCR-EXTRATO] ❌ Erro ao ler resposta:', readError);
         errorDetails = { message: 'Erro ao ler resposta do servidor' };
-      }
-      
-      // Log específico para erro 400
-      if (response.status === 400) {
-        console.error('[TCR-EXTRATO] 🚨 ERRO 400 DETALHADO:', {
-          status: response.status,
-          statusText: response.statusText,
-          headers: Object.fromEntries(response.headers.entries()),
-          requestBody: requestBody,
-          errorResponse: errorDetails
-        });
       }
       
       throw new Error(`HTTP error! status: ${response.status} - ${JSON.stringify(errorDetails)}`);
     }
 
     const responseData = await response.json();
-    //console.log('[TCR-EXTRATO] Resposta completa recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
     const backendResponse = responseData as TCRBackendResponse<any>;
@@ -333,20 +258,14 @@ export async function consultarExtratoTCR(params: CorpXExtratoParams): Promise<C
       if (Array.isArray(backendResponse.data)) {
         rawTransactions = backendResponse.data;
       } else if (backendResponse.data.extrato && Array.isArray(backendResponse.data.extrato)) {
-        // ✅ CORREÇÃO: TCR retorna dados em data.extrato
-        //console.log('[TCR-EXTRATO] ✅ Encontrou data.extrato com', backendResponse.data.extrato.length, 'transações');
         rawTransactions = backendResponse.data.extrato;
       } else if (backendResponse.data.transactions && Array.isArray(backendResponse.data.transactions)) {
         rawTransactions = backendResponse.data.transactions;
       } else if (backendResponse.data.items && Array.isArray(backendResponse.data.items)) {
         rawTransactions = backendResponse.data.items;
       } else {
-        //console.log('[TCR-EXTRATO] ❌ Dados não estão em formato de array:', backendResponse.data);
-        //console.log('[TCR-EXTRATO] 🔍 Estrutura encontrada:', Object.keys(backendResponse.data));
         rawTransactions = [];
       }
-      
-      //console.log('[TCR-EXTRATO] Transações encontradas:', rawTransactions.length);
       
       // ✅ CORREÇÃO: Adaptar dados TCR para a interface esperada
       const transactions = rawTransactions.map((item: any, index: number) => {
@@ -397,14 +316,10 @@ export async function consultarExtratoTCR(params: CorpXExtratoParams): Promise<C
         transactions
       } as CorpXExtratoResponse;
       
-      
       return result;
     } else {
-      console.error('[TCR-EXTRATO] Erro na resposta:', backendResponse.message || 'Resposta sem dados');
-      
       // ✅ Verificar se ainda assim há dados para retornar
       if (responseData && (Array.isArray(responseData) || responseData.length > 0)) {
-        //console.log('[TCR-EXTRATO] Tentando processar dados diretos da resposta...');
         const directData = Array.isArray(responseData) ? responseData : [responseData];
         
         const transactions = directData.map((item: any, index: number) => ({
@@ -433,13 +348,7 @@ export async function consultarExtratoTCR(params: CorpXExtratoParams): Promise<C
     }
     
   } catch (error: any) {
-    console.error('[TCR-EXTRATO] Erro ao consultar extrato:', {
-      message: error.message,
-      status: error.response?.status,
-      data: error.response?.data,
-      url: error.config?.url,
-      method: error.config?.method
-    });
+    console.error('[TCR-EXTRATO] Erro ao consultar extrato:', error.message);
     
     // ✅ Retornar estrutura de erro em vez de null para melhor tratamento no frontend
     return {
@@ -457,8 +366,6 @@ export async function consultarExtratoTCR(params: CorpXExtratoParams): Promise<C
  */
 export async function criarContaTCR(dados: CorpXCreateAccountRequest): Promise<CorpXCreateAccountResponse | null> {
   try {
-    //console.log('[TCR-CONTA] Criando conta TCR...', dados);
-    
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -488,7 +395,6 @@ export async function criarContaTCR(dados: CorpXCreateAccountRequest): Promise<C
     }
 
     const responseData = await response.json();
-    //console.log('[TCR-CONTA] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
     const backendResponse = responseData as TCRBackendResponse<any>;
@@ -500,7 +406,6 @@ export async function criarContaTCR(dados: CorpXCreateAccountRequest): Promise<C
         account_id: backendResponse.data?.id || null
       } as CorpXCreateAccountResponse;
     } else {
-      console.error('[TCR-CONTA] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         message: backendResponse.message
@@ -508,7 +413,7 @@ export async function criarContaTCR(dados: CorpXCreateAccountRequest): Promise<C
     }
     
   } catch (error: any) {
-    console.error('[TCR-CONTA] Erro ao criar conta:', error.response?.data);
+    console.error('[TCR-CONTA] Erro ao criar conta:', error.message);
     return null;
   }
 }
@@ -523,8 +428,6 @@ export async function criarContaTCR(dados: CorpXCreateAccountRequest): Promise<C
  */
 export async function listarChavesPixTCR(cnpj: string): Promise<CorpXPixKeysResponse | null> {
   try {
-    //console.log('[TCR-PIX-CHAVES] Listando chaves PIX...', cnpj);
-    
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -547,13 +450,11 @@ export async function listarChavesPixTCR(cnpj: string): Promise<CorpXPixKeysResp
     }
 
     const responseData = await response.json();
-    //console.log('[TCR-PIX-CHAVES] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: [...] }
     const backendResponse = responseData as TCRBackendResponse<any[]>;
     
     if (backendResponse.error === false && backendResponse.data) {
-      //console.log('[TCR-PIX-CHAVES] 📊 Dados brutos da API:', backendResponse.data);
       
       const chaves = backendResponse.data.map((item: any, index: number) => {
         
@@ -574,7 +475,6 @@ export async function listarChavesPixTCR(cnpj: string): Promise<CorpXPixKeysResp
         chaves
       } as CorpXPixKeysResponse;
     } else {
-      console.error('[TCR-PIX-CHAVES] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         chaves: []
@@ -582,7 +482,7 @@ export async function listarChavesPixTCR(cnpj: string): Promise<CorpXPixKeysResp
     }
     
   } catch (error: any) {
-    console.error('[TCR-PIX-CHAVES] Erro ao listar chaves:', error.response?.data);
+    console.error('[TCR-PIX-CHAVES] Erro ao listar chaves:', error.message);
     return null;
   }
 }
@@ -593,8 +493,6 @@ export async function listarChavesPixTCR(cnpj: string): Promise<CorpXPixKeysResp
  */
 export async function criarChavePixTCR(dados: CorpXCreatePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
   try {
-    //console.log('[TCR-PIX-CRIAR] Criando chave PIX...', dados);
-    
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -618,7 +516,6 @@ export async function criarChavePixTCR(dados: CorpXCreatePixKeyRequest): Promise
     }
 
     const responseData = await response.json();
-    //console.log('[TCR-PIX-CRIAR] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
     const backendResponse = responseData as TCRBackendResponse<any>;
@@ -629,7 +526,6 @@ export async function criarChavePixTCR(dados: CorpXCreatePixKeyRequest): Promise
         message: backendResponse.message
       } as CorpXCreatePixKeyResponse;
     } else {
-      console.error('[TCR-PIX-CRIAR] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         message: backendResponse.message
@@ -637,7 +533,7 @@ export async function criarChavePixTCR(dados: CorpXCreatePixKeyRequest): Promise
     }
     
   } catch (error: any) {
-    console.error('[TCR-PIX-CRIAR] Erro ao criar chave:', error.response?.data);
+    console.error('[TCR-PIX-CRIAR] Erro ao criar chave:', error.message);
     return null;
   }
 }
@@ -651,8 +547,6 @@ export async function criarChavePixTCR(dados: CorpXCreatePixKeyRequest): Promise
  */
 export async function cancelarChavePixTCR(dados: CorpXDeletePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
   try {
-    //console.log('[TCR-PIX-CANCELAR] Cancelando chave PIX...', dados);
-    
     // ✅ Usar TOKEN_STORAGE diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -676,7 +570,6 @@ export async function cancelarChavePixTCR(dados: CorpXDeletePixKeyRequest): Prom
     }
 
     const responseData = await response.json();
-    //console.log('[TCR-PIX-CANCELAR] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
     const backendResponse = responseData as TCRBackendResponse<any>;
@@ -687,7 +580,6 @@ export async function cancelarChavePixTCR(dados: CorpXDeletePixKeyRequest): Prom
         message: backendResponse.message
       } as CorpXCreatePixKeyResponse;
     } else {
-      console.error('[TCR-PIX-CANCELAR] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         message: backendResponse.message
@@ -695,7 +587,7 @@ export async function cancelarChavePixTCR(dados: CorpXDeletePixKeyRequest): Prom
     }
     
   } catch (error: any) {
-    console.error('[TCR-PIX-CANCELAR] Erro ao cancelar chave:', error);
+    console.error('[TCR-PIX-CANCELAR] Erro ao cancelar chave:', error.message);
     return null;
   }
 }
@@ -710,8 +602,6 @@ export async function cancelarChavePixTCR(dados: CorpXDeletePixKeyRequest): Prom
  */
 export async function criarTransferenciaPixTCR(dados: CorpXPixTransferRequest): Promise<CorpXPixTransferResponse | null> {
   try {
-    //console.log('[TCR-PIX-TRANSFER] Criando transferência PIX...', dados);
-    
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -735,7 +625,6 @@ export async function criarTransferenciaPixTCR(dados: CorpXPixTransferRequest): 
     }
 
     const responseData = await response.json();
-    //console.log('[TCR-PIX-TRANSFER] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
     const backendResponse = responseData as TCRBackendResponse<any>;
@@ -758,7 +647,6 @@ export async function criarTransferenciaPixTCR(dados: CorpXPixTransferRequest): 
         Valor: dados.valor.toString()
       } as CorpXPixTransferResponse;
     } else {
-      console.error('[TCR-PIX-TRANSFER] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         type: '',
@@ -777,7 +665,7 @@ export async function criarTransferenciaPixTCR(dados: CorpXPixTransferRequest): 
     }
     
   } catch (error: any) {
-    console.error('[TCR-PIX-TRANSFER] Erro ao criar transferência:', error.response?.data);
+    console.error('[TCR-PIX-TRANSFER] Erro ao criar transferência:', error.message);
     return null;
   }
 }
@@ -788,8 +676,6 @@ export async function criarTransferenciaPixTCR(dados: CorpXPixTransferRequest): 
  */
 export async function confirmarTransferenciaPixTCR(dados: CorpXPixConfirmRequest): Promise<CorpXPixConfirmResponse | null> {
   try {
-    //console.log('[TCR-PIX-CONFIRM] Confirmando transferência PIX...', dados);
-    
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -813,7 +699,6 @@ export async function confirmarTransferenciaPixTCR(dados: CorpXPixConfirmRequest
     }
 
     const responseData = await response.json();
-    //console.log('[TCR-PIX-CONFIRM] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
     const backendResponse = responseData as TCRBackendResponse<any>;
@@ -841,12 +726,11 @@ export async function confirmarTransferenciaPixTCR(dados: CorpXPixConfirmRequest
         "Descrição": data.descricao || ""
       } as CorpXPixConfirmResponse;
     } else {
-      console.error('[TCR-PIX-CONFIRM] Erro na resposta:', backendResponse.message);
       return null;
     }
     
   } catch (error: any) {
-    console.error('[TCR-PIX-CONFIRM] Erro ao confirmar transferência:', error.response?.data);
+    console.error('[TCR-PIX-CONFIRM] Erro ao confirmar transferência:', error.message);
     return null;
   }
 }
@@ -861,8 +745,6 @@ export async function confirmarTransferenciaPixTCR(dados: CorpXPixConfirmRequest
  */
 export async function gerarQRCodePixTCR(dados: CorpXQRCodeRequest): Promise<CorpXQRCodeResponse | null> {
   try {
-    //console.log('[TCR-PIX-QR] Gerando QR Code PIX...', dados);
-    
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -886,12 +768,11 @@ export async function gerarQRCodePixTCR(dados: CorpXQRCodeRequest): Promise<Corp
     }
 
     const responseData = await response.json();
-    //console.log('[TCR-PIX-QR] Resposta recebida:', responseData);
     
     return responseData as CorpXQRCodeResponse;
     
   } catch (error: any) {
-    console.error('[TCR-PIX-QR] Erro ao gerar QR Code:', error.response?.data);
+    console.error('[TCR-PIX-QR] Erro ao gerar QR Code:', error.message);
     return null;
   }
 }
@@ -903,8 +784,6 @@ export async function enviarPixCompletoTCR(
   dadosTransferencia: CorpXPixTransferRequest
 ): Promise<{ criacao: CorpXPixTransferResponse; confirmacao: CorpXPixConfirmResponse } | null> {
   try {
-    //console.log('[TCR-PIX-COMPLETO] Iniciando fluxo completo PIX...', dadosTransferencia);
-    
     // 1. Criar transferência
     const criacao = await criarTransferenciaPixTCR(dadosTransferencia);
     
@@ -922,15 +801,13 @@ export async function enviarPixCompletoTCR(
       throw new Error('Erro ao confirmar transferência');
     }
 
-    //console.log('[TCR-PIX-COMPLETO] Fluxo completo executado com sucesso');
-
     return {
       criacao,
       confirmacao
     };
     
   } catch (error: any) {
-    console.error('[TCR-PIX-COMPLETO] Erro no fluxo completo:', error);
+    console.error('[TCR-PIX-COMPLETO] Erro no fluxo completo:', error.message);
     return null;
   }
 }

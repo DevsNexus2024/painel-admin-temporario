@@ -117,28 +117,16 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
     
     // ✅ Verificar status do token ANTES da requisição
     const tokenStatus = await checkTokenStatus();
-    //console.log('[CORPX-SALDO] 🔍 Status do token:', tokenStatus);
     
     if (!tokenStatus.isValid) {
-      console.error('[CORPX-SALDO] ❌ Token inválido ou expirado!', tokenStatus);
       throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
-    }
-    
-    // ✅ Aviso se token expira em menos de 5 minutos
-    if (tokenStatus.timeToExpiry < 300) {
-      console.warn('[CORPX-SALDO] ⚠️ Token expira em breve:', {
-        timeToExpiry: tokenStatus.timeToExpiry,
-        minutes: Math.floor(tokenStatus.timeToExpiry / 60)
-      });
     }
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
     
-    
     if (!userToken) {
-      console.error('[CORPX-SALDO] ❌ Token de autenticação não encontrado!');
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
@@ -158,17 +146,10 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[CORPX-SALDO] ❌ HTTP Error Details:', {
-        status: response.status,
-        statusText: response.statusText,
-        errorBody: errorText,
-        url: requestUrl
-      });
       throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-SALDO] ✅ Resposta completa recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
     const backendResponse = responseData as CorpXBackendResponse<any>;
@@ -183,7 +164,6 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
         limiteBloqueado: 0 // Campo padrão
       } as CorpXSaldoResponse;
     } else {
-      console.error('[CORPX-SALDO] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         saldo: 0,
@@ -194,42 +174,8 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
     }
     
   } catch (error: any) {
-    console.error('[CORPX-SALDO] 💥 Erro detalhado ao consultar saldo:', {
-      message: error.message,
-      name: error.name,
-      stack: error.stack,
-      httpStatus: error.response?.status,
-      httpData: error.response?.data,
-      timestamp: new Date().toISOString()
-    });
+    console.error('[CORPX-SALDO] Erro ao consultar saldo:', error.message);
     
-    // ✅ Se erro 401, verificar se token expirou
-    if (error.message.includes('401')) {
-      console.warn('[CORPX-SALDO] 🔐 Erro 401 detectado - possível token expirado');
-      
-      // Tentar obter informações do token
-      try {
-        const { TOKEN_STORAGE } = await import('@/config/api');
-        const currentToken = TOKEN_STORAGE.get();
-        
-        if (currentToken) {
-          // Decodificar payload do JWT (sem verificação de assinatura, só para debug)
-          const payload = JSON.parse(atob(currentToken.split('.')[1]));
-          const now = Math.floor(Date.now() / 1000);
-          
-          console.warn('[CORPX-SALDO] 🔍 Token analysis:', {
-            hasToken: !!currentToken,
-            tokenExp: payload.exp,
-            currentTime: now,
-            isExpired: payload.exp < now,
-            timeToExpiry: payload.exp - now,
-            userId: payload.sub || payload.id || 'unknown'
-          });
-        }
-      } catch (tokenError) {
-        console.error('[CORPX-SALDO] ❌ Erro ao analisar token:', tokenError);
-      }
-    }
     
     // ✅ Retornar estrutura de erro em vez de null
     return {
@@ -248,7 +194,6 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
  */
 export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise<CorpXExtratoResponse | null> {
   try {
-    //console.log('[CORPX-EXTRATO] Consultando extrato CORPX...', params);
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
@@ -268,11 +213,6 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       ...(params.dataFim && { datafim: params.dataFim })
     };
     
-    //console.log('[CORPX-EXTRATO] 🧪 TESTE: Paginação real CorpX - página', params.page || 1);
-    
-    //console.log('[CORPX-EXTRATO] Request body enviado:', requestBody);
-    //console.log('[CORPX-EXTRATO] URL da requisição:', `${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.consultarExtrato}`);
-    
     const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.consultarExtrato}`, {
       method: 'POST',
       headers: {
@@ -282,43 +222,24 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       },
       body: JSON.stringify(requestBody)
     });
-
-    //console.log('[CORPX-EXTRATO] Status da resposta HTTP:', response.status, response.statusText);
     
     if (!response.ok) {
       let errorDetails;
       try {
         const errorText = await response.text();
-        console.error('[CORPX-EXTRATO] ❌ Erro HTTP RAW:', errorText);
-        
-        // Tentar fazer parse do JSON do erro
         try {
           errorDetails = JSON.parse(errorText);
-          console.error('[CORPX-EXTRATO] ❌ Erro HTTP JSON:', errorDetails);
         } catch {
           errorDetails = { message: errorText };
         }
       } catch (readError) {
-        console.error('[CORPX-EXTRATO] ❌ Erro ao ler resposta:', readError);
         errorDetails = { message: 'Erro ao ler resposta do servidor' };
-      }
-      
-      // Log específico para erro 400
-      if (response.status === 400) {
-        console.error('[CORPX-EXTRATO] 🚨 ERRO 400 DETALHADO:', {
-          status: response.status,
-          statusText: response.statusText,
-          headers: Object.fromEntries(response.headers.entries()),
-          requestBody: requestBody,
-          errorResponse: errorDetails
-        });
       }
       
       throw new Error(`HTTP error! status: ${response.status} - ${JSON.stringify(errorDetails)}`);
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-EXTRATO] Resposta completa recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
     const backendResponse = responseData as CorpXBackendResponse<any>;
@@ -331,20 +252,14 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       if (Array.isArray(backendResponse.data)) {
         rawTransactions = backendResponse.data;
       } else if (backendResponse.data.extrato && Array.isArray(backendResponse.data.extrato)) {
-        // ✅ CORREÇÃO: CorpX retorna dados em data.extrato
-        //console.log('[CORPX-EXTRATO] ✅ Encontrou data.extrato com', backendResponse.data.extrato.length, 'transações');
         rawTransactions = backendResponse.data.extrato;
       } else if (backendResponse.data.transactions && Array.isArray(backendResponse.data.transactions)) {
         rawTransactions = backendResponse.data.transactions;
       } else if (backendResponse.data.items && Array.isArray(backendResponse.data.items)) {
         rawTransactions = backendResponse.data.items;
       } else {
-        //console.log('[CORPX-EXTRATO] ❌ Dados não estão em formato de array:', backendResponse.data);
-        //console.log('[CORPX-EXTRATO] 🔍 Estrutura encontrada:', Object.keys(backendResponse.data));
         rawTransactions = [];
       }
-      
-      //console.log('[CORPX-EXTRATO] Transações encontradas:', rawTransactions.length);
       
       // ✅ CORREÇÃO: Adaptar dados CorpX para a interface esperada
       const transactions = rawTransactions.map((item: any, index: number) => {
@@ -384,11 +299,8 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       
       return result;
     } else {
-      console.error('[CORPX-EXTRATO] Erro na resposta:', backendResponse.message || 'Resposta sem dados');
-      
       // ✅ Verificar se ainda assim há dados para retornar
       if (responseData && (Array.isArray(responseData) || responseData.length > 0)) {
-        //console.log('[CORPX-EXTRATO] Tentando processar dados diretos da resposta...');
         const directData = Array.isArray(responseData) ? responseData : [responseData];
         
         const transactions = directData.map((item: any, index: number) => ({
@@ -417,13 +329,7 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
     }
     
   } catch (error: any) {
-    console.error('[CORPX-EXTRATO] Erro ao consultar extrato:', {
-      message: error.message,
-      status: error.response?.status,
-      data: error.response?.data,
-      url: error.config?.url,
-      method: error.config?.method
-    });
+    console.error('[CORPX-EXTRATO] Erro ao consultar extrato:', error.message);
     
     // ✅ Retornar estrutura de erro em vez de null para melhor tratamento no frontend
     return {
@@ -441,8 +347,6 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
  */
 export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise<CorpXCreateAccountResponse | null> {
   try {
-    //console.log('[CORPX-CONTA] Criando conta CORPX...', dados);
-    
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -472,7 +376,6 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-CONTA] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: {...} }
     const backendResponse = responseData as CorpXBackendResponse<any>;
@@ -484,7 +387,6 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
         account_id: backendResponse.data?.id || null
       } as CorpXCreateAccountResponse;
     } else {
-      console.error('[CORPX-CONTA] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         message: backendResponse.message
@@ -492,7 +394,7 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
     }
     
   } catch (error: any) {
-    console.error('[CORPX-CONTA] Erro ao criar conta:', error.response?.data);
+    console.error('[CORPX-CONTA] Erro ao criar conta:', error.message);
     return null;
   }
 }
@@ -507,8 +409,6 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
  */
 export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysResponse | null> {
   try {
-    //console.log('[CORPX-PIX-CHAVES] Listando chaves PIX...', cnpj);
-    
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -531,13 +431,11 @@ export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysRe
     }
 
     const responseData = await response.json();
-    //console.log('[CORPX-PIX-CHAVES] Resposta recebida:', responseData);
     
     // Backend retorna: { error: false, message: "...", data: [...] }
     const backendResponse = responseData as CorpXBackendResponse<any[]>;
     
     if (backendResponse.error === false && backendResponse.data) {
-      //console.log('[CORPX-PIX-CHAVES] 📊 Dados brutos da API:', backendResponse.data);
       
       const chaves = backendResponse.data.map((item: any, index: number) => {
         
@@ -558,7 +456,6 @@ export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysRe
         chaves
       } as CorpXPixKeysResponse;
     } else {
-      console.error('[CORPX-PIX-CHAVES] Erro na resposta:', backendResponse.message);
       return {
         erro: true,
         chaves: []
@@ -566,7 +463,7 @@ export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysRe
     }
     
   } catch (error: any) {
-    console.error('[CORPX-PIX-CHAVES] Erro ao listar chaves:', error.response?.data);
+    console.error('[CORPX-PIX-CHAVES] Erro ao listar chaves:', error.message);
     return null;
   }
 }

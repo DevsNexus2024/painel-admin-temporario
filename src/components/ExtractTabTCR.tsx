@@ -50,7 +50,7 @@ export default function ExtractTabTCR() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(true);
-  const ITEMS_PER_PAGE = 100; // 🚀 100 registros por página (limite da API TCR)
+  const ITEMS_PER_PAGE = 100; // 🚀 API TCR retorna 100 registros por página
   
   // Estados para modal
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -62,7 +62,6 @@ export default function ExtractTabTCR() {
 
   // ✅ Conversão de dados já processados do serviço TCR
   const convertTCRToStandardFormat = (transaction: any) => {
-    //console.log('[TCR-CONVERSAO] 🔄 Convertendo transação processada:', transaction);
     
     // Agora os dados já vêm processados do backend com estrutura:
     // { id, date, description, amount, type: "credit"|"debit", balance }
@@ -85,7 +84,7 @@ export default function ExtractTabTCR() {
       type: transaction.type === 'credit' ? 'CRÉDITO' : 'DÉBITO',
       client: cliente,
       document: transaction._original?.payerDocument || '', // Documento do pagador se disponível
-      code: transaction._original?.nrMovimento || transaction.id || '',
+      code: transaction._original?.idEndToEnd || transaction._original?.nrMovimento || transaction.id || '', // ✅ CORRIGIDO: Priorizar idEndToEnd
       descCliente: descricao,
       identified: true, // TCR sempre identifica transações
       descricaoOperacao: descricao,
@@ -93,17 +92,14 @@ export default function ExtractTabTCR() {
       _original: transaction._original || transaction
     };
     
-    //console.log('[TCR-CONVERSAO] ✅ Resultado da conversão:', resultado);
     return resultado;
   };
 
   // ✅ Aplicar filtros (igual ao CorpX)
   const filteredAndSortedTransactions = useMemo(() => {
-    //console.log('[TCR-FILTROS] 🔄 Processando', allTransactions.length, 'transações...');
     
     let filtered = allTransactions.map(convertTCRToStandardFormat);
       
-    //console.log('[TCR-FILTROS] ✅ Após conversão:', filtered.length, 'transações válidas');
 
     // Filtros de busca
     filtered = filtered.filter((transaction) => {
@@ -144,7 +140,6 @@ export default function ExtractTabTCR() {
       return matchesName && matchesValue && matchesDescCliente && matchesType && matchesDate;
     });
     
-    //console.log('[TCR-FILTROS] 🎯 Após filtros de busca:', filtered.length, 'transações');
 
     // ✅ Aplicar ordenação
     if (sortBy === "date" && sortOrder !== "none") {
@@ -157,7 +152,6 @@ export default function ExtractTabTCR() {
       filtered.sort((a, b) => sortOrder === "asc" ? a.value - b.value : b.value - a.value);
     }
     
-    //console.log('[TCR-FILTROS] 🎉 RESULTADO FINAL:', filtered.length, 'transações para exibir');
 
     return filtered;
   }, [allTransactions, searchName, searchValue, searchDescCliente, transactionTypeFilter, dateFrom, dateTo, sortBy, sortOrder]);
@@ -165,7 +159,6 @@ export default function ExtractTabTCR() {
   // ✅ Paginação server-side (sem slice local)
   const displayTransactions = filteredAndSortedTransactions; // Exibir todos os dados da página atual
   
-  //console.log('[TCR-PAGINACAO] 📄 Página', currentPage, 'de', totalPages, '-', displayTransactions.length, 'transações na tela');
 
   // ✅ Totalizadores
   const debitCount = filteredAndSortedTransactions.filter(t => t.type === 'DÉBITO').length;
@@ -215,24 +208,24 @@ export default function ExtractTabTCR() {
       const { consultarExtratoTCR } = await import('@/services/tcr');
       const resultado = await consultarExtratoTCR(params);
       
-      //console.log('[TCR-EXTRATO-UI] Resultado:', resultado);
       
       // ✅ PAGINAÇÃO SERVER-SIDE: Substituir ou acumular dados
       if (resultado && !resultado.erro && resultado.transactions) {
-        const transacoes = resultado.transactions;
-        
-        console.log(`[TCR-EXTRATO-UI] ✅ Página ${page}: ${transacoes.length} transações recebidas`);
+        // ✅ Filtrar registro "Saldo Atual" que vem da API
+        const transacoesReais = resultado.transactions.filter((t: any) => {
+          const original = t.originalItem || t._original || t;
+          return original.data !== "Saldo Atual" && original.descricao !== "Saldo Atual";
+        });
         
         // 🚀 SUBSTITUIR dados para cada página (não acumular)
-        setAllTransactions(transacoes);
+        setAllTransactions(transacoesReais);
         
-        // 🚀 Calcular próximas páginas baseado no retorno
-        const hasFullPage = transacoes.length >= ITEMS_PER_PAGE;
+        // 🚀 Calcular próximas páginas baseado no retorno ORIGINAL (antes de remover Saldo Atual)
+        const hasFullPage = resultado.transactions.length >= ITEMS_PER_PAGE;
         setHasMorePages(hasFullPage);
         setTotalPages(page + (hasFullPage ? 1 : 0)); // Estimar páginas
         
-        
-        toast.success(`Página ${page}: ${transacoes.length} transações`, {
+        toast.success(`Página ${page}: ${transacoesReais.length} transações`, {
           description: "Extrato TCR carregado",
           duration: 1500
         });
@@ -427,7 +420,8 @@ export default function ExtractTabTCR() {
 
   const extrairEndToEnd = (transaction: any): string => {
     // Buscar endtoend nos dados da transação TCR
-    return transaction._original?.endToEndId || transaction._original?.e2eId || transaction.code || '';
+    // ✅ CORRIGIDO: Usar idEndToEnd (campo correto da API TCR)
+    return transaction._original?.idEndToEnd || transaction._original?.endToEndId || transaction._original?.e2eId || transaction.code || '';
   };
 
   const handleGerenciarDuplicatas = (transaction: any, event: React.MouseEvent) => {

@@ -15,7 +15,8 @@ import {
     Bot,
     Users,
     ListChecks,
-    UserSearch
+    UserSearch,
+    TrendingUp
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -193,6 +194,11 @@ export default function MainLayout() {
                                         label="CorpX TCR"
                                     />
                                     <SidebarLink
+                                        to="/grupo-tcr/corpx-ttf"
+                                        icon={<CreditCard className="h-4 w-4" />}
+                                        label="CorpX TTF → TCR"
+                                    />
+                                    <SidebarLink
                                         to="/analise-usuario/32"
                                         icon={<UserSearch className="h-4 w-4" />}
                                         label="Análise de Usuário BRBTC"
@@ -226,6 +232,12 @@ export default function MainLayout() {
                                         to="/otc"
                                         icon={<Users className="h-4 w-4" />}
                                         label="Clientes OTC"
+                                        badge="NOVO"
+                                    />
+                                    <SidebarLink
+                                        to="/otc/negociar"
+                                        icon={<TrendingUp className="h-4 w-4" />}
+                                        label="Negociar"
                                         badge="NOVO"
                                     />
                                     <SidebarLink

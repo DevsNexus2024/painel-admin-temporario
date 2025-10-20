@@ -52,7 +52,7 @@ export default function ExtractTabCorpX() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(true);
-  const ITEMS_PER_PAGE = 100; // 🚀 100 registros por página (limite da API CorpX)
+  const ITEMS_PER_PAGE = 100; // 🚀 API CorpX retorna 100 registros por página
   
   // Estados para modal
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -65,7 +65,6 @@ export default function ExtractTabCorpX() {
 
   // ✅ Conversão de dados já processados do serviço CorpX
   const convertCorpXToStandardFormat = (transaction: any) => {
-    //console.log('[CORPX-CONVERSAO] 🔄 Convertendo transação processada:', transaction);
     
     // Agora os dados já vêm processados do backend com estrutura:
     // { id, date, description, amount, type: "credit"|"debit", balance }
@@ -91,17 +90,14 @@ export default function ExtractTabCorpX() {
       _original: transaction
     };
     
-    //console.log('[CORPX-CONVERSAO] ✅ Resultado da conversão:', resultado);
     return resultado;
   };
 
   // ✅ Aplicar filtros (igual ao BMP 531)
   const filteredAndSortedTransactions = useMemo(() => {
-    //console.log('[CORPX-FILTROS] 🔄 Processando', allTransactions.length, 'transações...');
     
     let filtered = allTransactions.map(convertCorpXToStandardFormat);
       
-    //console.log('[CORPX-FILTROS] ✅ Após conversão:', filtered.length, 'transações válidas');
 
     // Filtros de busca
     filtered = filtered.filter((transaction) => {
@@ -142,7 +138,6 @@ export default function ExtractTabCorpX() {
       return matchesName && matchesValue && matchesDescCliente && matchesType && matchesDate;
     });
     
-    //console.log('[CORPX-FILTROS] 🎯 Após filtros de busca:', filtered.length, 'transações');
 
     // ✅ Aplicar ordenação
     if (sortBy === "date" && sortOrder !== "none") {
@@ -155,7 +150,6 @@ export default function ExtractTabCorpX() {
       filtered.sort((a, b) => sortOrder === "asc" ? a.value - b.value : b.value - a.value);
     }
     
-    //console.log('[CORPX-FILTROS] 🎉 RESULTADO FINAL:', filtered.length, 'transações para exibir');
 
     return filtered;
   }, [allTransactions, searchName, searchValue, searchDescCliente, transactionTypeFilter, dateFrom, dateTo, sortBy, sortOrder]);
@@ -163,7 +157,6 @@ export default function ExtractTabCorpX() {
   // ✅ Paginação server-side (sem slice local)
   const displayTransactions = filteredAndSortedTransactions; // Exibir todos os dados da página atual
   
-  //console.log('[CORPX-PAGINACAO] 📄 Página', currentPage, 'de', totalPages, '-', displayTransactions.length, 'transações na tela');
 
   // ✅ Totalizadores
   const debitCount = filteredAndSortedTransactions.filter(t => t.type === 'DÉBITO').length;
@@ -214,24 +207,25 @@ export default function ExtractTabCorpX() {
       const { consultarExtratoCorpX } = await import('@/services/corpx');
       const resultado = await consultarExtratoCorpX(params);
       
-      //console.log('[CORPX-EXTRATO-UI] Resultado:', resultado);
       
       // ✅ PAGINAÇÃO SERVER-SIDE: Substituir ou acumular dados
       if (resultado && !resultado.erro && resultado.transactions) {
-        const transacoes = resultado.transactions;
-        
-        console.log(`[CORPX-EXTRATO-UI] ✅ Página ${page}: ${transacoes.length} transações recebidas`);
+        // ✅ Filtrar registro "Saldo Atual" que vem da API
+        const transacoesReais = resultado.transactions.filter((t: any) => {
+          const original = t.originalItem || t._original || t;
+          return original.data !== "Saldo Atual" && original.descricao !== "Saldo Atual";
+        });
         
         // 🚀 SUBSTITUIR dados para cada página (não acumular)
-        setAllTransactions(transacoes);
+        setAllTransactions(transacoesReais);
         
-        // 🚀 Calcular próximas páginas baseado no retorno
-        const hasFullPage = transacoes.length >= ITEMS_PER_PAGE;
+        // 🚀 Calcular próximas páginas baseado no retorno ORIGINAL (antes de remover Saldo Atual)
+        const hasFullPage = resultado.transactions.length >= ITEMS_PER_PAGE;
         setHasMorePages(hasFullPage);
         setTotalPages(page + (hasFullPage ? 1 : 0)); // Estimar páginas
         
         
-        toast.success(`Página ${page}: ${transacoes.length} transações`, {
+        toast.success(`Página ${page}: ${transacoesReais.length} transações`, {
           description: "Extrato CORPX carregado",
           duration: 1500
         });
@@ -459,7 +453,6 @@ export default function ExtractTabCorpX() {
   useEffect(() => {
     const cnpjNumerico = taxDocument.replace(/\D/g, '');
     if (cnpjNumerico && cnpjNumerico.length === 14) {
-      console.log('[CORPX-EXTRATO] 🔄 Tax document alterado, recarregando extrato...', cnpjNumerico);
       // Reset pagination and load first page with current date filters
       setCurrentPage(1);
       loadCorpXTransactions(dateFrom, dateTo, 1);

@@ -17,7 +17,7 @@ import { TOKEN_STORAGE } from "@/config/api";
 export interface CompensacaoBRBTCRequest {
   valor_deposito: number;
   id_usuario: number;
-  id_transacao: string;
+  id_transacao: string; // EndToEnd da transação PIX
   data_hora_deposito: string; // ISO 8601 format
   nome_depositante: string;
   provider: string;
@@ -118,6 +118,45 @@ export const determinarProvider = (extractRecord: MovimentoExtrato): string => {
 };
 
 /**
+ * 🔍 Extrair EndToEnd do registro do extrato
+ * 
+ * Tenta obter o endtoend de várias fontes possíveis:
+ * - Dados originais da API (idEndToEnd, endToEndId, identificadorOperacao, etc)
+ * - Dados Bitso específicos (metadados.end_to_end_id)
+ * - Campo code (que geralmente contém o endToEndId)
+ * 
+ * ⚠️ IMPORTANTE: Para BMP-531, o endtoend geralmente está em identificadorOperacao
+ */
+const extrairEndToEnd = (extractRecord: MovimentoExtrato): string => {
+  // 1. Tentar extrair dos dados originais da API (múltiplos campos possíveis)
+  const endtoendOriginal = extractRecord._original?.idEndToEnd || 
+                          extractRecord._original?.endToEndId ||
+                          extractRecord._original?.e2eId ||
+                          extractRecord._original?.endtoend ||
+                          extractRecord._original?.end_to_end_id ||
+                          extractRecord._original?.identificadorOperacao || // ✅ BMP-531: campo principal
+                          extractRecord._original?.EndToEndId ||
+                          extractRecord._original?.codigoTransacao; // Fallback BMP-531
+  
+  if (endtoendOriginal) {
+    return endtoendOriginal;
+  }
+  
+  // 2. Para Bitso: tentar dos metadados
+  if (extractRecord.bitsoData?.metadados?.end_to_end_id) {
+    return extractRecord.bitsoData.metadados.end_to_end_id;
+  }
+  
+  // 3. Fallback: usar o code (que geralmente é mapeado do endToEndId)
+  if (extractRecord.code) {
+    return extractRecord.code;
+  }
+  
+  // 4. Último fallback: usar o id
+  return extractRecord.id;
+};
+
+/**
  * 🔄 Converter dados do extrato para request BRBTC
  */
 export const converterParaBRBTCRequest = (
@@ -126,6 +165,7 @@ export const converterParaBRBTCRequest = (
 ): CompensacaoBRBTCRequest => {
   const idUsuario = extrairIdUsuario(extractRecord);
   const provider = determinarProvider(extractRecord);
+  const endtoend = extrairEndToEnd(extractRecord);
   
   // Converter data para ISO 8601
   const dataHoraDeposito = new Date(extractRecord.dateTime).toISOString();
@@ -133,7 +173,7 @@ export const converterParaBRBTCRequest = (
   return {
     valor_deposito: Math.abs(extractRecord.value), // Sempre valor positivo
     id_usuario: idUsuario,
-    id_transacao: extractRecord.id,
+    id_transacao: endtoend, // ✅ CORRIGIDO: Agora envia o EndToEnd correto
     data_hora_deposito: dataHoraDeposito,
     nome_depositante: extractRecord.client || 'Não informado',
     provider: provider,
@@ -173,7 +213,6 @@ export const realizarCompensacaoBRBTC = async (
     
     // Preparar dados da requisição
     const requestData = converterParaBRBTCRequest(extractRecord, observacoes);
-    
     
     // Fazer requisição para API BRBTC
     const response = await fetch(`${BRBTC_API_CONFIG.baseUrl}${BRBTC_API_CONFIG.endpoint}`, {
