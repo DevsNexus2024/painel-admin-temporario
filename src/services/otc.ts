@@ -239,13 +239,28 @@ export class OTCService {
   }
 
   /**
-   * Lista operações manuais
+   * Lista operações manuais (travas/conversões e saques/créditos)
    */
   async getOperations(params: OTCOperationsParams = {}): Promise<OTCApiResponse<OTCOperation[]>> {
     const searchParams = new URLSearchParams();
     
     if (params.otc_client_id) {
       searchParams.append('otc_client_id', String(params.otc_client_id));
+    }
+    if (params.operation_type) {
+      searchParams.append('operation_type', params.operation_type);
+    }
+    if (params.currency) {
+      searchParams.append('currency', params.currency);
+    }
+    if (params.dateFrom) {
+      searchParams.append('dateFrom', params.dateFrom);
+    }
+    if (params.dateTo) {
+      searchParams.append('dateTo', params.dateTo);
+    }
+    if (params.search) {
+      searchParams.append('search', params.search);
     }
     if (params.page) {
       searchParams.append('page', String(params.page));

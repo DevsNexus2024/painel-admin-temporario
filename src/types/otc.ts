@@ -270,6 +270,11 @@ export interface OTCStatementParams {
 // Interface para parâmetros de operações
 export interface OTCOperationsParams {
   otc_client_id?: number;
+  operation_type?: string;
+  currency?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  search?: string;
   page?: number;
   limit?: number;
 }

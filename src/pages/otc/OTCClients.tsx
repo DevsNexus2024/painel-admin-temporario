@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Plus, Users, BarChart3, UserPlus } from 'lucide-react';
+import { Plus, Users, BarChart3, UserPlus, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import OTCDashboard from './OTCDashboard';
 import OTCClientTable from '@/components/otc/OTCClientTable';
+import OTCOperations from './OTCOperations';
 import OTCClientModal from '@/components/otc/OTCClientModal';
 import OTCOperationModal from '@/components/otc/OTCOperationModal';
 
@@ -116,7 +117,7 @@ const OTCClients: React.FC = () => {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-2xl grid-cols-3">
           <TabsTrigger value="dashboard" className="flex items-center gap-2">
             <BarChart3 className="w-4 h-4" />
             Dashboard
@@ -124,6 +125,10 @@ const OTCClients: React.FC = () => {
           <TabsTrigger value="clients" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             Clientes
+          </TabsTrigger>
+          <TabsTrigger value="operations" className="flex items-center gap-2">
+            <Lock className="w-4 h-4" />
+            Travas/Saques
           </TabsTrigger>
         </TabsList>
 
@@ -139,6 +144,10 @@ const OTCClients: React.FC = () => {
             onCreateOperation={handleCreateOperation}
             onViewBalance={handleViewBalance}
           />
+        </TabsContent>
+
+        <TabsContent value="operations" className="space-y-4">
+          <OTCOperations />
         </TabsContent>
       </Tabs>
 
