@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign } from "lucide-react";
+import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign, CheckSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,10 +13,12 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 // ✅ PAGINAÇÃO TRADICIONAL: Páginas numeradas
 import { useExtratoPaginado } from "@/hooks/useExtratoPaginado";
 import { validarIntervaloData, formatarDataParaAPI, MovimentoExtrato, ExtratoResponse } from "@/services/extrato";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
+import BulkCreditOTCModal from "@/components/otc/BulkCreditOTCModal";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
 // ✅ ADICIONADO: Importar hook para identificar provedor
 import { useBankFeatures } from "@/hooks/useBankFeatures";
@@ -52,6 +54,11 @@ export default function ExtractTable() {
   // Estados para o modal de crédito OTC
   const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
   const [selectedExtractRecord, setSelectedExtractRecord] = useState<MovimentoExtrato | null>(null);
+
+  // 🆕 Estados para crédito em lote
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
+  const [bulkOTCModalOpen, setBulkOTCModalOpen] = useState(false);
 
   // Estados para o modal de compensação (BMP-531)
   const [compensationModalOpen, setCompensationModalOpen] = useState(false);
@@ -268,6 +275,73 @@ export default function ExtractTable() {
     
     setCreditOTCModalOpen(false);
     setSelectedExtractRecord(null);
+  };
+
+  // 🆕 Funções para modo lote
+  const toggleTransactionSelection = (transactionId: string) => {
+    setSelectedTransactions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(transactionId)) {
+        newSet.delete(transactionId);
+      } else {
+        newSet.add(transactionId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllVisibleCredits = () => {
+    const creditTransactions = displayTransactions
+      .filter(t => t.type === 'CRÉDITO' && !isRecordCredited(t))
+      .map(t => t.id);
+    
+    setSelectedTransactions(new Set(creditTransactions));
+    toast.success(`${creditTransactions.length} transações selecionadas`);
+  };
+
+  const clearSelection = () => {
+    setSelectedTransactions(new Set());
+  };
+
+  const toggleBulkMode = () => {
+    const newBulkMode = !bulkMode;
+    setBulkMode(newBulkMode);
+    
+    if (!newBulkMode) {
+      clearSelection();
+    } else {
+      toast.info('Modo seleção ativado - clique nas transações para selecioná-las');
+    }
+  };
+
+  const handleBulkCredit = () => {
+    if (selectedTransactions.size === 0) {
+      toast.error('Selecione pelo menos uma transação');
+      return;
+    }
+    
+    setBulkOTCModalOpen(true);
+  };
+
+  const handleCloseBulkOTCModal = (wasSuccessful?: boolean, successfulIds?: string[]) => {
+    if (wasSuccessful && successfulIds && successfulIds.length > 0) {
+      // Marcar todas as transações creditadas com sucesso
+      setCreditedRecords(prev => {
+        const newSet = new Set(prev);
+        successfulIds.forEach(id => newSet.add(`${bankFeatures.provider}-${id}`));
+        return newSet;
+      });
+      
+      // Limpar seleção
+      clearSelection();
+    }
+    
+    setBulkOTCModalOpen(false);
+  };
+
+  // Obter transações selecionadas
+  const getSelectedTransactionsData = () => {
+    return displayTransactions.filter(t => selectedTransactions.has(t.id));
   };
 
   // Função para abrir modal de compensação (BMP-531)
@@ -592,6 +666,62 @@ export default function ExtractTable() {
             </div>
           </div>
         </CardHeader>
+
+        {/* 🆕 Barra de Ações em Lote */}
+        <div className={cn(
+          "px-6 py-4 border-b border-border transition-all",
+          bulkMode ? "bg-blue-50 dark:bg-blue-950/20" : "bg-muted/30"
+        )}>
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant={bulkMode ? "default" : "outline"}
+                onClick={toggleBulkMode}
+                className={bulkMode ? "bg-blue-600 hover:bg-blue-700" : ""}
+              >
+                <CheckSquare className="h-4 w-4 mr-2" />
+                {bulkMode ? "Sair do Modo Lote" : "Modo Seleção em Lote"}
+              </Button>
+              
+              {bulkMode && (
+                <>
+                  <Badge variant="secondary" className="text-sm px-3 py-1">
+                    {selectedTransactions.size} selecionada{selectedTransactions.size !== 1 ? 's' : ''}
+                  </Badge>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={selectAllVisibleCredits}
+                    disabled={displayTransactions.filter(t => t.type === 'CRÉDITO' && !isRecordCredited(t)).length === 0}
+                  >
+                    Selecionar Todas Visíveis
+                  </Button>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearSelection}
+                    disabled={selectedTransactions.size === 0}
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Limpar Seleção
+                  </Button>
+                </>
+              )}
+            </div>
+            
+            {bulkMode && selectedTransactions.size > 0 && (
+              <Button
+                onClick={handleBulkCredit}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Creditar {selectedTransactions.size} em Lote
+              </Button>
+            )}
+          </div>
+        </div>
         
         <CardContent className="p-0">
           {/* Loading state */}
@@ -620,6 +750,22 @@ export default function ExtractTable() {
                   <Table>
                     <TableHeader className="sticky top-0 bg-muted/40 backdrop-blur-sm z-10">
                       <TableRow className="border-b border-border hover:bg-transparent">
+                        {/* 🆕 Coluna de seleção (só aparece no modo lote) */}
+                        {bulkMode && (
+                          <TableHead className="font-semibold text-card-foreground py-3 w-[50px] text-center">
+                            <Checkbox
+                              checked={selectedTransactions.size > 0 && selectedTransactions.size === displayTransactions.filter(t => t.type === 'CRÉDITO' && !isRecordCredited(t)).length}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  selectAllVisibleCredits();
+                                } else {
+                                  clearSelection();
+                                }
+                              }}
+                              className="h-4 w-4"
+                            />
+                          </TableHead>
+                        )}
                         <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Data/Hora</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Valor</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Tipo</TableHead>
@@ -641,9 +787,41 @@ export default function ExtractTable() {
                         return (
                           <TableRow 
                             key={transaction.id}
-                            onClick={() => handleRowClick(transaction)}
-                            className="cursor-pointer hover:bg-muted/20 transition-all duration-200 border-b border-border"
+                            onClick={(e) => {
+                              // Se estiver em modo lote e for transação de crédito, selecionar
+                              if (bulkMode && transaction.type === 'CRÉDITO' && !isRecordCredited(transaction)) {
+                                e.stopPropagation();
+                                toggleTransactionSelection(transaction.id);
+                              } else if (!bulkMode) {
+                                handleRowClick(transaction);
+                              }
+                            }}
+                            className={cn(
+                              "transition-all duration-200 border-b border-border",
+                              bulkMode && selectedTransactions.has(transaction.id) 
+                                ? "bg-blue-40/40 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 cursor-pointer hover:bg-blue-100/60 dark:hover:bg-blue-900/30"
+                                : bulkMode && transaction.type === 'CRÉDITO' && !isRecordCredited(transaction)
+                                ? "cursor-pointer hover:bg-muted/30"
+                                : !bulkMode
+                                ? "cursor-pointer hover:bg-muted/20"
+                                : "cursor-default opacity-60"
+                            )}
                           >
+                            {/* 🆕 Checkbox (só aparece no modo lote para créditos não creditados) */}
+                            {bulkMode && (
+                              <TableCell className="py-3 text-center">
+                                {transaction.type === 'CRÉDITO' && !isRecordCredited(transaction) ? (
+                                  <Checkbox
+                                    checked={selectedTransactions.has(transaction.id)}
+                                    onCheckedChange={() => toggleTransactionSelection(transaction.id)}
+                                    className="h-4 w-4"
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                ) : (
+                                  <div className="w-4 h-4" /> // Espaço vazio para manter alinhamento
+                                )}
+                              </TableCell>
+                            )}
                             <TableCell className="font-medium text-card-foreground py-3 text-xs">
                               {formatDate(transaction.dateTime)}
                             </TableCell>
@@ -758,34 +936,34 @@ export default function ExtractTable() {
                             </TableCell>
                             <TableCell className="py-3">
                               <div className="flex items-center justify-center gap-1">
-                                {transaction.type === 'CRÉDITO' && (
-                                  /* ✅ Botão OTC - todos os provedores */
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => handleCreditToOTC(transaction, e)}
-                                    disabled={isRecordCredited(transaction)}
-                                    className={cn(
-                                      "h-7 px-2 text-xs transition-all",
-                                      isRecordCredited(transaction)
-                                        ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                        : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
-                                    )}
-                                    title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
-                                  >
-                                    {isRecordCredited(transaction) ? (
-                                      <>
-                                        <Check className="h-3 w-3 mr-1" />
-                                        Creditado
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Plus className="h-3 w-3 mr-1" />
-                                        OTC
-                                      </>
-                                    )}
-                                  </Button>
-                                )}
+                              {!bulkMode && transaction.type === 'CRÉDITO' && (
+                                /* ✅ Botão OTC - todos os provedores (oculto no modo lote) */
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => handleCreditToOTC(transaction, e)}
+                                  disabled={isRecordCredited(transaction)}
+                                  className={cn(
+                                    "h-7 px-2 text-xs transition-all",
+                                    isRecordCredited(transaction)
+                                      ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                      : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
+                                  )}
+                                  title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
+                                >
+                                  {isRecordCredited(transaction) ? (
+                                    <>
+                                      <Check className="h-3 w-3 mr-1" />
+                                      Creditado
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plus className="h-3 w-3 mr-1" />
+                                      OTC
+                                    </>
+                                  )}
+                                </Button>
+                              )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1430,11 +1608,18 @@ export default function ExtractTable() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de Crédito OTC */}
+      {/* Modal de Crédito OTC (individual) */}
       <CreditExtractToOTCModal
         isOpen={creditOTCModalOpen}
         onClose={handleCloseCreditOTCModal}
         extractRecord={selectedExtractRecord}
+      />
+
+      {/* 🆕 Modal de Crédito OTC em Lote */}
+      <BulkCreditOTCModal
+        isOpen={bulkOTCModalOpen}
+        onClose={handleCloseBulkOTCModal}
+        transactions={getSelectedTransactionsData()}
       />
 
       {/* Modal de Compensação Inteligente - BMP-531 */}

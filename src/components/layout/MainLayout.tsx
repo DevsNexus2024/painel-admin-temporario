@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
+import { FEATURE_FLAGS } from "@/config/env";
 
 interface SidebarLinkProps {
     to: string;
@@ -149,55 +150,81 @@ export default function MainLayout() {
                     {/* Navegação */}
                     <ScrollArea className="flex-1 px-3 py-4">
                         <nav className="space-y-2">
-                            <div className="pb-2">
-                                <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Principal
-                                </h3>
-                                <div className="space-y-1">
-                                    <SidebarLink
-                                        to="/"
-                                        icon={<LayoutDashboard className="h-4 w-4" />}
-                                        label="Dashboard"
-                                        badge="3"
-                                    />
+                            {/* ========== SEÇÃO PRINCIPAL (DEPRECIADA) ========== */}
+                            {/* 🚫 Dashboard removido por ser depreciado */}
+                            {/* Para reativar: VITE_FEATURE_DASHBOARD=true no .env */}
+                            {FEATURE_FLAGS.ENABLE_DASHBOARD && (
+                                <div className="pb-2">
+                                    <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                        Principal
+                                    </h3>
+                                    <div className="space-y-1">
+                                        <SidebarLink
+                                            to="/"
+                                            icon={<LayoutDashboard className="h-4 w-4" />}
+                                            label="Dashboard"
+                                            badge="3"
+                                        />
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
+                            {/* ========== GRUPO TCR ========== */}
                             <div className="pb-2">
                                 <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                                     Grupo TCR
                                 </h3>
                                 <div className="space-y-1">
-                                    <SidebarLink
-                                        to="/extrato_tcr"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="Extrato de Contas - TCR"
-                                    />
-                                    <SidebarLink
-                                        to="/compensacao-depositos"
-                                        icon={<ArrowDownToLine className="h-4 w-4" />}
-                                        label="Compensação de Depósitos - TCR"
-                                    />
+                                    {/* 🚫 MENUS DEPRECIADOS - Desabilitados por padrão */}
+                                    {/* Para reativar: Defina as variáveis no .env */}
+                                    
+                                    {FEATURE_FLAGS.ENABLE_EXTRATO_TCR && (
+                                        <SidebarLink
+                                            to="/extrato_tcr"
+                                            icon={<CreditCard className="h-4 w-4" />}
+                                            label="Extrato de Contas - TCR"
+                                        />
+                                    )}
+                                    
+                                    {FEATURE_FLAGS.ENABLE_COMPENSACAO_DEPOSITOS && (
+                                        <SidebarLink
+                                            to="/compensacao-depositos"
+                                            icon={<ArrowDownToLine className="h-4 w-4" />}
+                                            label="Compensação de Depósitos - TCR"
+                                        />
+                                    )}
+                                    
+                                    {/* ✅ MENU ATIVO */}
                                     <SidebarLink
                                         to="/grupo-tcr/saldos"
                                         icon={<ListChecks className="h-4 w-4" />}
                                         label="Saldos & Conferência"
                                     />
-                                    <SidebarLink
-                                        to="/bmp-531"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="BMP 531 TCR"
-                                    />
+                                    
+                                    {FEATURE_FLAGS.ENABLE_BMP531_TCR && (
+                                        <SidebarLink
+                                            to="/bmp-531"
+                                            icon={<CreditCard className="h-4 w-4" />}
+                                            label="BMP 531 TCR"
+                                        />
+                                    )}
+                                    
+                                    {/* ✅ MENU ATIVO */}
                                     <SidebarLink
                                         to="/grupo-tcr/tcr"
                                         icon={<CreditCard className="h-4 w-4" />}
                                         label="CorpX TCR"
                                     />
-                                    <SidebarLink
-                                        to="/grupo-tcr/corpx-ttf"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="CorpX TTF → TCR"
-                                    />
+                                    
+                                    {FEATURE_FLAGS.ENABLE_CORPX_TTF_TCR && (
+                                        <SidebarLink
+                                            to="/grupo-tcr/corpx-ttf"
+                                            icon={<CreditCard className="h-4 w-4" />}
+                                            label="CorpX TTF → TCR"
+                                        />
+                                    )}
+                                    
+                                    {/* ✅ MENU ATIVO */}
                                     <SidebarLink
                                         to="/analise-usuario/32"
                                         icon={<UserSearch className="h-4 w-4" />}
@@ -238,6 +265,12 @@ export default function MainLayout() {
                                         to="/otc/negociar"
                                         icon={<TrendingUp className="h-4 w-4" />}
                                         label="Negociar"
+                                        badge="NOVO"
+                                    />
+                                    <SidebarLink
+                                        to="/bitso"
+                                        icon={<CreditCard className="h-4 w-4" />}
+                                        label="Bitso"
                                         badge="NOVO"
                                     />
                                     <SidebarLink

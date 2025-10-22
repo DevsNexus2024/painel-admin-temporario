@@ -265,8 +265,6 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
         const amount = parseFloat(formData.amount);
         if (isNaN(amount) || amount <= 0) {
           newErrors.amount = 'Valor deve ser um número positivo';
-        } else if (amount > 1000000) {
-          newErrors.amount = 'Valor máximo é R$ 1.000.000,00';
         }
       }
     }
@@ -280,8 +278,6 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
         const brlAmount = parseFloat(formData.brl_amount);
         if (isNaN(brlAmount) || brlAmount <= 0) {
           newErrors.brl_amount = 'Valor deve ser um número positivo';
-        } else if (brlAmount > 1000000) {
-          newErrors.brl_amount = 'Valor máximo é R$ 1.000.000,00';
         }
       }
 
@@ -292,8 +288,6 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
         const usdAmount = parseFloat(formData.usd_amount);
         if (isNaN(usdAmount) || usdAmount <= 0) {
           newErrors.usd_amount = 'Valor deve ser um número positivo';
-        } else if (usdAmount > 1000000) {
-          newErrors.usd_amount = 'Valor máximo é $ 1.000.000,0000';
         }
       }
 
@@ -569,7 +563,6 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                       type="number"
                       step="0.01"
                       min="0.01"
-                      max="1000000"
                       value={formData.amount}
                       onChange={(e) => updateField('amount', e.target.value)}
                       placeholder="0,00"
@@ -625,7 +618,6 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                         type="number"
                         step="0.01"
                         min="0.01"
-                        max="1000000"
                         value={formData.brl_amount}
                         onChange={(e) => updateField('brl_amount', e.target.value)}
                         onBlur={() => handleFieldBlur('brl_amount')}
@@ -652,7 +644,6 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                         type="number"
                         step="0.0001"
                         min="0.0001"
-                        max="1000000"
                         value={formData.usd_amount}
                         onChange={(e) => updateField('usd_amount', e.target.value)}
                         onBlur={() => handleFieldBlur('usd_amount')}

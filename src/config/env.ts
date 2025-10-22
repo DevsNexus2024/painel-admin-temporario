@@ -82,6 +82,29 @@ export const PUBLIC_ENV = {
 };
 
 /**
+ * 🚩 FEATURE FLAGS - Controle de funcionalidades
+ * 
+ * Use estas flags para ativar/desativar menus e funcionalidades.
+ * Por padrão, features depreciadas estão desabilitadas em produção.
+ * Para reativar, defina a variável de ambiente correspondente como 'true'.
+ */
+export const FEATURE_FLAGS = {
+  // 📊 Menus Depreciados (desabilitados por padrão)
+  ENABLE_DASHBOARD: import.meta.env.VITE_FEATURE_DASHBOARD === 'true' || false,
+  ENABLE_EXTRATO_TCR: import.meta.env.VITE_FEATURE_EXTRATO_TCR === 'true' || false,
+  ENABLE_COMPENSACAO_DEPOSITOS: import.meta.env.VITE_FEATURE_COMPENSACAO === 'true' || false,
+  ENABLE_BMP531_TCR: import.meta.env.VITE_FEATURE_BMP531 === 'true' || false,
+  ENABLE_CORPX_TTF_TCR: import.meta.env.VITE_FEATURE_CORPX_TTF === 'true' || false,
+  
+  // 🔧 Para reativar em desenvolvimento, adicione no .env:
+  // VITE_FEATURE_DASHBOARD=true
+  // VITE_FEATURE_EXTRATO_TCR=true
+  // VITE_FEATURE_COMPENSACAO=true
+  // VITE_FEATURE_BMP531=true
+  // VITE_FEATURE_CORPX_TTF=true
+};
+
+/**
  * FUNÇÃO UTILITÁRIA: Verificar se ambiente está configurado corretamente
  */
 export const validateEnvironment = (): { valid: boolean; missing: string[]; warnings: string[] } => {

@@ -138,6 +138,49 @@ export class OTCService {
   }
 
   /**
+   * 🆕 Cria múltiplas operações OTC em lote (transacional)
+   * @param bulkData - Dados para crédito em lote
+   */
+  async bulkCreditOperations(bulkData: {
+    otc_client_id: number;
+    transactions: Array<{
+      provider: string;
+      transaction_id: string;
+      amount: number;
+      reference_code: string;
+      reference_date: string;
+      dados_extrato?: any;
+    }>;
+  }): Promise<{
+    success: number;
+    failed: number;
+    duplicates: number;
+    details: Array<{
+      transaction_id: string;
+      status: 'success' | 'error' | 'duplicate';
+      message: string;
+      operation_id?: number;
+    }>;
+  }> {
+    const response = await api.post<{
+      success: boolean;
+      data: {
+        success: number;
+        failed: number;
+        duplicates: number;
+        details: Array<{
+          transaction_id: string;
+          status: 'success' | 'error' | 'duplicate';
+          message: string;
+          operation_id?: number;
+        }>;
+      };
+    }>(`${OTC_BASE_URL}/operations/bulk`, bulkData);
+    
+    return response.data.data;
+  }
+
+  /**
    * 🔍 VERIFICAÇÃO ANTI-DUPLICAÇÃO V2 (NOVO ENDPOINT HÍBRIDO)
    * Usa o novo endpoint /check-duplicate/:provider/:codigo que é compatível com AntiDuplicacaoService
    * @param provider - Provider: 'corpx', 'bitso', 'bmp531', 'bmp274'
