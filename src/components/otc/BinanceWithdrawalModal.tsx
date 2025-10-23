@@ -35,16 +35,18 @@ interface BinanceWithdrawalModalProps {
     addressTag?: string;
   }) => void;
   loading?: boolean;
+  balances?: Array<{
+    coin: string;
+    free: string;
+    locked: string;
+  }>;
 }
 
 const NETWORKS = {
   USDT: [
     { value: 'TRX', label: 'TRX (Tron)' },
-    { value: 'ETH', label: 'ETH (Ethereum)' },
-    { value: 'BSC', label: 'BSC (Binance Smart Chain)' },
     { value: 'MATIC', label: 'MATIC (Polygon)' },
-    { value: 'ARBITRUM', label: 'ARBITRUM' },
-    { value: 'OPTIMISM', label: 'OPTIMISM' },
+    { value: 'ETH', label: 'ETH (Ethereum)' },
   ],
   BTC: [{ value: 'BTC', label: 'BTC' }],
   ETH: [{ value: 'ETH', label: 'ETH' }],
@@ -55,6 +57,7 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   onClose,
   onConfirm,
   loading = false,
+  balances = [],
 }) => {
   const [coin, setCoin] = useState('USDT');
   const [amount, setAmount] = useState('');
@@ -69,6 +72,17 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
     const defaultNetwork = networks[0]?.value || 'TRX';
     setNetwork(defaultNetwork);
   }, [coin]);
+
+  // Resetar campos quando o modal fechar
+  useEffect(() => {
+    if (!isOpen) {
+      setCoin('USDT');
+      setAmount('');
+      setAddress('');
+      setNetwork('TRX');
+      setAddressTag('');
+    }
+  }, [isOpen]);
 
   const handleConfirm = () => {
     if (!amount || !address) {
@@ -85,57 +99,63 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   };
 
   const handleMaxAmount = () => {
-    // TODO: Implementar lógica de MAX baseado no saldo disponível
-    setAmount('');
+    // Buscar saldo disponível para a moeda selecionada
+    const coinBalance = balances.find((b) => b.coin === coin);
+    
+    if (coinBalance && parseFloat(coinBalance.free) > 0) {
+      // Definir valor máximo descontando a taxa de rede (0.0001)
+      const maxAmount = parseFloat(coinBalance.free) - 0.0001;
+      if (maxAmount > 0) {
+        setAmount(maxAmount.toFixed(8));
+      } else {
+        setAmount('0');
+      }
+    } else {
+      setAmount('0');
+    }
   };
 
   const isValid = amount && address && parseFloat(amount) > 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[450px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Wallet className="w-5 h-5 text-orange-500" />
+          <DialogTitle className="flex items-center gap-2 text-lg">
+            <Wallet className="w-4 h-4 text-orange-500" />
             Solicitar Saque
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-sm">
             Preencha os dados para solicitar um saque
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           {/* Coin Selection */}
           <div>
             <label className="text-sm font-medium text-foreground mb-2 block">
               Moeda
             </label>
             <Select value={coin} onValueChange={setCoin}>
-              <SelectTrigger className="w-full bg-muted/50 h-12">
+              <SelectTrigger className="w-full bg-muted/50 h-10">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="USDT">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center">
-                      <span className="text-xs font-bold text-green-500">₮</span>
-                    </div>
+                    <img src="/usdt_logo.png" alt="USDT" className="w-6 h-6" />
                     USDT
                   </div>
                 </SelectItem>
                 <SelectItem value="BTC">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-orange-500/10 flex items-center justify-center">
-                      <span className="text-xs font-bold text-orange-500">₿</span>
-                    </div>
+                    <img src="/btc_logo.png" alt="BTC" className="w-6 h-6" />
                     BTC
                   </div>
                 </SelectItem>
                 <SelectItem value="ETH">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-blue-500/10 flex items-center justify-center">
-                      <span className="text-xs font-bold text-blue-500">Ξ</span>
-                    </div>
+                    <img src="/eth_logo.png" alt="ETH" className="w-6 h-6" />
                     ETH
                   </div>
                 </SelectItem>
@@ -149,7 +169,7 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
               Rede
             </label>
             <Select value={network} onValueChange={setNetwork}>
-              <SelectTrigger className="w-full bg-muted/50 h-12">
+              <SelectTrigger className="w-full bg-muted/50 h-10">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -172,21 +192,7 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder="0x..."
-              className="bg-muted/50 font-mono text-sm"
-            />
-          </div>
-
-          {/* Address Tag (optional) */}
-          <div>
-            <label className="text-sm font-medium text-foreground mb-2 block">
-              Tag/Memo (opcional)
-            </label>
-            <Input
-              type="text"
-              value={addressTag}
-              onChange={(e) => setAddressTag(e.target.value)}
-              placeholder="Apenas para moedas que requerem"
-              className="bg-muted/50 text-sm"
+              className="bg-muted/50 font-mono text-sm h-10"
             />
           </div>
 
@@ -201,7 +207,7 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
-                className="bg-muted/50 text-base pr-16"
+                className="bg-muted/50 text-sm pr-16 h-10"
               />
               <Button
                 size="sm"
@@ -216,12 +222,12 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
 
           {/* Fee Info */}
           <Card className="bg-muted/30 border-border/50">
-            <CardContent className="pt-4">
-              <div className="flex justify-between text-sm mb-1">
+            <CardContent className="pt-3">
+              <div className="flex justify-between text-xs mb-1">
                 <span className="text-muted-foreground">Taxa de rede</span>
                 <span className="font-medium">0.0001 {coin}</span>
               </div>
-              <div className="flex justify-between text-sm">
+              <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Você receberá</span>
                 <span className="font-semibold text-foreground">
                   {amount && parseFloat(amount) > 0
@@ -234,10 +240,10 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
           </Card>
 
           {/* Warning */}
-          <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-            <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-            <div className="text-sm text-red-700 dark:text-red-400">
-              <p className="font-medium mb-1">Atenção</p>
+          <div className="flex items-start gap-2 p-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-red-700 dark:text-red-400">
+              <p className="font-medium mb-0.5">Atenção</p>
               <p>
                 Saques são operações irreversíveis. Verifique cuidadosamente o endereço de destino antes de confirmar.
               </p>

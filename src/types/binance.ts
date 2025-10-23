@@ -116,10 +116,12 @@ export interface BinanceTradeHistoryItem {
   id: number;
   symbol: string;
   price: string;
-  quantity: string;
+  qty?: string; // Campo usado pela API da Binance
+  quantity?: string; // Campo alternativo
   commission: string;
   isBuyer: boolean;
-  timestamp: string;
+  time?: string; // Campo usado pela API da Binance
+  timestamp?: string; // Campo alternativo
 }
 
 export interface BinanceTradeHistoryData {

@@ -40,9 +40,10 @@ interface SidebarLinkProps {
     icon: React.ReactNode;
     label: string;
     badge?: string | number;
+    isCollapsed?: boolean;
 }
 
-const SidebarLink = ({ to, icon, label, badge }: SidebarLinkProps) => {
+const SidebarLink = ({ to, icon, label, badge, isCollapsed }: SidebarLinkProps) => {
     const location = useLocation();
     const isActive = location.pathname === to;
 
@@ -50,11 +51,13 @@ const SidebarLink = ({ to, icon, label, badge }: SidebarLinkProps) => {
         <NavLink to={to} className="w-full">
             <div
                 className={cn(
-                    "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ease-in-out relative overflow-hidden",
+                    "group flex items-center rounded-lg px-2 py-2 text-xs font-medium transition-all duration-200 ease-in-out relative overflow-hidden",
+                    isCollapsed ? "justify-center gap-0" : "gap-2",
                     isActive 
                         ? "bg-primary/10 text-primary border-r-2 border-primary shadow-sm" 
                         : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 )}
+                title={label}
             >
                 <div className={cn(
                     "flex-shrink-0 transition-transform duration-200",
@@ -62,11 +65,15 @@ const SidebarLink = ({ to, icon, label, badge }: SidebarLinkProps) => {
                 )}>
                     {icon}
                 </div>
-                <span className="flex-1">{label}</span>
-                {badge && (
-                    <span className="ml-auto bg-primary/20 text-primary text-xs px-2 py-0.5 rounded-full">
-                        {badge}
-                    </span>
+                {!isCollapsed && (
+                    <>
+                        <span className="flex-1 truncate text-xs">{label}</span>
+                        {badge && (
+                            <span className="ml-auto bg-primary/20 text-primary text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap font-semibold">
+                                {badge}
+                            </span>
+                        )}
+                    </>
                 )}
                 {isActive && (
                     <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent" />
@@ -78,6 +85,7 @@ const SidebarLink = ({ to, icon, label, badge }: SidebarLinkProps) => {
 
 export default function MainLayout() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(false);
     const { user, logout } = useAuth();
 
     // Detectar tela móvel e fechar sidebar automaticamente
@@ -94,6 +102,10 @@ export default function MainLayout() {
 
     const toggleSidebar = () => {
         setIsSidebarOpen(!isSidebarOpen);
+    };
+
+    const toggleCollapse = () => {
+        setIsCollapsed(!isCollapsed);
     };
 
     // Função para obter iniciais do usuário
@@ -115,8 +127,9 @@ export default function MainLayout() {
         <div className="flex min-h-screen w-full bg-background">
             {/* Sidebar */}
             <aside className={cn(
-                "fixed inset-y-0 left-0 z-50 w-64 transform bg-card/50 backdrop-blur-xl border-r border-border/50 transition-transform duration-300 ease-in-out md:relative md:translate-x-0",
-                isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+                "fixed inset-y-0 left-0 z-50 transform bg-card/50 backdrop-blur-xl border-r border-border/50 transition-all duration-300 ease-in-out md:relative md:translate-x-0",
+                isSidebarOpen ? "translate-x-0" : "-translate-x-full",
+                isCollapsed ? "w-20" : "w-64"
             )}>
                 {/* Overlay para mobile */}
                 {isSidebarOpen && (
@@ -128,43 +141,62 @@ export default function MainLayout() {
 
                 <div className="flex h-full flex-col relative z-50">
                     {/* Header da Sidebar */}
-                    <div className="flex items-center gap-3 border-b border-border/50 px-4 py-4">
-                        <div className="flex items-center gap-2">
-                            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                                <span className="text-primary-foreground font-bold text-sm">T</span>
+                    <div className={cn("flex items-center border-b border-border/50 py-4", isCollapsed ? "px-2" : "px-4")}>
+                        <div className={cn(
+                            "flex items-center gap-2 transition-all duration-300",
+                            isCollapsed ? "justify-center w-full" : "gap-2"
+                        )}>
+                            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center flex-shrink-0">
+                                <span className="text-primary-foreground font-bold text-xs">T</span>
                             </div>
-                            <div>
-                                <h2 className="text-sm font-semibold text-foreground">TCR Admin</h2>
-                                <p className="text-xs text-muted-foreground">Central de Gestão</p>
-                            </div>
+                            {!isCollapsed && (
+                                <div className="flex-1 min-w-0">
+                                    <h2 className="text-xs font-semibold text-foreground truncate">TCR Admin</h2>
+                                    <p className="text-[10px] text-muted-foreground truncate">Central de Gestão</p>
+                                </div>
+                            )}
                         </div>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="ml-auto h-8 w-8 md:hidden"
-                            onClick={toggleSidebar}
-                        >
-                            <X className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1 ml-auto">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 hidden md:flex"
+                                onClick={toggleCollapse}
+                                title={isCollapsed ? "Expandir menu" : "Recolher menu"}
+                            >
+                                <Menu className="h-4 w-4" />
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 md:hidden"
+                                onClick={toggleSidebar}
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
                     </div>
 
                     {/* Navegação */}
-                    <ScrollArea className="flex-1 px-3 py-4">
-                        <nav className="space-y-2">
+                    <ScrollArea className={cn("flex-1 py-4", isCollapsed ? "px-2" : "px-3")}>
+                        <nav className={cn("space-y-2", isCollapsed && "space-y-1")}>
                             {/* ========== SEÇÃO PRINCIPAL (DEPRECIADA) ========== */}
                             {/* 🚫 Dashboard removido por ser depreciado */}
                             {/* Para reativar: VITE_FEATURE_DASHBOARD=true no .env */}
                             {FEATURE_FLAGS.ENABLE_DASHBOARD && (
                                 <div className="pb-2">
-                                    <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                        Principal
-                                    </h3>
+                                    {!isCollapsed && (
+                                        <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                            Principal
+                                        </h3>
+                                    )}
                                     <div className="space-y-1">
                                         <SidebarLink
                                             to="/"
                                             icon={<LayoutDashboard className="h-4 w-4" />}
                                             label="Dashboard"
                                             badge="3"
+                                            isCollapsed={isCollapsed}
                                         />
                                     </div>
                                 </div>
@@ -172,9 +204,11 @@ export default function MainLayout() {
 
                             {/* ========== GRUPO TCR ========== */}
                             <div className="pb-2">
-                                <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Grupo TCR
-                                </h3>
+                                {!isCollapsed && (
+                                    <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                        Grupo TCR
+                                    </h3>
+                                )}
                                 <div className="space-y-1">
                                     {/* 🚫 MENUS DEPRECIADOS - Desabilitados por padrão */}
                                     {/* Para reativar: Defina as variáveis no .env */}
@@ -184,6 +218,7 @@ export default function MainLayout() {
                                             to="/extrato_tcr"
                                             icon={<CreditCard className="h-4 w-4" />}
                                             label="Extrato de Contas - TCR"
+                                            isCollapsed={isCollapsed}
                                         />
                                     )}
                                     
@@ -192,6 +227,7 @@ export default function MainLayout() {
                                             to="/compensacao-depositos"
                                             icon={<ArrowDownToLine className="h-4 w-4" />}
                                             label="Compensação de Depósitos - TCR"
+                                            isCollapsed={isCollapsed}
                                         />
                                     )}
                                     
@@ -200,6 +236,7 @@ export default function MainLayout() {
                                         to="/grupo-tcr/saldos"
                                         icon={<ListChecks className="h-4 w-4" />}
                                         label="Saldos & Conferência"
+                                        isCollapsed={isCollapsed}
                                     />
                                     
                                     {FEATURE_FLAGS.ENABLE_BMP531_TCR && (
@@ -207,6 +244,7 @@ export default function MainLayout() {
                                             to="/bmp-531"
                                             icon={<CreditCard className="h-4 w-4" />}
                                             label="BMP 531 TCR"
+                                            isCollapsed={isCollapsed}
                                         />
                                     )}
                                     
@@ -215,6 +253,7 @@ export default function MainLayout() {
                                         to="/grupo-tcr/tcr"
                                         icon={<CreditCard className="h-4 w-4" />}
                                         label="CorpX TCR"
+                                        isCollapsed={isCollapsed}
                                     />
                                     
                                     {FEATURE_FLAGS.ENABLE_CORPX_TTF_TCR && (
@@ -222,6 +261,7 @@ export default function MainLayout() {
                                             to="/grupo-tcr/corpx-ttf"
                                             icon={<CreditCard className="h-4 w-4" />}
                                             label="CorpX TTF → TCR"
+                                            isCollapsed={isCollapsed}
                                         />
                                     )}
                                     
@@ -230,54 +270,64 @@ export default function MainLayout() {
                                         to="/analise-usuario/32"
                                         icon={<UserSearch className="h-4 w-4" />}
                                         label="Análise de Usuário BRBTC"
+                                        isCollapsed={isCollapsed}
                                     />
                                 </div>
                             </div>
 
                             <div className="pb-2">
-                                <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Grupo OTC
-                                </h3>
+                                {!isCollapsed && (
+                                    <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                        Grupo OTC
+                                    </h3>
+                                )}
                                 <div className="space-y-1">
                                     <SidebarLink
                                         to="/pagamentos"
                                         icon={<CreditCard className="h-4 w-4" />}
                                         label="Gerenciador de Contas"
+                                        isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
                                         to="/cotacoes"
                                         icon={<BarChart3 className="h-4 w-4" />}
                                         label="Cotações em Tempo Real"
                                         badge="LIVE"
+                                        isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
                                         to="/bot-cotacao"
                                         icon={<Bot className="h-4 w-4" />}
                                         label="Bot de Cotação"
                                         badge="BETA"
+                                        isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
                                         to="/otc"
                                         icon={<Users className="h-4 w-4" />}
                                         label="Clientes OTC"
                                         badge="NOVO"
+                                        isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
                                         to="/otc/negociar"
                                         icon={<TrendingUp className="h-4 w-4" />}
                                         label="Negociar"
                                         badge="NOVO"
+                                        isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
                                         to="/bitso"
                                         icon={<CreditCard className="h-4 w-4" />}
                                         label="Bitso"
                                         badge="NOVO"
+                                        isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
                                         to="/corpx"
                                         icon={<CreditCard className="h-4 w-4" />}
                                         label="CORPX TTF"
+                                        isCollapsed={isCollapsed}
                                     />
                                 </div>
                             </div>
@@ -286,20 +336,25 @@ export default function MainLayout() {
 
                     {/* Footer da Sidebar */}
                     <div className="border-t border-border/50 p-4">
-                        <div className="flex items-center gap-3 text-sm">
-                            <Avatar className="h-8 w-8">
+                        <div className={cn(
+                            "flex items-center text-sm transition-all duration-300",
+                            isCollapsed ? "justify-center" : "gap-3"
+                        )}>
+                            <Avatar className="h-8 w-8 flex-shrink-0">
                                 <AvatarFallback className="bg-primary/10 text-primary">
                                     {getUserInitials(user?.name, user?.email)}
                                 </AvatarFallback>
                             </Avatar>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-foreground truncate">
-                                    {user?.name || 'Usuário'}
-                                </p>
-                                <p className="text-xs text-muted-foreground truncate">
-                                    {user?.email || 'user@email.com'}
-                                </p>
-                            </div>
+                            {!isCollapsed && (
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-foreground truncate">
+                                        {user?.name || 'Usuário'}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground truncate">
+                                        {user?.email || 'user@email.com'}
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

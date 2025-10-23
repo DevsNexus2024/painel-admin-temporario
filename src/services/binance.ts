@@ -46,6 +46,32 @@ const BINANCE_CONFIG = {
   }
 } as const;
 
+// ==================== HELPERS DE CONFIGURAÇÃO ====================
+
+/**
+ * Valida se a configuração da API está adequada
+ */
+function validateApiConfiguration(): { isValid: boolean; error?: string } {
+  if (!API_CONFIG.BASE_URL) {
+    return {
+      isValid: false,
+      error: 'API_CONFIG.BASE_URL não está configurada. Verifique as variáveis de ambiente: X_API_BASE_URL, X_API_URL_DEV ou X_API_URL_PROD.'
+    };
+  }
+
+  // Validar formato da URL
+  try {
+    new URL(API_CONFIG.BASE_URL);
+  } catch (e) {
+    return {
+      isValid: false,
+      error: `API_CONFIG.BASE_URL contém uma URL inválida: "${API_CONFIG.BASE_URL}"`
+    };
+  }
+
+  return { isValid: true };
+}
+
 // ==================== HELPERS DE AUTENTICAÇÃO ====================
 
 /**
@@ -106,7 +132,13 @@ async function checkTokenStatus(): Promise<{
 export async function calcularCotacaoBinance(dados: BinanceQuoteRequest): Promise<BinanceQuoteResponse | null> {
   try {
     logger.debug('[BINANCE-QUOTE] Calculando cotação...', dados);
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
     
@@ -147,8 +179,13 @@ export async function calcularCotacaoBinance(dados: BinanceQuoteRequest): Promis
     
     return responseData as BinanceQuoteResponse;
     
-  } catch (error) {
-    logger.error('[BINANCE-QUOTE] Erro ao calcular cotação:', error);
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-QUOTE] Erro ao calcular cotação:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
@@ -160,7 +197,13 @@ export async function calcularCotacaoBinance(dados: BinanceQuoteRequest): Promis
 export async function executarTradeBinance(dados: BinanceExecuteTradeRequest): Promise<BinanceTradeResponse | null> {
   try {
     logger.debug('[BINANCE-TRADE] Executando trade...', dados);
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
     
@@ -201,8 +244,13 @@ export async function executarTradeBinance(dados: BinanceExecuteTradeRequest): P
     
     return responseData as BinanceTradeResponse;
     
-  } catch (error) {
-    logger.error('[BINANCE-TRADE] Erro ao executar trade:', error);
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-TRADE] Erro ao executar trade:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
@@ -214,7 +262,13 @@ export async function executarTradeBinance(dados: BinanceExecuteTradeRequest): P
 export async function consultarStatusOrdemBinance(orderId: number, symbol: string = 'USDTBRL'): Promise<BinanceOrderStatusResponse | null> {
   try {
     logger.debug('[BINANCE-ORDER-STATUS] Consultando status...', { orderId, symbol });
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
     
@@ -254,8 +308,13 @@ export async function consultarStatusOrdemBinance(orderId: number, symbol: strin
     
     return responseData as BinanceOrderStatusResponse;
     
-  } catch (error) {
-    logger.error('[BINANCE-ORDER-STATUS] Erro ao consultar status:', error);
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-ORDER-STATUS] Erro ao consultar status:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
@@ -267,7 +326,13 @@ export async function consultarStatusOrdemBinance(orderId: number, symbol: strin
 export async function cancelarOrdemBinance(orderId: number, symbol: string = 'USDTBRL'): Promise<BinanceOrderStatusResponse | null> {
   try {
     logger.debug('[BINANCE-ORDER-CANCEL] Cancelando ordem...', { orderId, symbol });
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
     
@@ -307,8 +372,13 @@ export async function cancelarOrdemBinance(orderId: number, symbol: string = 'US
     
     return responseData as BinanceOrderStatusResponse;
     
-  } catch (error) {
-    logger.error('[BINANCE-ORDER-CANCEL] Erro ao cancelar ordem:', error);
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-ORDER-CANCEL] Erro ao cancelar ordem:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
@@ -320,48 +390,59 @@ export async function cancelarOrdemBinance(orderId: number, symbol: string = 'US
 export async function consultarHistoricoTradesBinance(symbol: string = 'USDTBRL', limit: number = 500): Promise<BinanceTradeHistoryResponse | null> {
   try {
     logger.debug('[BINANCE-TRADE-HISTORY] Consultando histórico...', { symbol, limit });
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
-    
+
     if (!tokenStatus.isValid) {
       throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
     }
-    
+
     // Obter token JWT
     const userToken = TOKEN_STORAGE.get();
-    
+
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
-    
+
     const requestUrl = `${API_CONFIG.BASE_URL}${BINANCE_CONFIG.endpoints.historicoTrades}?symbol=${symbol}&limit=${limit}`;
     const requestHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'Authorization': `Bearer ${userToken}`
     };
-    
+
     logger.debug('[BINANCE-TRADE-HISTORY] Request URL:', requestUrl);
-    
+
     const response = await fetch(requestUrl, {
       method: 'GET',
       headers: requestHeaders
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       logger.error('[BINANCE-TRADE-HISTORY] Erro HTTP:', { status: response.status, error: errorText });
       throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
     }
-    
+
     const responseData = await response.json();
     logger.debug('[BINANCE-TRADE-HISTORY] Resposta recebida:', responseData);
-    
+
     return responseData as BinanceTradeHistoryResponse;
-    
-  } catch (error) {
-    logger.error('[BINANCE-TRADE-HISTORY] Erro ao consultar histórico:', error);
+
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-TRADE-HISTORY] Erro ao consultar histórico:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
@@ -375,48 +456,59 @@ export async function consultarHistoricoTradesBinance(symbol: string = 'USDTBRL'
 export async function consultarSaldosBinance(): Promise<BinanceSpotBalancesResponse | null> {
   try {
     logger.debug('[BINANCE-BALANCES] Consultando saldos...');
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
-    
+
     if (!tokenStatus.isValid) {
       throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
     }
-    
+
     // Obter token JWT
     const userToken = TOKEN_STORAGE.get();
-    
+
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
-    
+
     const requestUrl = `${API_CONFIG.BASE_URL}${BINANCE_CONFIG.endpoints.saldos}`;
     const requestHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'Authorization': `Bearer ${userToken}`
     };
-    
+
     logger.debug('[BINANCE-BALANCES] Request URL:', requestUrl);
-    
+
     const response = await fetch(requestUrl, {
       method: 'GET',
       headers: requestHeaders
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       logger.error('[BINANCE-BALANCES] Erro HTTP:', { status: response.status, error: errorText });
       throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
     }
-    
+
     const responseData = await response.json();
     logger.debug('[BINANCE-BALANCES] Resposta recebida:', responseData);
-    
+
     return responseData as BinanceSpotBalancesResponse;
-    
-  } catch (error) {
-    logger.error('[BINANCE-BALANCES] Erro ao consultar saldos:', error);
+
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-BALANCES] Erro ao consultar saldos:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
@@ -428,7 +520,13 @@ export async function consultarSaldosBinance(): Promise<BinanceSpotBalancesRespo
 export async function consultarHistoricoSaquesBinance(coin?: string, status?: number): Promise<BinanceWithdrawalHistoryResponse | null> {
   try {
     logger.debug('[BINANCE-WITHDRAWAL-HISTORY] Consultando histórico de saques...', { coin, status });
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
     
@@ -472,8 +570,13 @@ export async function consultarHistoricoSaquesBinance(coin?: string, status?: nu
     
     return responseData as BinanceWithdrawalHistoryResponse;
     
-  } catch (error) {
-    logger.error('[BINANCE-WITHDRAWAL-HISTORY] Erro ao consultar histórico de saques:', error);
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-WITHDRAWAL-HISTORY] Erro ao consultar histórico de saques:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
@@ -485,7 +588,13 @@ export async function consultarHistoricoSaquesBinance(coin?: string, status?: nu
 export async function criarSaqueBinance(dados: BinanceWithdrawalRequest): Promise<BinanceWithdrawalResponse | null> {
   try {
     logger.debug('[BINANCE-WITHDRAWAL] Criando saque...', dados);
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
     
@@ -526,8 +635,13 @@ export async function criarSaqueBinance(dados: BinanceWithdrawalRequest): Promis
     
     return responseData as BinanceWithdrawalResponse;
     
-  } catch (error) {
-    logger.error('[BINANCE-WITHDRAWAL] Erro ao criar saque:', error);
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-WITHDRAWAL] Erro ao criar saque:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
@@ -539,7 +653,13 @@ export async function criarSaqueBinance(dados: BinanceWithdrawalRequest): Promis
 export async function listarEnderecosSaqueBinance(): Promise<BinanceWithdrawalAddressesResponse | null> {
   try {
     logger.debug('[BINANCE-ADDRESSES] Listando endereços de saque...');
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
     
@@ -579,8 +699,13 @@ export async function listarEnderecosSaqueBinance(): Promise<BinanceWithdrawalAd
     
     return responseData as BinanceWithdrawalAddressesResponse;
     
-  } catch (error) {
-    logger.error('[BINANCE-ADDRESSES] Erro ao listar endereços:', error);
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-ADDRESSES] Erro ao listar endereços:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
@@ -592,7 +717,13 @@ export async function listarEnderecosSaqueBinance(): Promise<BinanceWithdrawalAd
 export async function listarEnderecosDepositoBinance(coin?: string, network?: string): Promise<BinanceDepositAddressesResponse | null> {
   try {
     logger.debug('[BINANCE-DEPOSIT-ADDRESSES] Listando endereços de depósito...', { coin, network });
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
     
@@ -636,8 +767,13 @@ export async function listarEnderecosDepositoBinance(coin?: string, network?: st
     
     return responseData as BinanceDepositAddressesResponse;
     
-  } catch (error) {
-    logger.error('[BINANCE-DEPOSIT-ADDRESSES] Erro ao listar endereços de depósito:', error);
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-DEPOSIT-ADDRESSES] Erro ao listar endereços de depósito:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
@@ -649,7 +785,13 @@ export async function listarEnderecosDepositoBinance(coin?: string, network?: st
 export async function consultarHistoricoDepositosBinance(coin?: string, status?: number): Promise<BinanceDepositHistoryResponse | null> {
   try {
     logger.debug('[BINANCE-DEPOSIT-HISTORY] Consultando histórico de depósitos...', { coin, status });
-    
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
     // Verificar status do token
     const tokenStatus = await checkTokenStatus();
     
@@ -693,9 +835,13 @@ export async function consultarHistoricoDepositosBinance(coin?: string, status?:
     
     return responseData as BinanceDepositHistoryResponse;
     
-  } catch (error) {
-    logger.error('[BINANCE-DEPOSIT-HISTORY] Erro ao consultar histórico de depósitos:', error);
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-DEPOSIT-HISTORY] Erro ao consultar histórico de depósitos:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
     return null;
   }
 }
-

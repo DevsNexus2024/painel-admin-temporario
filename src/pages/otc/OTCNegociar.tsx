@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Search, Edit, Loader2 } from 'lucide-react';
+import { TrendingUp, Search, Edit, Loader2, Wallet, Zap, ArrowUpDown, RefreshCw, Save } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,6 +60,9 @@ const OTCNegociar: React.FC = () => {
   const [quantity, setQuantity] = useState('');
   const [total, setTotal] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [countdown, setCountdown] = useState(0);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
   
   // Modal states
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
@@ -78,14 +81,6 @@ const OTCNegociar: React.FC = () => {
   const availableBalance = brlBalance
     ? `R$${parseFloat(brlBalance.free).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : 'R$0,00';
-  
-  const creditUSDT = usdtBalance && parseFloat(usdtBalance.locked) > 0
-    ? `${parseFloat(usdtBalance.locked).toLocaleString('pt-BR', { minimumFractionDigits: 8, maximumFractionDigits: 8 })} USDT`
-    : '0.00000000 USDT';
-  
-  const credit = brlBalance && parseFloat(brlBalance.locked) > 0
-    ? `R$${parseFloat(brlBalance.locked).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    : 'R$0,00';
 
   // ==================== EFFECTS ====================
   
@@ -94,6 +89,33 @@ const OTCNegociar: React.FC = () => {
     carregarSaldos();
     carregarHistorico('USDTBRL', 500);
   }, [carregarSaldos, carregarHistorico]);
+
+  // Countdown timer
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => {
+        setCountdown(countdown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
+
+  // Preencher automaticamente o campo não preenchido quando a cotação chegar
+  useEffect(() => {
+    if (quote && countdown === 5) {
+      const quantityValue = parseFloat(quantity.replace(/[^0-9.-]+/g, ''));
+      const totalValue = parseFloat(total.replace(/[^0-9.-]+/g, ''));
+      
+      if (quantityValue > 0 && !totalValue) {
+        // Se preencheu quantidade em USDT, preencher total em BRL
+        setTotal(quote.outputAmount.toFixed(4));
+      } else if (totalValue > 0 && !quantityValue) {
+        // Se preencheu total em BRL, preencher quantidade em USDT
+        setQuantity(quote.outputAmount.toFixed(8));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quote, countdown]);
 
   // ==================== HANDLERS ====================
 
@@ -118,6 +140,9 @@ const OTCNegociar: React.FC = () => {
       alert('Por favor, informe um valor válido em USDT ou BRL');
       return;
     }
+
+    // Iniciar countdown de 10 segundos
+    setCountdown(10);
   };
 
   /**
@@ -148,26 +173,13 @@ const OTCNegociar: React.FC = () => {
   };
 
   /**
-   * Solicitar nova cotação
+   * Limpar cotação atual e voltar ao estado inicial
    */
-  const handleSolicitarNovaCotacao = async () => {
-    const symbol = getSymbolFromCurrency(selectedCurrency);
-    const side = operationType === 'buy' ? 'BUY' : 'SELL';
-    
-    // Verificar qual campo foi preenchido
-    const quantityValue = parseFloat(quantity.replace(/[^0-9.-]+/g, ''));
-    const totalValue = parseFloat(total.replace(/[^0-9.-]+/g, ''));
-    
-    if (quantityValue > 0) {
-      // Enviar USDT
-      await solicitarCotacao(quantityValue, 'USDT', symbol, side);
-    } else if (totalValue > 0) {
-      // Enviar BRL
-      await solicitarCotacao(totalValue, 'BRL', symbol, side);
-    } else {
-      alert('Por favor, informe um valor válido em USDT ou BRL');
-      return;
-    }
+  const handleLimparCotacao = () => {
+    setCountdown(0);
+    // Limpar todos os campos para voltar ao estado inicial
+    setQuantity('');
+    setTotal('');
   };
 
   /**
@@ -197,9 +209,11 @@ const OTCNegociar: React.FC = () => {
    * Handler para mudança no campo Quantidade (USDT)
    */
   const handleQuantityChange = (value: string) => {
-    setQuantity(value);
+    // Aceitar apenas números e ponto decimal
+    const numericValue = value.replace(/[^0-9.]/g, '');
+    setQuantity(numericValue);
     // Limpar campo Total quando quantidade é editada
-    if (value) {
+    if (numericValue) {
       setTotal('');
     }
   };
@@ -208,9 +222,11 @@ const OTCNegociar: React.FC = () => {
    * Handler para mudança no campo Total (BRL)
    */
   const handleTotalChange = (value: string) => {
-    setTotal(value);
+    // Aceitar apenas números e ponto decimal
+    const numericValue = value.replace(/[^0-9.]/g, '');
+    setTotal(numericValue);
     // Limpar campo Quantity quando total é editado
-    if (value) {
+    if (numericValue) {
       setQuantity('');
     }
   };
@@ -227,6 +243,17 @@ const OTCNegociar: React.FC = () => {
         setQuantity('');
       }
     }
+  };
+
+  /**
+   * Handler para salvar anotação
+   */
+  const handleSaveNote = (transactionId: string, noteValue: string) => {
+    setNotes((prev) => ({
+      ...prev,
+      [transactionId]: noteValue,
+    }));
+    setEditingNoteId(null);
   };
 
   // ==================== HELPERS ====================
@@ -266,18 +293,25 @@ const OTCNegociar: React.FC = () => {
    * Converter histórico da Binance para formato de Transaction
    */
   const converterHistorico = (): BinanceTransaction[] => {
-    return historico.map((item) => ({
-      id: `O${item.id}`,
-      type: item.isBuyer ? 'Compra' : 'Venda',
-      currency: item.symbol.replace('BRL', '').replace('USDT', 'USDT'),
-      quote: parseFloat(item.price),
-      quantity: parseFloat(item.quantity),
-      total: parseFloat(item.price) * parseFloat(item.quantity),
-      date: formatDate(item.timestamp),
-      status: 'Executada' as const,
-      note: '',
-      orderId: item.id,
-    }));
+    return historico.map((item) => {
+      // A API da Binance retorna 'qty' ao invés de 'quantity' e 'time' ao invés de 'timestamp'
+      const price = parseFloat(item.price) || 0;
+      const qty = parseFloat((item as any).qty || (item as any).quantity) || 0;
+      const tot = price * qty;
+      
+      return {
+        id: `O${item.id}`,
+        type: item.isBuyer ? 'Compra' : 'Venda',
+        currency: item.symbol.replace('BRL', '').replace('USDT', 'USDT'),
+        quote: price,
+        quantity: qty,
+        total: tot,
+        date: formatDate((item as any).time || (item as any).timestamp),
+        status: 'Executada' as const,
+        note: notes[`O${item.id}`] || '',
+        orderId: item.id,
+      };
+    });
   };
 
   /**
@@ -306,114 +340,109 @@ const OTCNegociar: React.FC = () => {
   );
 
   return (
-    <div className="p-4 sm:p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-4 bg-gradient-to-br from-background via-background to-muted/20 min-h-screen">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground flex items-center gap-2">
-            <TrendingUp className="w-7 h-7 text-primary" />
-            OTC - Negociar
+            <div className="p-1.5 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
+              <TrendingUp className="w-5 h-5 text-white" />
+            </div>
+            OTC Trading
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            <span className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-              </span>
-              {new Date().toLocaleTimeString('pt-BR')} - Binance Connected
+          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
             </span>
+            Binance Connected • {new Date().toLocaleTimeString('pt-BR')}
           </p>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            carregarSaldos();
+            carregarHistorico('USDTBRL', 500);
+          }}
+          className="gap-2 h-8 text-xs"
+        >
+          <RefreshCw className="w-3 h-3" />
+          Atualizar
+        </Button>
       </div>
 
       {/* Grid Principal */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* Coluna Esquerda - Área de Negociação */}
-        <div className="flex flex-col gap-6">
-          {/* Cards de Saldo e Crédito */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm text-muted-foreground font-medium">
-                  Saldo disponível
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {balancesLoading ? (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Carregando...</span>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <p className="text-2xl font-bold text-foreground">
+        <div className="flex flex-col gap-4">
+          {/* Card de Saldo */}
+          <Card className="hover:shadow-xl transition-all duration-300 border-2">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs text-muted-foreground font-medium flex items-center gap-2">
+                <Wallet className="w-3 h-3" />
+                Saldo Total Disponível
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {balancesLoading ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-xs text-muted-foreground">Carregando saldos...</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-end gap-2">
+                    <p className="text-3xl font-bold text-foreground">
                       {availableBalance}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                  </div>
+                  <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                    <p className="text-xs font-mono text-muted-foreground">
                       {availableBalanceUSDT}
                     </p>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm text-muted-foreground font-medium">
-                  Crédito
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {balancesLoading ? (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Carregando...</span>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <p className="text-2xl font-bold text-foreground">{credit}</p>
-                    <p className="text-xs text-muted-foreground">{creditUSDT}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Card de Negociação */}
-          <Card className="hover:shadow-lg transition-shadow flex-1 flex flex-col">
-            <CardContent className="pt-6 flex-1 flex flex-col gap-5">
+          {/* Card de Negocia��ão */}
+          <Card className="hover:shadow-xl transition-all duration-300 flex-1 flex flex-col border-2">
+            <CardHeader className="border-b">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <ArrowUpDown className="w-4 h-4 text-primary" />
+                Nova Operação
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4 flex-1 flex flex-col gap-4">
               {/* Seleção de Moeda */}
               <div className="flex-1">
-                <label className="text-sm font-medium text-foreground mb-3 block">
-                  Moeda selecionada
+                <label className="text-xs font-semibold text-foreground mb-2 block flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                  Par de Negociação
                 </label>
                 <Select value={selectedCurrency} onValueChange={setSelectedCurrency}>
-                  <SelectTrigger className="w-full bg-muted/50 h-12">
+                  <SelectTrigger className="w-full bg-muted/80 h-10 border-2 hover:border-primary/50 transition-colors">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="USDT/BRL">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center">
-                          <span className="text-xs font-bold text-green-500">₮</span>
-                        </div>
-                        USDT/BRL
+                        <img src="/usdt_logo.png" alt="USDT" className="w-6 h-6" />
+                        <span className="font-semibold text-sm">USDT/BRL</span>
                       </div>
                     </SelectItem>
                     <SelectItem value="BTC/BRL">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-orange-500/10 flex items-center justify-center">
-                          <span className="text-xs font-bold text-orange-500">₿</span>
-                        </div>
-                        BTC/BRL
+                        <img src="/btc_logo.png" alt="BTC" className="w-6 h-6" />
+                        <span className="font-semibold text-sm">BTC/BRL</span>
                       </div>
                     </SelectItem>
                     <SelectItem value="ETH/BRL">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-blue-500/10 flex items-center justify-center">
-                          <span className="text-xs font-bold text-blue-500">Ξ</span>
-                        </div>
-                        ETH/BRL
+                        <img src="/eth_logo.png" alt="ETH" className="w-6 h-6" />
+                        <span className="font-semibold text-sm">ETH/BRL</span>
                       </div>
                     </SelectItem>
                   </SelectContent>
@@ -421,48 +450,50 @@ const OTCNegociar: React.FC = () => {
               </div>
 
               {/* Botões Comprar/Vender */}
-              <div className="grid grid-cols-2 gap-4 flex-1">
+              <div className="grid grid-cols-2 gap-3 flex-1">
                 <Button
                   size="lg"
-                  className={`h-14 text-lg font-semibold ${
+                  className={`h-10 text-sm font-bold transition-all duration-300 ${
                     operationType === 'buy'
-                      ? 'bg-blue-600 hover:bg-blue-700'
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
                       : 'bg-muted hover:bg-muted/80 text-muted-foreground'
                   }`}
                   onClick={() => setOperationType('buy')}
                 >
-                  Comprar
+                  ↑ Comprar
                 </Button>
                 <Button
                   size="lg"
-                  className={`h-14 text-lg font-semibold ${
+                  className={`h-10 text-sm font-bold transition-all duration-300 ${
                     operationType === 'sell'
-                      ? 'bg-orange-600 hover:bg-orange-700'
+                      ? 'bg-orange-600 hover:bg-orange-700 text-white'
                       : 'bg-muted hover:bg-muted/80 text-muted-foreground'
                   }`}
                   onClick={() => setOperationType('sell')}
                 >
-                  Vender
+                  ↓ Vender
                 </Button>
               </div>
 
               {/* Quantidade */}
               <div className="flex-1">
-                <label className="text-sm font-medium text-foreground mb-3 block">
+                <label className="text-xs font-semibold text-foreground mb-2 block flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
                   Quantidade (USDT)
                 </label>
                 <Input
                   type="text"
                   value={quantity}
                   onChange={(e) => handleQuantityChange(e.target.value)}
-                  className="bg-muted/50 text-xl h-14"
+                  className="bg-muted/80 text-base h-10 border-2 border-transparent hover:border-primary/30 focus:border-primary transition-colors font-semibold"
                   placeholder="0.0000"
                 />
               </div>
 
               {/* Total */}
               <div className="flex-1">
-                <label className="text-sm font-medium text-foreground mb-3 block">
+                <label className="text-xs font-semibold text-foreground mb-2 block flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
                   Total (BRL)
                 </label>
                 <div className="relative">
@@ -470,14 +501,14 @@ const OTCNegociar: React.FC = () => {
                     type="text"
                     value={total}
                     onChange={(e) => handleTotalChange(e.target.value)}
-                    className="bg-muted/50 text-xl h-14 pr-20"
+                    className="bg-muted/80 text-base h-10 pr-14 border-2 border-transparent hover:border-primary/30 focus:border-primary transition-colors font-semibold"
                     placeholder="0.0000"
                   />
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={handleMaxAmount}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-500 hover:text-blue-600 h-10 px-4 text-base font-semibold"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950 h-7 px-2 text-xs font-bold"
                   >
                     MAX
                   </Button>
@@ -488,17 +519,20 @@ const OTCNegociar: React.FC = () => {
               <div className="pt-2">
                 <Button
                   size="lg"
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-xl font-semibold h-16"
+                  className="w-full bg-primary hover:bg-primary/90 text-sm font-bold h-10"
                   onClick={handleSolicitarCotacao}
                   disabled={quoteLoading}
                 >
                   {quoteLoading ? (
                     <>
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      <Loader2 className="w-3 h-3 mr-2 animate-spin" />
                       Calculando...
                     </>
                   ) : (
-                    'Solicitar cotação'
+                    <>
+                      <Zap className="w-3 h-3 mr-2" />
+                      Solicitar Cotação
+                    </>
                   )}
                 </Button>
               </div>
@@ -507,26 +541,25 @@ const OTCNegociar: React.FC = () => {
         </div>
 
         {/* Coluna Direita - Cotação Atual e Saque */}
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Card de Cotação */}
-          <Card className="hover:shadow-lg transition-shadow sticky top-6">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold flex items-center justify-between">
-                Cotação para {operationType === 'buy' ? 'Comprar' : 'Vender'}
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-green-500" />
-                </div>
+          <Card className="hover:shadow-xl transition-all duration-300 sticky top-6 border-2">
+            <CardHeader className="border-b">
+              <CardTitle className="text-base font-bold flex items-center justify-between text-foreground">
+                <span className="flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  Cotação para {operationType === 'buy' ? 'Comprar' : 'Vender'}
+                </span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4">
               {quote ? (
                 <>
-                  <div className="text-center space-y-4">
-                    <div className="p-6 bg-primary/5 rounded-lg border border-primary/20">
-                      <p className="text-3xl font-bold text-primary">
+                  <div className="text-center space-y-3">
+                    <div className="px-5 rounded-xl mt-3">
+                      <p className="text-[32px] font-medium text-foreground">
                         R$ {quote.averagePrice.toFixed(4)}
                       </p>
-                      <p className="text-sm text-muted-foreground mt-1">Preço Médio</p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 text-left">
@@ -559,68 +592,75 @@ const OTCNegociar: React.FC = () => {
                     </div>
                   </div>
 
-                  <Button
-                    className="w-full bg-green-600 hover:bg-green-700 text-lg font-semibold h-12"
-                    onClick={handleExecutarTrade}
-                    disabled={tradeLoading}
-                  >
-                    {tradeLoading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        Executando...
-                      </>
-                    ) : (
-                      'Executar Trade'
-                    )}
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleSolicitarNovaCotacao}
-                    disabled={quoteLoading}
-                  >
-                    {quoteLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Calculando...
-                      </>
-                    ) : (
-                      'Solicitar nova cotação'
-                    )}
-                  </Button>
+                  {countdown > 0 ? (
+                    <Button
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-sm font-bold h-10 text-white"
+                      onClick={handleExecutarTrade}
+                      disabled={tradeLoading}
+                    >
+                      {tradeLoading ? (
+                        <>
+                          <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                          Executando...
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-3 h-3 mr-2" />
+                          Executar Trade ({countdown}s)
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleLimparCotacao}
+                    >
+                      Solicitar Nova Cotação
+                    </Button>
+                  )}
                 </>
               ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>Nenhuma cotação disponível</p>
-                  <p className="text-sm mt-2">Clique em "Solicitar cotação" para obter uma cotação</p>
+                <div className="text-center py-6">
+                  <div className="w-12 h-12 mx-auto rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-3">
+                    <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <p className="text-foreground font-semibold text-sm">Nenhuma cotação disponível</p>
+                  <p className="text-xs text-muted-foreground mt-1">Clique em "Solicitar cotação" para obter uma cotação</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
           {/* Card de Saque para Wallets */}
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold flex items-center justify-between">
-                Saque para Wallets
-                <div className="w-8 h-8 rounded-full bg-orange-500/10 flex items-center justify-center">
-                  <span className="text-orange-500 text-xs">₿</span>
+          <Card className="hover:shadow-xl transition-all duration-300 border-2">
+            <CardHeader className="border-b">
+              <CardTitle className="text-base font-bold flex items-center justify-between text-foreground">
+                <span className="flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                  Saque para Wallets
+                </span>
+                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                  <span className="text-orange-600 dark:text-orange-400 text-xs font-bold">₿</span>
                 </div>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="text-center py-8 text-muted-foreground">
-                <p>Solicite saques para suas wallets</p>
-                <p className="text-sm mt-2">Suporte para USDT, BTC e ETH</p>
+            <CardContent className="space-y-3 pt-4">
+              <div className="text-center py-4">
+                <div className="w-12 h-12 mx-auto rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center mb-3">
+                  <Wallet className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                </div>
+                <p className="font-semibold text-foreground text-sm">Transferências para Wallets</p>
+                <p className="text-xs text-muted-foreground mt-1">Suporte para USDT, BTC e ETH</p>
               </div>
 
               {/* Botão de Saque */}
               <Button
                 size="lg"
-                className="w-full bg-orange-600 hover:bg-orange-700 text-base font-semibold"
+                className="w-full bg-orange-600 hover:bg-orange-700 text-xs font-bold h-10 text-white"
                 onClick={() => setShowWithdrawalModal(true)}
               >
+                <Wallet className="w-3 h-3 mr-2" />
                 Solicitar Saque
               </Button>
             </CardContent>
@@ -628,96 +668,137 @@ const OTCNegociar: React.FC = () => {
         </div>
       </div>
 
-      {/* Histórico de Transações */}
-      <Card className="hover:shadow-lg transition-shadow">
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <CardTitle className="text-xl font-semibold">Histórico</CardTitle>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      {/* Histórico de Transa��ões */}
+      <Card className="hover:shadow-xl transition-all duration-300 border-2">
+        <CardHeader className="border-b bg-gradient-to-r from-muted/50 to-transparent">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <CardTitle className="text-xl font-bold flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-primary/10">
+                <TrendingUp className="w-4 h-4 text-primary" />
+              </div>
+              Histórico de Operações
+            </CardTitle>
+            <div className="relative w-full sm:w-56">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
               <Input
-                placeholder="Pesquisar..."
+                placeholder="Pesquisar transações..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 bg-muted/50"
+                className="pl-7 bg-muted/80 border-2 hover:border-primary/30 focus:border-primary transition-colors text-sm h-9"
               />
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {historicoLoading ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-12 px-6">
               <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
           ) : filteredTransactions.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
+            <div className="text-center py-12 px-6 text-muted-foreground">
               <p>Nenhuma transação encontrada</p>
             </div>
           ) : (
             <>
               <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-24">ID</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Moeda</TableHead>
-                      <TableHead className="text-right">Cotação</TableHead>
-                      <TableHead className="text-right">Quantidade</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead>Data</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-center">Anotação</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredTransactions.map((transaction) => (
-                      <TableRow key={transaction.id} className="hover:bg-muted/50">
-                        <TableCell className="font-medium text-primary">
-                          #{transaction.id}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              transaction.type === 'Compra'
-                                ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
-                                : 'bg-orange-500/10 text-orange-500 border-orange-500/20'
-                            }
-                          >
-                            {transaction.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-medium">{transaction.currency}</TableCell>
-                        <TableCell className="text-right font-mono">
-                          R${transaction.quote.toFixed(4)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {transaction.quantity.toLocaleString('pt-BR', {
-                            minimumFractionDigits: 8,
-                            maximumFractionDigits: 8,
-                          })}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          R${transaction.total.toLocaleString('pt-BR', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                          {transaction.date}
-                        </TableCell>
-                        <TableCell>{getStatusBadge(transaction.status)}</TableCell>
-                        <TableCell className="text-center">
-                          {transaction.note ? (
-                            <div className="flex items-center justify-center gap-2">
-                              <span className="text-sm font-medium">{transaction.note}</span>
-                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
-                                <Edit className="h-3 w-3" />
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="h-8">
+                        <TableHead className="w-16 text-xs px-4">ID</TableHead>
+                        <TableHead className="text-xs px-4">Tipo</TableHead>
+                        <TableHead className="text-xs px-4">Moeda</TableHead>
+                        <TableHead className="text-right text-xs px-4">Cotação</TableHead>
+                        <TableHead className="text-right text-xs px-4">Quantidade</TableHead>
+                        <TableHead className="text-right text-xs px-4">Total</TableHead>
+                        <TableHead className="text-xs px-4">Data</TableHead>
+                        <TableHead className="text-xs px-4">Status</TableHead>
+                        <TableHead className="text-center text-xs w-48 px-4">Anotação</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredTransactions.map((transaction) => (
+                        <TableRow key={transaction.id} className="hover:bg-muted/50 h-8">
+                          <TableCell className="font-medium text-primary text-xs px-4">
+                            #{transaction.id}
+                          </TableCell>
+                          <TableCell className="px-4">
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] ${
+                                transaction.type === 'Compra'
+                                  ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                                  : 'bg-orange-500/10 text-orange-500 border-orange-500/20'
+                              }`}
+                            >
+                              {transaction.type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium text-xs px-4">{transaction.currency}</TableCell>
+                          <TableCell className="text-right font-mono text-xs px-4">
+                            R${transaction.quote.toFixed(4)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-[10px] px-4">
+                            {transaction.quantity.toLocaleString('pt-BR', {
+                              minimumFractionDigits: 8,
+                              maximumFractionDigits: 8,
+                            })}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold text-xs px-4">
+                            R${transaction.total.toLocaleString('pt-BR', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap px-4">
+                            {transaction.date}
+                          </TableCell>
+                          <TableCell className="text-xs px-4">{getStatusBadge(transaction.status)}</TableCell>
+                        <TableCell className="text-center w-48">
+                          {editingNoteId === transaction.id ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <Input
+                                type="text"
+                                defaultValue={transaction.note}
+                                className="h-7 text-xs w-full"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleSaveNote(transaction.id, e.currentTarget.value);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingNoteId(null);
+                                  }
+                                }}
+                              />
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 flex-shrink-0"
+                                onClick={(e) => {
+                                  const input = e.currentTarget.parentElement?.querySelector('input') as HTMLInputElement;
+                                  if (input) {
+                                    handleSaveNote(transaction.id, input.value);
+                                  }
+                                }}
+                              >
+                                <Save className="h-3 w-3" />
                               </Button>
                             </div>
                           ) : (
-                            <span className="text-muted-foreground">-</span>
+                            <div className="flex items-center justify-center gap-1">
+                              {transaction.note ? (
+                                <span className="text-xs font-medium truncate max-w-[180px]">{transaction.note}</span>
+                              ) : (
+                                <span className="text-muted-foreground text-xs">-</span>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 flex-shrink-0"
+                                onClick={() => setEditingNoteId(transaction.id)}
+                              >
+                                <Edit className="h-2.5 w-2.5" />
+                              </Button>
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
@@ -736,6 +817,7 @@ const OTCNegociar: React.FC = () => {
         onClose={() => setShowWithdrawalModal(false)}
         onConfirm={handleSolicitarSaque}
         loading={withdrawalLoading}
+        balances={balances}
       />
     </div>
   );
