@@ -12,6 +12,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import {
   Table,
   TableBody,
   TableCell,
@@ -22,8 +35,13 @@ import {
 import { useBinanceTrade } from '@/hooks/useBinanceTrade';
 import { useBinanceWithdrawal } from '@/hooks/useBinanceWithdrawal';
 import { useBinanceBalances } from '@/hooks/useBinanceBalances';
+import { useOTCClients, useOTCClient } from '@/hooks/useOTCClients';
 import { BinanceWithdrawalModal } from '@/components/otc/BinanceWithdrawalModal';
+import { TradeConfirmationModal } from '@/components/otc/TradeConfirmationModal';
+import { getBinanceConfigs, createBinanceTransaction } from '@/services/otc-binance';
+import { toastError, toastSuccess } from '@/utils/toast';
 import type { BinanceTransaction } from '@/types/binance';
+import type { OTCClient } from '@/types/otc';
 
 const OTCNegociar: React.FC = () => {
   // ==================== TRADING HOOKS ====================
@@ -37,6 +55,7 @@ const OTCNegociar: React.FC = () => {
     carregarHistorico,
     historico,
     historicoLoading,
+    resetarEstado,
   } = useBinanceTrade();
 
   // ==================== WITHDRAWAL HOOKS ====================
@@ -56,7 +75,20 @@ const OTCNegociar: React.FC = () => {
 
   // ==================== TRADING STATE ====================
   const [operationType, setOperationType] = useState<'buy' | 'sell'>('buy');
+  const [selectedClient, setSelectedClient] = useState<string>('');
   const [selectedCurrency, setSelectedCurrency] = useState('USDT/BRL');
+
+  // ==================== OTC CLIENTS HOOKS ====================
+  const {
+    clients,
+    isLoading: clientsLoading,
+  } = useOTCClients({ is_active: true });
+
+  // Buscar cliente específico quando selecionado
+  const { client: selectedClientData } = useOTCClient(
+    selectedClient ? parseInt(selectedClient) : 0
+  );
+
   const [quantity, setQuantity] = useState('');
   const [total, setTotal] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,6 +98,11 @@ const OTCNegociar: React.FC = () => {
   
   // Modal states
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [clientPopoverOpen, setClientPopoverOpen] = useState(false);
+  
+  // Binance config
+  const [binanceConfig, setBinanceConfig] = useState<{ fee: number; id: number } | null>(null);
 
   // ==================== SALDOS REAIS ====================
   
@@ -88,6 +125,16 @@ const OTCNegociar: React.FC = () => {
   useEffect(() => {
     carregarSaldos();
     carregarHistorico('USDTBRL', 500);
+    
+    // Buscar configuração Binance
+    getBinanceConfigs().then((configs) => {
+      if (configs.length > 0) {
+        setBinanceConfig({
+          fee: configs[0].fee * 100, // Converter de decimal para porcentagem
+          id: configs[0].id,
+        });
+      }
+    });
   }, [carregarSaldos, carregarHistorico]);
 
   // Countdown timer
@@ -137,7 +184,7 @@ const OTCNegociar: React.FC = () => {
       // Enviar BRL
       await solicitarCotacao(totalValue, 'BRL', symbol, side);
     } else {
-      alert('Por favor, informe um valor válido em USDT ou BRL');
+      toastError('Valor inválido', 'Por favor, informe um valor válido em USDT ou BRL');
       return;
     }
 
@@ -150,7 +197,25 @@ const OTCNegociar: React.FC = () => {
    */
   const handleExecutarTrade = async () => {
     if (!quote) {
-      alert('Por favor, solicite uma cotação primeiro');
+      toastError('Cotação não encontrada', 'Por favor, solicite uma cotação primeiro');
+      return;
+    }
+
+    // Validar se cliente foi selecionado
+    if (!selectedClient) {
+      toastError('Cliente não selecionado', 'Por favor, selecione um cliente antes de executar o trade');
+      return;
+    }
+
+    // Abrir modal de confirmação
+    setShowConfirmationModal(true);
+  };
+
+  /**
+   * Confirmar e executar trade na Binance
+   */
+  const handleConfirmTrade = async (finalPrice: number) => {
+    if (!quote || !selectedClient || !binanceConfig) {
       return;
     }
 
@@ -164,11 +229,58 @@ const OTCNegociar: React.FC = () => {
       symbol
     );
 
-    if (response) {
+    if (response && response.data) {
+      // Fechar modal de confirmação
+      setShowConfirmationModal(false);
+      
+      // Toast de sucesso
+      toastSuccess('Trade executado com sucesso', `Ordem #${response.data.orderId} executada na Binance`);
+      
+      // Salvar transação no banco de dados
+      try {
+        const avgPrice = quote.averagePrice;
+        const binanceFeeAmount = avgPrice * (binanceConfig.fee / 100);
+        const clientFee = selectedClientData?.fee || 0;
+        const clientFeeAmount = (avgPrice + binanceFeeAmount) * clientFee;
+        
+        const transactionData = {
+          id_binance_account: binanceConfig.id,
+          otc_client_id: parseInt(selectedClient),
+          binance_transaction_id: response.data.orderId.toString(),
+          transaction_type: operationType === 'buy' ? 'BUY' : 'SELL' as 'BUY' | 'SELL',
+          binance_price_average_no_fees: avgPrice,
+          binance_fee_percentage: binanceConfig.fee / 100, // Converter para decimal
+          binance_fee_amount: binanceFeeAmount,
+          binance_price_average_with_fees: avgPrice + binanceFeeAmount,
+          client_fee_percentage_applied: clientFee,
+          client_fee_amount_applied: clientFeeAmount,
+          client_final_price: finalPrice,
+          input_coin_id: quote.inputCurrency === 'BRL' ? 7 : 3, // BRL: 7, USDT: 3
+          input_coin_amount: quote.inputAmount,
+          output_coin_id: quote.outputCurrency === 'BRL' ? 7 : 3,
+          output_coin_amount: quote.outputAmount,
+          binance_transaction_date: new Date().toISOString(),
+          transaction_status: 'COMPLETED' as const,
+          transaction_notes: `Trade ${operationType === 'buy' ? 'de compra' : 'de venda'} executado via OTC`,
+        };
+        
+        const savedTransaction = await createBinanceTransaction(transactionData);
+        
+        if (savedTransaction) {
+          console.log('✅ Transação salva com sucesso:', savedTransaction);
+        }
+      } catch (error) {
+        console.error('❌ Erro ao salvar transação:', error);
+        toastError('Aviso', 'Trade executado mas não foi possível salvar os detalhes');
+      }
+      
       // Recarregar histórico
       await carregarHistorico('USDTBRL', 500);
-      // Limpar cotação
-      // setQuote(null);
+      
+      // Limpar campos
+      setSelectedClient('');
+      setQuantity('');
+      setTotal('');
     }
   };
 
@@ -180,6 +292,8 @@ const OTCNegociar: React.FC = () => {
     // Limpar todos os campos para voltar ao estado inicial
     setQuantity('');
     setTotal('');
+    // Limpar a cotação do hook
+    resetarEstado();
   };
 
   /**
@@ -416,6 +530,70 @@ const OTCNegociar: React.FC = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-4 flex-1 flex flex-col gap-4">
+              {/* Seleção de Cliente */}
+              <div className="flex-1">
+                <label className="text-xs font-semibold text-foreground mb-2 block flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                  Cliente OTC
+                </label>
+                <Popover open={clientPopoverOpen} onOpenChange={setClientPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className="w-full justify-between bg-muted/80 h-10 border-2 hover:border-primary/50 transition-colors"
+                    >
+                      {selectedClient
+                        ? clients.find((client) => client.id.toString() === selectedClient)?.name || 'Selecione um cliente...'
+                        : 'Selecione um cliente...'}
+                      <svg className="ml-2 h-4 w-4 shrink-0 opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m6 9 6 6 6-6"/>
+                      </svg>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Buscar cliente..." />
+                      <CommandList>
+                        {clientsLoading ? (
+                          <div className="flex items-center justify-center p-4">
+                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : (
+                          <>
+                            <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
+                            <CommandGroup>
+                              {clients.map((client) => (
+                                <CommandItem
+                                  key={client.id}
+                                  value={`${client.name} ${client.document}`}
+                                  onSelect={() => {
+                                    setSelectedClient(
+                                      client.id.toString() === selectedClient ? '' : client.id.toString()
+                                    );
+                                    setClientPopoverOpen(false); // Fechar o popover após seleção
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-sm">{client.name}</span>
+                                    <span className="text-xs text-muted-foreground">({client.document})</span>
+                                  </div>
+                                  {selectedClient === client.id.toString() && (
+                                    <svg className="ml-auto h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                  )}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
               {/* Seleção de Moeda */}
               <div className="flex-1">
                 <label className="text-xs font-semibold text-foreground mb-2 block flex items-center gap-2">
@@ -818,6 +996,21 @@ const OTCNegociar: React.FC = () => {
         onConfirm={handleSolicitarSaque}
         loading={withdrawalLoading}
         balances={balances}
+      />
+
+      <TradeConfirmationModal
+        isOpen={showConfirmationModal}
+        onClose={() => setShowConfirmationModal(false)}
+        onConfirm={handleConfirmTrade}
+        loading={tradeLoading}
+        quote={quote}
+        selectedClient={(() => {
+          // Usar dados do cliente específico (que tem fee) se disponível, senão usar da lista
+          const clientToUse = selectedClientData || clients.find((c) => c.id.toString() === selectedClient);
+          return clientToUse || null;
+        })()}
+        operationType={operationType}
+        binanceFee={binanceConfig?.fee || 0.039} // Taxa da Binance em %
       />
     </div>
   );

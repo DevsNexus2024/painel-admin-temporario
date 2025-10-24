@@ -34,6 +34,7 @@ export interface OTCClient {
   usd_balance: number;          // USD - NOVO
   last_conversion_rate?: number; // NOVO
   total_transactions: number;
+  fee?: number;                  // Taxa do cliente em %
   user: User;
   created_at: string;
   updated_at: string;
