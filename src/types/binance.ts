@@ -214,6 +214,7 @@ export interface BinanceTransaction {
   quantity: number;
   total: number;
   date: string;
+  timestamp?: string | number; // Timestamp original para ordenação
   status: 'Executada' | 'Pendente' | 'Cancelada';
   note?: string;
   orderId?: number;

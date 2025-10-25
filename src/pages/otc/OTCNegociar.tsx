@@ -39,6 +39,7 @@ import { useOTCClients, useOTCClient } from '@/hooks/useOTCClients';
 import { BinanceWithdrawalModal } from '@/components/otc/BinanceWithdrawalModal';
 import { TradeConfirmationModal } from '@/components/otc/TradeConfirmationModal';
 import { getBinanceConfigs, createBinanceTransaction } from '@/services/otc-binance';
+import { useOTCOperations } from '@/hooks/useOTCOperations';
 import { toastError, toastSuccess } from '@/utils/toast';
 import type { BinanceTransaction } from '@/types/binance';
 import type { OTCClient } from '@/types/otc';
@@ -89,12 +90,19 @@ const OTCNegociar: React.FC = () => {
     selectedClient ? parseInt(selectedClient) : 0
   );
 
+  // Hook para operações OTC
+  const { createOperation } = useOTCOperations();
+
   const [quantity, setQuantity] = useState('');
   const [total, setTotal] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [countdown, setCountdown] = useState(0);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   
   // Modal states
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
@@ -214,7 +222,7 @@ const OTCNegociar: React.FC = () => {
   /**
    * Confirmar e executar trade na Binance
    */
-  const handleConfirmTrade = async (finalPrice: number) => {
+  const handleConfirmTrade = async (finalPrice: number, notes: string) => {
     if (!quote || !selectedClient || !binanceConfig) {
       return;
     }
@@ -261,13 +269,70 @@ const OTCNegociar: React.FC = () => {
           output_coin_amount: quote.outputAmount,
           binance_transaction_date: new Date().toISOString(),
           transaction_status: 'COMPLETED' as const,
-          transaction_notes: `Trade ${operationType === 'buy' ? 'de compra' : 'de venda'} executado via OTC`,
+          transaction_notes: notes.trim(), // Usar as notas do operador
         };
         
         const savedTransaction = await createBinanceTransaction(transactionData);
         
         if (savedTransaction) {
-          console.log('✅ Transação salva com sucesso:', savedTransaction);
+          console.log('✅ Transação Binance salva com sucesso:', savedTransaction);
+          
+          // Criar operação de conversão OTC (similar ao que é feito no modal de operação manual)
+          try {
+            // Calcular valores finais com todas as taxas aplicadas
+            // Para BUY: Estamos comprando USDT com BRL
+            // - Creditamos USDT = quantidade de USDT recebida da Binance
+            // - Debitamos BRL = USDT recebido × preço final (com taxas aplicadas ao cliente)
+            // Para SELL: Estamos vendendo USDT por BRL
+            // - Debitamos USDT = quantidade de USDT vendida na Binance
+            // - Creditamos BRL = USDT vendido × preço final (com taxas aplicadas ao cliente)
+            
+            let brlValue: number;
+            let usdValue: number;
+            
+            // Extrair valores USD e BRL baseado na moeda
+            // Sempre garantir que estamos pegando USD, não BRL
+            if (quote.inputCurrency === 'USDT') {
+              usdValue = quote.inputAmount; // USD está no input
+            } else if (quote.outputCurrency === 'USDT') {
+              usdValue = quote.outputAmount; // USD está no output
+            } else {
+              // Fallback: assumir que inputAmount é USD (não deveria acontecer)
+              console.warn('⚠️ Não foi possível determinar USD da quote:', quote);
+              usdValue = quote.inputAmount;
+            }
+            
+            // Calcular BRL baseado no USD × taxa final
+            brlValue = usdValue * finalPrice;
+            
+            // Taxa de conversão final (preço final já inclui todas as taxas)
+            const conversionRate = finalPrice;
+            
+            const conversionData = {
+              otc_client_id: parseInt(selectedClient),
+              operation_type: 'convert' as const,
+              brl_amount: brlValue,
+              usd_amount: usdValue,
+              conversion_rate: conversionRate,
+              description: `Conversão via Binance - ${notes.trim()}`,
+            };
+            
+            console.log('📊 Detalhes da conversão:', {
+              operationType,
+              quote_input: `${quote.inputAmount} ${quote.inputCurrency}`,
+              quote_output: `${quote.outputAmount} ${quote.outputCurrency}`,
+              finalPrice,
+              brlValue,
+              usdValue,
+              conversionRate,
+            });
+            
+            createOperation(conversionData);
+            console.log('✅ Operação de conversão criada:', conversionData);
+          } catch (conversionError) {
+            console.error('❌ Erro ao criar operação de conversão:', conversionError);
+            toastError('Aviso', 'Transação Binance salva mas não foi possível criar operação de conversão');
+          }
         }
       } catch (error) {
         console.error('❌ Erro ao salvar transação:', error);
@@ -407,24 +472,35 @@ const OTCNegociar: React.FC = () => {
    * Converter histórico da Binance para formato de Transaction
    */
   const converterHistorico = (): BinanceTransaction[] => {
-    return historico.map((item) => {
+    const transactions = historico.map((item) => {
       // A API da Binance retorna 'qty' ao invés de 'quantity' e 'time' ao invés de 'timestamp'
       const price = parseFloat(item.price) || 0;
       const qty = parseFloat((item as any).qty || (item as any).quantity) || 0;
       const tot = price * qty;
       
+      // Extrair timestamp para ordenação
+      const timestamp = (item as any).time || (item as any).timestamp;
+      
       return {
         id: `O${item.id}`,
-        type: item.isBuyer ? 'Compra' : 'Venda',
+        type: (item.isBuyer ? 'Compra' : 'Venda') as 'Compra' | 'Venda',
         currency: item.symbol.replace('BRL', '').replace('USDT', 'USDT'),
         quote: price,
         quantity: qty,
         total: tot,
-        date: formatDate((item as any).time || (item as any).timestamp),
+        date: formatDate(timestamp),
+        timestamp: timestamp, // Guardar timestamp original para ordenação
         status: 'Executada' as const,
         note: notes[`O${item.id}`] || '',
         orderId: item.id,
       };
+    });
+    
+    // Ordenar por data decrescente (mais recente primeiro)
+    return transactions.sort((a, b) => {
+      const timestampA = new Date(a.timestamp || 0).getTime();
+      const timestampB = new Date(b.timestamp || 0).getTime();
+      return timestampB - timestampA; // Decrescente
     });
   };
 
@@ -452,6 +528,17 @@ const OTCNegociar: React.FC = () => {
     t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
     t.type.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Paginação
+  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
+
+  // Resetar página quando filtro mudar
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
 
   return (
     <div className="p-4 sm:p-6 space-y-4 bg-gradient-to-br from-background via-background to-muted/20 min-h-screen">
@@ -894,7 +981,7 @@ const OTCNegociar: React.FC = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredTransactions.map((transaction) => (
+                      {paginatedTransactions.map((transaction) => (
                         <TableRow key={transaction.id} className="hover:bg-muted/50 h-8">
                           <TableCell className="font-medium text-primary text-xs px-4">
                             #{transaction.id}
@@ -984,6 +1071,67 @@ const OTCNegociar: React.FC = () => {
                   </TableBody>
                 </Table>
               </div>
+              
+              {/* Controles de Paginação */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-6 py-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Mostrando {startIndex + 1} - {Math.min(endIndex, filteredTransactions.length)} de {filteredTransactions.length} transações
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="h-8"
+                    >
+                      Anterior
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                        // Mostrar apenas páginas próximas à página atual
+                        if (
+                          page === 1 ||
+                          page === totalPages ||
+                          (page >= currentPage - 1 && page <= currentPage + 1)
+                        ) {
+                          return (
+                            <Button
+                              key={page}
+                              variant={currentPage === page ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setCurrentPage(page)}
+                              className="h-8 w-8 p-0"
+                            >
+                              {page}
+                            </Button>
+                          );
+                        } else if (
+                          page === currentPage - 2 ||
+                          page === currentPage + 2
+                        ) {
+                          return (
+                            <span key={page} className="px-2 text-sm text-muted-foreground">
+                              ...
+                            </span>
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="h-8"
+                    >
+                      Próxima
+                    </Button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </CardContent>

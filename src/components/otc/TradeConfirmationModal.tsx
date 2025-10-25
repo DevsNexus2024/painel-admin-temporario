@@ -15,14 +15,16 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import type { BinanceQuoteData } from '@/types/binance';
 import type { OTCClient } from '@/types/otc';
 
 interface TradeConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (finalPrice: number) => void;
+  onConfirm: (finalPrice: number, notes: string) => void;
   loading?: boolean;
   quote: BinanceQuoteData | null;
   selectedClient: OTCClient | null;
@@ -43,6 +45,16 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editedPrice, setEditedPrice] = useState('');
   const [originalPrice, setOriginalPrice] = useState('');
+  const [notes, setNotes] = useState('');
+  const [hasBeenEdited, setHasBeenEdited] = useState(false);
+
+  // Resetar flag de edição quando modal abrir ou cotação mudar
+  useEffect(() => {
+    if (isOpen) {
+      setHasBeenEdited(false);
+      setNotes('');
+    }
+  }, [isOpen, quote]);
 
   // Calcular preço final
   const calculateFinalPrice = () => {
@@ -78,27 +90,29 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
     }
   }, [finalPrice, originalPrice]);
 
-  // Atualizar preço editado quando finalPrice mudar
+  // Atualizar preço editado quando finalPrice mudar (APENAS se nunca foi editado)
   useEffect(() => {
-    if (!isEditing) {
+    if (!hasBeenEdited && !isEditing) {
       setEditedPrice(finalPrice.toFixed(4));
     }
-  }, [finalPrice, isEditing]);
+  }, [finalPrice, hasBeenEdited, isEditing]);
 
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditedPrice(originalPrice);
+    setHasBeenEdited(false); // Resetar flag de edição
   };
 
   const handleSaveEdit = () => {
     setIsEditing(false);
+    setHasBeenEdited(true); // Marcar que o valor foi editado
     // O preço já está em editedPrice
   };
 
   const handleConfirm = () => {
     const priceToUse = parseFloat(editedPrice);
     if (priceToUse > 0) {
-      onConfirm(priceToUse);
+      onConfirm(priceToUse, notes);
     }
   };
 
@@ -220,6 +234,24 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
             </p>
           </div>
 
+          {/* Campo de Descrição */}
+          <div>
+            <Label htmlFor="notes" className="text-sm font-medium text-foreground mb-2 block">
+              Descrição da Operação
+            </Label>
+            <Textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Descreva a operação realizada..."
+              className="bg-muted/50 text-sm min-h-[80px]"
+              rows={3}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Esta descrição será salva junto com os detalhes da transação
+            </p>
+          </div>
+
           {/* Warning */}
           <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
             <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
@@ -243,7 +275,7 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={loading || !editedPrice || parseFloat(editedPrice) <= 0}
+            disabled={loading || !editedPrice || parseFloat(editedPrice) <= 0 || !notes.trim()}
             className="bg-green-600 hover:bg-green-700"
           >
             {loading ? (
