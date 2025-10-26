@@ -38,11 +38,12 @@ import { useBinanceBalances } from '@/hooks/useBinanceBalances';
 import { useOTCClients, useOTCClient } from '@/hooks/useOTCClients';
 import { BinanceWithdrawalModal } from '@/components/otc/BinanceWithdrawalModal';
 import { TradeConfirmationModal } from '@/components/otc/TradeConfirmationModal';
-import { getBinanceConfigs, createBinanceTransaction } from '@/services/otc-binance';
+import { getBinanceConfigs, createBinanceTransaction, getBinanceTransactions, updateBinanceTransactionNotes } from '@/services/otc-binance';
 import { useOTCOperations } from '@/hooks/useOTCOperations';
 import { toastError, toastSuccess } from '@/utils/toast';
 import type { BinanceTransaction } from '@/types/binance';
 import type { OTCClient } from '@/types/otc';
+import type { BinanceTransaction as SavedBinanceTransaction } from '@/services/otc-binance';
 
 const OTCNegociar: React.FC = () => {
   // ==================== TRADING HOOKS ====================
@@ -100,6 +101,9 @@ const OTCNegociar: React.FC = () => {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   
+  // Transações salvas no banco
+  const [savedTransactions, setSavedTransactions] = useState<Record<string, SavedBinanceTransaction>>({});
+  
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -129,10 +133,32 @@ const OTCNegociar: React.FC = () => {
 
   // ==================== EFFECTS ====================
   
+  // Função para carregar transações salvas
+  const carregarTransacoesSalvas = async () => {
+    const result = await getBinanceTransactions({ limit: 1000 });
+    if (result) {
+      // Criar um mapa por binance_transaction_id
+      const map: Record<string, SavedBinanceTransaction> = {};
+      result.transactions.forEach(tx => {
+        if (tx.binance_transaction_id) {
+          map[tx.binance_transaction_id] = tx;
+          console.log('💾 Transação salva:', {
+            id: tx.id,
+            binance_transaction_id: tx.binance_transaction_id,
+            transaction_notes: tx.transaction_notes
+          });
+        }
+      });
+      console.log('📦 Total de transações salvas:', Object.keys(map).length);
+      setSavedTransactions(map);
+    }
+  };
+
   // Carregar saldos e histórico ao montar o componente
   useEffect(() => {
     carregarSaldos();
     carregarHistorico('USDTBRL', 500);
+    carregarTransacoesSalvas();
     
     // Buscar configuração Binance
     getBinanceConfigs().then((configs) => {
@@ -339,8 +365,9 @@ const OTCNegociar: React.FC = () => {
         toastError('Aviso', 'Trade executado mas não foi possível salvar os detalhes');
       }
       
-      // Recarregar histórico
+      // Recarregar histórico e transações salvas
       await carregarHistorico('USDTBRL', 500);
+      await carregarTransacoesSalvas();
       
       // Limpar campos
       setSelectedClient('');
@@ -427,12 +454,40 @@ const OTCNegociar: React.FC = () => {
   /**
    * Handler para salvar anotação
    */
-  const handleSaveNote = (transactionId: string, noteValue: string) => {
+  const handleSaveNote = async (transactionId: string, noteValue: string) => {
+    console.log('💾 Salvando anotação:', { transactionId, noteValue });
+    
+    // Salvar no estado local para feedback imediato
     setNotes((prev) => ({
       ...prev,
       [transactionId]: noteValue,
     }));
     setEditingNoteId(null);
+    
+    // Buscar a transação para ver se tem savedTransactionId
+    const transactions = converterHistorico();
+    const transaction = transactions.find(t => t.id === transactionId);
+    
+    console.log('🔍 Transação encontrada:', transaction);
+    console.log('📝 savedTransactionId:', transaction?.savedTransactionId);
+    
+    if (transaction?.savedTransactionId) {
+      console.log('✅ Chamando API para atualizar anotação...');
+      // Atualizar no banco de dados
+      const result = await updateBinanceTransactionNotes(transaction.savedTransactionId, noteValue);
+      console.log('📡 Resultado da API:', result);
+      
+      if (result) {
+        toastSuccess('Anotação atualizada', 'A anotação foi salva no banco de dados');
+        // Recarregar transações salvas para refletir a mudança
+        await carregarTransacoesSalvas();
+      } else {
+        toastError('Erro ao salvar', 'Não foi possível salvar a anotação no banco de dados');
+      }
+    } else {
+      console.log('⚠️ Transação não tem savedTransactionId - não será salva no banco');
+      toastError('Erro', 'Esta transação não está vinculada ao banco de dados');
+    }
   };
 
   // ==================== HELPERS ====================
@@ -472,6 +527,8 @@ const OTCNegociar: React.FC = () => {
    * Converter histórico da Binance para formato de Transaction
    */
   const converterHistorico = (): BinanceTransaction[] => {
+    console.log('📋 Histórico Binance:', historico.map(item => ({ id: item.id, symbol: item.symbol })));
+    
     const transactions = historico.map((item) => {
       // A API da Binance retorna 'qty' ao invés de 'quantity' e 'time' ao invés de 'timestamp'
       const price = parseFloat(item.price) || 0;
@@ -480,6 +537,26 @@ const OTCNegociar: React.FC = () => {
       
       // Extrair timestamp para ordenação
       const timestamp = (item as any).time || (item as any).timestamp;
+      
+      // Buscar transação salva para obter anotação do banco
+      // Usar orderId se disponível (ordem pai), senão usar id da execução individual
+      const binanceOrderId = (item.orderId || item.id).toString();
+      const savedTx = savedTransactions[binanceOrderId];
+      
+      // Debug: Log para entender a vinculação
+      if (savedTx) {
+        console.log('🔗 Vinculando transação:', {
+          executionId: item.id,
+          orderId: item.orderId,
+          binanceOrderId,
+          savedTxId: savedTx.id,
+          note: savedTx.transaction_notes
+        });
+      }
+      
+      const noteFromDb = savedTx?.transaction_notes || '';
+      const noteFromLocal = notes[`O${item.id}`] || '';
+      const finalNote = noteFromDb || noteFromLocal;
       
       return {
         id: `O${item.id}`,
@@ -491,8 +568,9 @@ const OTCNegociar: React.FC = () => {
         date: formatDate(timestamp),
         timestamp: timestamp, // Guardar timestamp original para ordenação
         status: 'Executada' as const,
-        note: notes[`O${item.id}`] || '',
+        note: finalNote,
         orderId: item.id,
+        savedTransactionId: savedTx?.id, // ID da transação salva no banco
       };
     });
     
@@ -565,6 +643,7 @@ const OTCNegociar: React.FC = () => {
           onClick={() => {
             carregarSaldos();
             carregarHistorico('USDTBRL', 500);
+            carregarTransacoesSalvas();
           }}
           className="gap-2 h-8 text-xs"
         >

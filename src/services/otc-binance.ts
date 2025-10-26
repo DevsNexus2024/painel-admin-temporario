@@ -152,3 +152,30 @@ export async function getBinanceTransactions(params?: {
   }
 }
 
+/**
+ * Atualizar anotação de uma transação Binance OTC
+ */
+export async function updateBinanceTransactionNotes(
+  transactionId: number,
+  notes: string
+): Promise<BinanceTransaction | null> {
+  try {
+    logger.debug('[BINANCE-TRANSACTION] Atualizando anotação...', { transactionId, notes });
+    
+    const response = await api.patch<BinanceTransactionResponse>(
+      `${OTC_BINANCE_BASE_URL}/transactions/${transactionId}/notes`,
+      { transaction_notes: notes }
+    );
+    
+    if (response.data.success) {
+      logger.debug('[BINANCE-TRANSACTION] Anotação atualizada:', response.data.data);
+      return response.data.data;
+    }
+    
+    throw new Error(response.data.message || 'Erro ao atualizar anotação');
+  } catch (error: any) {
+    logger.error('[BINANCE-TRANSACTION] Erro ao atualizar anotação:', error);
+    return null;
+  }
+}
+

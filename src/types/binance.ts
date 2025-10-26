@@ -114,6 +114,7 @@ export interface BinanceOrderStatusResponse extends BinanceBackendResponse<Binan
 
 export interface BinanceTradeHistoryItem {
   id: number;
+  orderId?: number; // ID da ordem pai (quando a ordem tem múltiplas execuções)
   symbol: string;
   price: string;
   qty?: string; // Campo usado pela API da Binance
@@ -218,6 +219,7 @@ export interface BinanceTransaction {
   status: 'Executada' | 'Pendente' | 'Cancelada';
   note?: string;
   orderId?: number;
+  savedTransactionId?: number; // ID da transação salva no banco (otc_binance_transactions)
 }
 
 export interface BinanceBalance {
