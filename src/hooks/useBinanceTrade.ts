@@ -11,6 +11,7 @@ import {
   consultarStatusOrdemBinance,
   cancelarOrdemBinance,
   consultarHistoricoTradesBinance,
+  consultarHistoricoOrdensBinance,
 } from '@/services/binance';
 import type {
   BinanceQuoteRequest,
@@ -20,6 +21,8 @@ import type {
   BinanceOrderStatusResponse,
   BinanceTradeHistoryResponse,
   BinanceTradeHistoryItem,
+  BinanceOrderHistoryResponse,
+  BinanceOrderItem,
 } from '@/types/binance';
 
 interface UseBinanceTradeReturn {
@@ -45,11 +48,17 @@ interface UseBinanceTradeReturn {
   cancelOrderError: string | null;
   cancelarOrdem: (orderId: number, symbol?: string) => Promise<void>;
   
-  // History
+  // History (Trades - execuções individuais)
   historico: BinanceTradeHistoryItem[];
   historicoLoading: boolean;
   historicoError: string | null;
   carregarHistorico: (symbol?: string, limit?: number) => Promise<void>;
+  
+  // Orders History (Ordens completas)
+  ordens: BinanceOrderItem[];
+  ordensLoading: boolean;
+  ordensError: string | null;
+  carregarOrdens: (symbol?: string, limit?: number) => Promise<void>;
   
   // Utils
   resetarEstado: () => void;
@@ -87,10 +96,15 @@ export function useBinanceTrade(): UseBinanceTradeReturn {
   const [cancelOrderLoading, setCancelOrderLoading] = useState(false);
   const [cancelOrderError, setCancelOrderError] = useState<string | null>(null);
   
-  // History state
+  // History state (Trades - execuções individuais)
   const [historico, setHistorico] = useState<BinanceTradeHistoryItem[]>([]);
   const [historicoLoading, setHistoricoLoading] = useState(false);
   const [historicoError, setHistoricoError] = useState<string | null>(null);
+  
+  // Orders state (Ordens completas)
+  const [ordens, setOrdens] = useState<BinanceOrderItem[]>([]);
+  const [ordensLoading, setOrdensLoading] = useState(false);
+  const [ordensError, setOrdensError] = useState<string | null>(null);
   
   /**
    * Solicitar cotação
@@ -239,7 +253,7 @@ export function useBinanceTrade(): UseBinanceTradeReturn {
   }, [toast]);
   
   /**
-   * Carregar histórico de trades
+   * Carregar histórico de trades (execuções individuais)
    */
   const carregarHistorico = useCallback(async (symbol: string = 'USDTBRL', limit: number = 500) => {
     setHistoricoLoading(true);
@@ -263,6 +277,34 @@ export function useBinanceTrade(): UseBinanceTradeReturn {
       });
     } finally {
       setHistoricoLoading(false);
+    }
+  }, [toast]);
+  
+  /**
+   * Carregar histórico de ordens (ordens completas)
+   */
+  const carregarOrdens = useCallback(async (symbol: string = 'USDTBRL', limit: number = 500) => {
+    setOrdensLoading(true);
+    setOrdensError(null);
+    
+    try {
+      const response = await consultarHistoricoOrdensBinance(symbol, limit);
+      
+      if (response && response.success && response.data) {
+        setOrdens(response.data.orders);
+      } else {
+        throw new Error(response?.message || 'Erro ao carregar ordens');
+      }
+    } catch (error: any) {
+      const errorMessage = error.message || 'Erro ao carregar ordens';
+      setOrdensError(errorMessage);
+      toast({
+        title: 'Erro',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setOrdensLoading(false);
     }
   }, [toast]);
   
@@ -302,11 +344,17 @@ export function useBinanceTrade(): UseBinanceTradeReturn {
     cancelOrderError,
     cancelarOrdem,
     
-    // History
+    // History (Trades)
     historico,
     historicoLoading,
     historicoError,
     carregarHistorico,
+    
+    // Orders History
+    ordens,
+    ordensLoading,
+    ordensError,
+    carregarOrdens,
     
     // Utils
     resetarEstado,

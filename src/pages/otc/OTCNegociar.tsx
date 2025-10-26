@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Search, Edit, Loader2, Wallet, Zap, ArrowUpDown, RefreshCw, Save } from 'lucide-react';
+import { TrendingUp, Search, Edit, Loader2, Wallet, Zap, ArrowUpDown, RefreshCw, Save, ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,13 +32,20 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
 import { useBinanceTrade } from '@/hooks/useBinanceTrade';
 import { useBinanceWithdrawal } from '@/hooks/useBinanceWithdrawal';
 import { useBinanceBalances } from '@/hooks/useBinanceBalances';
+import type { BinanceWithdrawalHistoryItem } from '@/types/binance';
 import { useOTCClients, useOTCClient } from '@/hooks/useOTCClients';
 import { BinanceWithdrawalModal } from '@/components/otc/BinanceWithdrawalModal';
 import { TradeConfirmationModal } from '@/components/otc/TradeConfirmationModal';
-import { getBinanceConfigs, createBinanceTransaction, getBinanceTransactions, updateBinanceTransactionNotes } from '@/services/otc-binance';
+import { getBinanceConfigs, createBinanceTransaction, getBinanceTransactions, updateBinanceTransactionNotes, updateBinanceTransactionNotesByBinanceId } from '@/services/otc-binance';
 import { useOTCOperations } from '@/hooks/useOTCOperations';
 import { toastError, toastSuccess } from '@/utils/toast';
 import type { BinanceTransaction } from '@/types/binance';
@@ -54,9 +61,9 @@ const OTCNegociar: React.FC = () => {
     solicitarCotacao,
     tradeLoading,
     executarTrade,
-    carregarHistorico,
-    historico,
-    historicoLoading,
+    carregarOrdens,
+    ordens,
+    ordensLoading,
     resetarEstado,
   } = useBinanceTrade();
 
@@ -64,6 +71,9 @@ const OTCNegociar: React.FC = () => {
   const {
     criarSaque,
     withdrawalLoading,
+    historicoSaques,
+    historicoSaquesLoading,
+    carregarHistoricoSaques,
   } = useBinanceWithdrawal();
 
   // ==================== BALANCES HOOKS ====================
@@ -107,6 +117,13 @@ const OTCNegociar: React.FC = () => {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  
+  // Withdrawals pagination states
+  const [currentPageWithdrawals, setCurrentPageWithdrawals] = useState(1);
+  const itemsPerPageWithdrawals = 10;
+  
+  // Tabs state
+  const [activeTab, setActiveTab] = useState<'operations' | 'withdrawals'>('operations');
   
   // Modal states
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
@@ -154,11 +171,33 @@ const OTCNegociar: React.FC = () => {
     }
   };
 
+  // Função para calcular primeiro e último dia do mês atual
+  const getMonthDateRange = () => {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    
+    return {
+      startTime: firstDay.getTime(),
+      endTime: lastDay.getTime()
+    };
+  };
+
   // Carregar saldos e histórico ao montar o componente
   useEffect(() => {
     carregarSaldos();
-    carregarHistorico('USDTBRL', 500);
+    carregarOrdens('USDTBRL', 500); // Carregar ordens ao invés de trades
     carregarTransacoesSalvas();
+    
+    // Carregar saques USDT do mês atual
+    const { startTime, endTime } = getMonthDateRange();
+    console.log('📅 Filtro de período (mês atual):', {
+      startTime,
+      endTime,
+      startDate: new Date(startTime).toLocaleString('pt-BR'),
+      endDate: new Date(endTime).toLocaleString('pt-BR')
+    });
+    carregarHistoricoSaques('USDT', undefined, startTime, endTime);
     
     // Buscar configuração Binance
     getBinanceConfigs().then((configs) => {
@@ -169,7 +208,7 @@ const OTCNegociar: React.FC = () => {
         });
       }
     });
-  }, [carregarSaldos, carregarHistorico]);
+  }, [carregarSaldos, carregarOrdens, carregarHistoricoSaques]);
 
   // Countdown timer
   useEffect(() => {
@@ -273,9 +312,40 @@ const OTCNegociar: React.FC = () => {
       // Salvar transação no banco de dados
       try {
         const avgPrice = quote.averagePrice;
-        const binanceFeeAmount = avgPrice * (binanceConfig.fee / 100);
-        const clientFee = selectedClientData?.fee || 0;
-        const clientFeeAmount = (avgPrice + binanceFeeAmount) * clientFee;
+        const binanceFee = binanceConfig.fee / 100; // Converter para decimal
+        const binanceFeeAmount = avgPrice * binanceFee;
+        const afterBinanceFee = operationType === 'buy' 
+          ? avgPrice + binanceFeeAmount   // Buy: somar taxa
+          : avgPrice - binanceFeeAmount;  // Sell: subtrair taxa
+        
+        // Calcular taxa do cliente aplicada
+        // Se o preço foi editado, precisamos recalcular a taxa baseada no novo preço
+        let clientFeeAmount: number;
+        let clientFeePercentage: number;
+        
+        if (operationType === 'buy') {
+          // Buy: O preço final = afterBinanceFee + clientFeeAmount
+          // Então: clientFeeAmount = finalPrice - afterBinanceFee
+          clientFeeAmount = finalPrice - afterBinanceFee;
+          clientFeePercentage = afterBinanceFee > 0 ? clientFeeAmount / afterBinanceFee : 0;
+        } else {
+          // Sell: O preço final = afterBinanceFee - clientFeeAmount
+          // Então: clientFeeAmount = afterBinanceFee - finalPrice
+          clientFeeAmount = afterBinanceFee - finalPrice;
+          clientFeePercentage = afterBinanceFee > 0 ? clientFeeAmount / afterBinanceFee : 0;
+        }
+        
+        // Debug: Log dos cálculos
+        console.log('💰 Cálculo de Taxas:', {
+          avgPrice,
+          binanceFee: `${(binanceFee * 100).toFixed(3)}%`,
+          binanceFeeAmount,
+          afterBinanceFee,
+          finalPrice,
+          clientFeeAmount,
+          clientFeePercentage: `${(clientFeePercentage * 100).toFixed(3)}%`,
+          operationType
+        });
         
         const transactionData = {
           id_binance_account: binanceConfig.id,
@@ -283,10 +353,10 @@ const OTCNegociar: React.FC = () => {
           binance_transaction_id: response.data.orderId.toString(),
           transaction_type: operationType === 'buy' ? 'BUY' : 'SELL' as 'BUY' | 'SELL',
           binance_price_average_no_fees: avgPrice,
-          binance_fee_percentage: binanceConfig.fee / 100, // Converter para decimal
+          binance_fee_percentage: binanceFee,
           binance_fee_amount: binanceFeeAmount,
-          binance_price_average_with_fees: avgPrice + binanceFeeAmount,
-          client_fee_percentage_applied: clientFee,
+          binance_price_average_with_fees: afterBinanceFee,
+          client_fee_percentage_applied: clientFeePercentage,
           client_fee_amount_applied: clientFeeAmount,
           client_final_price: finalPrice,
           input_coin_id: quote.inputCurrency === 'BRL' ? 7 : 3, // BRL: 7, USDT: 3
@@ -366,7 +436,7 @@ const OTCNegociar: React.FC = () => {
       }
       
       // Recarregar histórico e transações salvas
-      await carregarHistorico('USDTBRL', 500);
+      await carregarOrdens('USDTBRL', 500);
       await carregarTransacoesSalvas();
       
       // Limpar campos
@@ -465,28 +535,33 @@ const OTCNegociar: React.FC = () => {
     setEditingNoteId(null);
     
     // Buscar a transação para ver se tem savedTransactionId
-    const transactions = converterHistorico();
+    const transactions = converterOrdens();
     const transaction = transactions.find(t => t.id === transactionId);
     
     console.log('🔍 Transação encontrada:', transaction);
     console.log('📝 savedTransactionId:', transaction?.savedTransactionId);
+    console.log('🆔 orderId:', transaction?.orderId);
+    
+    let result: any = null;
     
     if (transaction?.savedTransactionId) {
-      console.log('✅ Chamando API para atualizar anotação...');
-      // Atualizar no banco de dados
-      const result = await updateBinanceTransactionNotes(transaction.savedTransactionId, noteValue);
-      console.log('📡 Resultado da API:', result);
-      
-      if (result) {
-        toastSuccess('Anotação atualizada', 'A anotação foi salva no banco de dados');
-        // Recarregar transações salvas para refletir a mudança
-        await carregarTransacoesSalvas();
-      } else {
-        toastError('Erro ao salvar', 'Não foi possível salvar a anotação no banco de dados');
-      }
+      // Método 1: Usar ID interno (quando a transação já existe no banco)
+      console.log('✅ Usando ID interno para atualizar anotação...');
+      result = await updateBinanceTransactionNotes(transaction.savedTransactionId, noteValue);
+    } else if (transaction?.orderId) {
+      // Método 2: Usar binance_transaction_id diretamente
+      console.log('✅ Usando binance_transaction_id para atualizar anotação...');
+      result = await updateBinanceTransactionNotesByBinanceId(transaction.orderId.toString(), noteValue);
+    }
+    
+    console.log('📡 Resultado da API:', result);
+    
+    if (result) {
+      toastSuccess('Anotação atualizada', 'A anotação foi salva no banco de dados');
+      // Recarregar transações salvas para refletir a mudança
+      await carregarTransacoesSalvas();
     } else {
-      console.log('⚠️ Transação não tem savedTransactionId - não será salva no banco');
-      toastError('Erro', 'Esta transação não está vinculada ao banco de dados');
+      toastError('Erro ao salvar', 'Não foi possível salvar a anotação no banco de dados');
     }
   };
 
@@ -524,29 +599,40 @@ const OTCNegociar: React.FC = () => {
   };
 
   /**
-   * Converter histórico da Binance para formato de Transaction
+   * Converter ordens da Binance para formato de Transaction
    */
-  const converterHistorico = (): BinanceTransaction[] => {
-    console.log('📋 Histórico Binance:', historico.map(item => ({ id: item.id, symbol: item.symbol })));
+  const converterOrdens = (): BinanceTransaction[] => {
+    console.log('📋 Ordens Binance:', ordens.map(item => ({ orderId: item.orderId, symbol: item.symbol, status: item.status })));
     
-    const transactions = historico.map((item) => {
-      // A API da Binance retorna 'qty' ao invés de 'quantity' e 'time' ao invés de 'timestamp'
-      const price = parseFloat(item.price) || 0;
-      const qty = parseFloat((item as any).qty || (item as any).quantity) || 0;
-      const tot = price * qty;
+    const transactions = ordens.map((item) => {
+      // Debug: Log dos valores recebidos
+      console.log('🔍 Ordem detalhada:', {
+        orderId: item.orderId,
+        status: item.status,
+        averagePrice: item.averagePrice,
+        executedQuantity: item.executedQuantity,
+        total: item.total,
+        price: item.price
+      });
+      
+      // Ordem tem quantidade executada, preço médio e taxa
+      // Usar os valores fornecidos pelo backend
+      const price = item.averagePrice || 0;
+      const qty = item.executedQuantity || 0;
+      // Backend já calcula o total: averagePrice × executedQuantity
+      const tot = item.total || 0;
       
       // Extrair timestamp para ordenação
-      const timestamp = (item as any).time || (item as any).timestamp;
+      const timestamp = item.orderTime || item.updateTime;
       
       // Buscar transação salva para obter anotação do banco
-      // Usar orderId se disponível (ordem pai), senão usar id da execução individual
-      const binanceOrderId = (item.orderId || item.id).toString();
+      // Usar orderId da ordem completa
+      const binanceOrderId = item.orderId.toString();
       const savedTx = savedTransactions[binanceOrderId];
       
       // Debug: Log para entender a vinculação
       if (savedTx) {
-        console.log('🔗 Vinculando transação:', {
-          executionId: item.id,
+        console.log('🔗 Vinculando ordem:', {
           orderId: item.orderId,
           binanceOrderId,
           savedTxId: savedTx.id,
@@ -555,21 +641,29 @@ const OTCNegociar: React.FC = () => {
       }
       
       const noteFromDb = savedTx?.transaction_notes || '';
-      const noteFromLocal = notes[`O${item.id}`] || '';
+      const noteFromLocal = notes[`O${item.orderId}`] || '';
       const finalNote = noteFromDb || noteFromLocal;
       
+      // Determinar status da transação
+      let transactionStatus: 'Executada' | 'Pendente' | 'Cancelada' = 'Executada';
+      if (item.status === 'NEW' || item.status === 'PARTIALLY_FILLED') {
+        transactionStatus = 'Pendente';
+      } else if (item.status === 'CANCELED' || item.status === 'REJECTED' || item.status === 'EXPIRED') {
+        transactionStatus = 'Cancelada';
+      }
+      
       return {
-        id: `O${item.id}`,
-        type: (item.isBuyer ? 'Compra' : 'Venda') as 'Compra' | 'Venda',
+        id: `O${item.orderId}`,
+        type: (item.side === 'BUY' ? 'Compra' : 'Venda') as 'Compra' | 'Venda',
         currency: item.symbol.replace('BRL', '').replace('USDT', 'USDT'),
         quote: price,
         quantity: qty,
         total: tot,
         date: formatDate(timestamp),
         timestamp: timestamp, // Guardar timestamp original para ordenação
-        status: 'Executada' as const,
+        status: transactionStatus,
         note: finalNote,
-        orderId: item.id,
+        orderId: item.orderId,
         savedTransactionId: savedTx?.id, // ID da transação salva no banco
       };
     });
@@ -599,24 +693,95 @@ const OTCNegociar: React.FC = () => {
     );
   };
 
+  /**
+   * Status badge para saques
+   */
+  const getWithdrawalStatusBadge = (status: string) => {
+    const statusMap: Record<string, { className: string; label: string }> = {
+      'Success': { className: 'bg-green-500/10 text-green-500 hover:bg-green-500/20', label: 'Sucesso' },
+      'Completed': { className: 'bg-green-500/10 text-green-500 hover:bg-green-500/20', label: 'Completo' },
+      'Pending': { className: 'bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20', label: 'Pendente' },
+      'Processing': { className: 'bg-blue-500/10 text-blue-500 hover:bg-blue-500/20', label: 'Processando' },
+      'Cancelled': { className: 'bg-gray-500/10 text-gray-500 hover:bg-gray-500/20', label: 'Cancelado' },
+      'Failure': { className: 'bg-red-500/10 text-red-500 hover:bg-red-500/20', label: 'Falhou' },
+      'Rejected': { className: 'bg-red-500/10 text-red-500 hover:bg-red-500/20', label: 'Rejeitado' },
+    };
+
+    const statusInfo = statusMap[status] || { className: 'bg-gray-500/10 text-gray-500', label: status };
+
+    return (
+      <Badge className={statusInfo.className} variant="outline">
+        {statusInfo.label}
+      </Badge>
+    );
+  };
+
+  /**
+   * Obter link da blockchain baseado na rede
+   */
+  const getBlockchainLink = (network: string, txId?: string | null): string | null => {
+    if (!txId) return null;
+    
+    const networkMap: Record<string, string> = {
+      'TRX': 'https://tronscan.org/#/transaction/',
+      'TRC20': 'https://tronscan.org/#/transaction/',
+      'BSC': 'https://bscscan.com/tx/',
+      'BEP20': 'https://bscscan.com/tx/',
+      'ETH': 'https://etherscan.io/tx/',
+      'ERC20': 'https://etherscan.io/tx/',
+      'MATIC': 'https://polygonscan.com/tx/',
+      'POLYGON': 'https://polygonscan.com/tx/',
+      'ARBITRUM': 'https://arbiscan.io/tx/',
+      'OPTIMISM': 'https://optimistic.etherscan.io/tx/',
+      'AVAX': 'https://snowtrace.io/tx/',
+      'AVAXC': 'https://snowtrace.io/tx/',
+      'AllMainnet': 'https://etherscan.io/tx/',
+    };
+    
+    const baseUrl = networkMap[network.toUpperCase()];
+    return baseUrl ? `${baseUrl}${txId}` : null;
+  };
+
+  /**
+   * Converter saques para exibição
+   */
+  const converterSaques = (): Array<BinanceWithdrawalHistoryItem & { displayId: string; displayDate: string }> => {
+    return historicoSaques.map((saque) => ({
+      ...saque,
+      displayId: saque.withdrawId || saque.id || 'N/A',
+      displayDate: formatDate(saque.applyTime || saque.timestamp || ''),
+    }));
+  };
+
   // ==================== RENDER ====================
 
-  const transactions = converterHistorico();
+  const transactions = converterOrdens();
   const filteredTransactions = transactions.filter((t) =>
     t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
     t.type.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Paginação
+  // Paginação Operações
   const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
 
-  // Resetar página quando filtro mudar
+  // Paginação Saques
+  const filteredWithdrawals = historicoSaques.filter((s) => 
+    s.coin.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    s.address.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const totalPagesWithdrawals = Math.ceil(filteredWithdrawals.length / itemsPerPageWithdrawals);
+  const startIndexWithdrawals = (currentPageWithdrawals - 1) * itemsPerPageWithdrawals;
+  const endIndexWithdrawals = startIndexWithdrawals + itemsPerPageWithdrawals;
+  const paginatedWithdrawals = filteredWithdrawals.slice(startIndexWithdrawals, endIndexWithdrawals);
+
+  // Resetar página quando filtro mudar ou aba mudar
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery]);
+    setCurrentPageWithdrawals(1);
+  }, [searchQuery, activeTab]);
 
   return (
     <div className="p-4 sm:p-6 space-y-4 bg-gradient-to-br from-background via-background to-muted/20 min-h-screen">
@@ -642,7 +807,7 @@ const OTCNegociar: React.FC = () => {
           size="sm"
           onClick={() => {
             carregarSaldos();
-            carregarHistorico('USDTBRL', 500);
+            carregarOrdens('USDTBRL', 500);
             carregarTransacoesSalvas();
           }}
           className="gap-2 h-8 text-xs"
@@ -1033,19 +1198,27 @@ const OTCNegociar: React.FC = () => {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          {historicoLoading ? (
-            <div className="flex items-center justify-center py-12 px-6">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : filteredTransactions.length === 0 ? (
-            <div className="text-center py-12 px-6 text-muted-foreground">
-              <p>Nenhuma transação encontrada</p>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                  <Table>
+        <CardContent className="p-0 overflow-hidden">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'operations' | 'withdrawals')} className="w-full">
+            <TabsList className="grid w-[calc(100%-3rem)] grid-cols-2 mx-6 mt-4">
+              <TabsTrigger value="operations" className="truncate">Operações</TabsTrigger>
+              <TabsTrigger value="withdrawals" className="truncate">Saques USDT</TabsTrigger>
+            </TabsList>
+            
+            {/* Aba 1: Operações */}
+            <TabsContent value="operations" className="mt-0">
+              {ordensLoading ? (
+                <div className="flex items-center justify-center py-12 px-6">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : filteredTransactions.length === 0 ? (
+                <div className="text-center py-12 px-6 text-muted-foreground">
+                  <p>Nenhuma transação encontrada</p>
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
                     <TableHeader>
                       <TableRow className="h-8">
                         <TableHead className="w-16 text-xs px-4">ID</TableHead>
@@ -1211,8 +1384,155 @@ const OTCNegociar: React.FC = () => {
                   </div>
                 </div>
               )}
-            </>
-          )}
+                </>
+              )}
+            </TabsContent>
+            
+            {/* Aba 2: Saques USDT */}
+            <TabsContent value="withdrawals" className="mt-0">
+              {historicoSaquesLoading ? (
+                <div className="flex items-center justify-center py-12 px-6">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : filteredWithdrawals.length === 0 ? (
+                <div className="text-center py-12 px-6 text-muted-foreground">
+                  <p>Nenhum saque encontrado</p>
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="h-8">
+                          <TableHead className="w-20 text-xs px-4">ID</TableHead>
+                          <TableHead className="text-xs px-4">Moeda</TableHead>
+                          <TableHead className="text-right text-xs px-4">Quantidade</TableHead>
+                          <TableHead className="text-right text-xs px-4">Taxa</TableHead>
+                          <TableHead className="text-xs px-4">Endereço</TableHead>
+                          <TableHead className="text-xs px-4">Rede</TableHead>
+                          <TableHead className="text-xs px-4">Status</TableHead>
+                          <TableHead className="text-xs px-4">Data</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedWithdrawals.map((saque) => {
+                          const blockchainLink = getBlockchainLink(saque.network, saque.txId);
+                          return (
+                          <TableRow key={saque.withdrawId || saque.id} className="hover:bg-muted/50 h-8">
+                            <TableCell className="font-medium text-primary text-xs px-4">
+                              {blockchainLink ? (
+                                <a
+                                  href={blockchainLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 hover:underline text-primary hover:text-primary/80 transition-colors"
+                                >
+                                  #{saque.withdrawId || saque.id}
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              ) : (
+                                `#${saque.withdrawId || saque.id}`
+                              )}
+                            </TableCell>
+                            <TableCell className="px-4">
+                              <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20 text-[10px]">
+                                {saque.coin}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-xs px-4">
+                              {saque.amount.toLocaleString('pt-BR', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 8,
+                              })}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-xs px-4">
+                              {saque.transactionFee}
+                            </TableCell>
+                            <TableCell className="text-xs px-4 font-mono max-w-[150px] truncate">
+                              {saque.address}
+                            </TableCell>
+                            <TableCell className="text-xs px-4">
+                              <Badge variant="outline" className="text-[10px]">
+                                {saque.network}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs px-4">
+                              {getWithdrawalStatusBadge(saque.status)}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap px-4">
+                              {formatDate(saque.applyTime || saque.timestamp || '')}
+                            </TableCell>
+                          </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  
+                  {/* Controles de Paginação */}
+                  {totalPagesWithdrawals > 1 && (
+                    <div className="flex items-center justify-between px-6 py-4 border-t">
+                      <div className="text-sm text-muted-foreground">
+                        Mostrando {startIndexWithdrawals + 1} - {Math.min(endIndexWithdrawals, filteredWithdrawals.length)} de {filteredWithdrawals.length} saques
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPageWithdrawals(prev => Math.max(1, prev - 1))}
+                          disabled={currentPageWithdrawals === 1}
+                          className="h-8"
+                        >
+                          Anterior
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: totalPagesWithdrawals }, (_, i) => i + 1).map((page) => {
+                            // Mostrar apenas páginas próximas à página atual
+                            if (
+                              page === 1 ||
+                              page === totalPagesWithdrawals ||
+                              (page >= currentPageWithdrawals - 1 && page <= currentPageWithdrawals + 1)
+                            ) {
+                              return (
+                                <Button
+                                  key={page}
+                                  variant={currentPageWithdrawals === page ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() => setCurrentPageWithdrawals(page)}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  {page}
+                                </Button>
+                              );
+                            } else if (
+                              page === currentPageWithdrawals - 2 ||
+                              page === currentPageWithdrawals + 2
+                            ) {
+                              return (
+                                <span key={page} className="px-2 text-sm text-muted-foreground">
+                                  ...
+                                </span>
+                              );
+                            }
+                            return null;
+                          })}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPageWithdrawals(prev => Math.min(totalPagesWithdrawals, prev + 1))}
+                          disabled={currentPageWithdrawals === totalPagesWithdrawals}
+                          className="h-8"
+                        >
+                          Próxima
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 

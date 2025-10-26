@@ -134,6 +134,35 @@ export interface BinanceTradeHistoryData {
 
 export interface BinanceTradeHistoryResponse extends BinanceBackendResponse<BinanceTradeHistoryData> {}
 
+// ==================== ORDER HISTORY TYPES ====================
+
+export interface BinanceOrderItem {
+  orderId: number;
+  clientOrderId: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  type: string; // MARKET, LIMIT, STOP_LOSS, etc.
+  status: 'NEW' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED' | 'EXPIRED' | 'REJECTED';
+  originalQuantity: number;
+  executedQuantity: number;
+  price: number;
+  averagePrice: number;
+  total: number; // Total calculado (averagePrice × executedQuantity)
+  timeInForce: string; // GTC, IOC, FOK
+  fee: number;
+  orderTime: string; // ISO 8601
+  updateTime: string; // ISO 8601
+}
+
+export interface BinanceOrderHistoryData {
+  orders: BinanceOrderItem[];
+  total: number;
+  symbol: string;
+  timestamp: string;
+}
+
+export interface BinanceOrderHistoryResponse extends BinanceBackendResponse<BinanceOrderHistoryData> {}
+
 export interface BinanceWithdrawalData {
   withdrawId: string;
   coin: string;
@@ -146,12 +175,23 @@ export interface BinanceWithdrawalData {
 export interface BinanceWithdrawalResponse extends BinanceBackendResponse<BinanceWithdrawalData> {}
 
 export interface BinanceWithdrawalHistoryItem {
-  id: string;
+  withdrawId: string;
   coin: string;
-  amount: string;
+  amount: number;
   address: string;
-  status: number;
-  timestamp: string;
+  addressTag?: string | null;
+  network: string;
+  status: string; // Success, Pending, etc.
+  txId?: string | null;
+  transactionFee: number;
+  applyTime: string; // ISO 8601
+  transferType?: string;
+  info?: string | null;
+  confirmNo?: number;
+  walletType?: string;
+  // Campos legados para compatibilidade
+  id?: string;
+  timestamp?: string;
 }
 
 export interface BinanceWithdrawalHistoryData {

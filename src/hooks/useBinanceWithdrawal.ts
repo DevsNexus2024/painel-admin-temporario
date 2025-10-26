@@ -30,7 +30,7 @@ interface UseBinanceWithdrawalReturn {
   historicoSaques: BinanceWithdrawalHistoryItem[];
   historicoSaquesLoading: boolean;
   historicoSaquesError: string | null;
-  carregarHistoricoSaques: (coin?: string, status?: number) => Promise<void>;
+  carregarHistoricoSaques: (coin?: string, status?: number, startTime?: number, endTime?: number) => Promise<void>;
   
   // Create Withdrawal
   withdrawalLoading: boolean;
@@ -89,12 +89,12 @@ export function useBinanceWithdrawal(): UseBinanceWithdrawalReturn {
   /**
    * Carregar histórico de saques
    */
-  const carregarHistoricoSaques = useCallback(async (coin?: string, status?: number) => {
+  const carregarHistoricoSaques = useCallback(async (coin?: string, status?: number, startTime?: number, endTime?: number) => {
     setHistoricoSaquesLoading(true);
     setHistoricoSaquesError(null);
     
     try {
-      const response = await consultarHistoricoSaquesBinance(coin, status);
+      const response = await consultarHistoricoSaquesBinance(coin, status, startTime, endTime);
       
       if (response && response.success && response.data) {
         setHistoricoSaques(response.data.withdrawals);

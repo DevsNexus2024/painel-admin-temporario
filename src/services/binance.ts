@@ -15,6 +15,7 @@ import type {
   BinanceTradeResponse,
   BinanceOrderStatusResponse,
   BinanceTradeHistoryResponse,
+  BinanceOrderHistoryResponse,
   BinanceWithdrawalRequest,
   BinanceWithdrawalResponse,
   BinanceWithdrawalHistoryResponse,
@@ -34,6 +35,7 @@ const BINANCE_CONFIG = {
     statusOrdem: '/api/binance/trade/ordem', // GET /api/binance/trade/ordem/:orderId
     cancelarOrdem: '/api/binance/trade/ordem', // DELETE /api/binance/trade/ordem/:orderId
     historicoTrades: '/api/binance/trade/historico',
+    historicoOrdens: '/api/binance/trade/ordens', // GET /api/binance/trade/ordens
     
     // 💸 WITHDRAWAL
     saldos: '/api/binance/withdrawal/saldos',
@@ -447,6 +449,76 @@ export async function consultarHistoricoTradesBinance(symbol: string = 'USDTBRL'
   }
 }
 
+/**
+ * 📋 Consultar Histórico de ORDENS (Novo)
+ * Endpoint: GET /api/binance/trade/ordens
+ * 
+ * Retorna ordens completas (não execuções individuais)
+ * Cada ordem pode ter múltiplas execuções
+ */
+export async function consultarHistoricoOrdensBinance(
+  symbol: string = 'USDTBRL',
+  limit: number = 500
+): Promise<BinanceOrderHistoryResponse | null> {
+  try {
+    logger.debug('[BINANCE-ORDER-HISTORY] Consultando histórico de ordens...', { symbol, limit });
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
+    // Verificar status do token
+    const tokenStatus = await checkTokenStatus();
+
+    if (!tokenStatus.isValid) {
+      throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
+    }
+
+    // Obter token JWT
+    const userToken = TOKEN_STORAGE.get();
+
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+
+    const requestUrl = `${API_CONFIG.BASE_URL}${BINANCE_CONFIG.endpoints.historicoOrdens}?symbol=${symbol}&limit=${limit}`;
+    const requestHeaders = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${userToken}`
+    };
+
+    logger.debug('[BINANCE-ORDER-HISTORY] Request URL:', requestUrl);
+
+    const response = await fetch(requestUrl, {
+      method: 'GET',
+      headers: requestHeaders
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error('[BINANCE-ORDER-HISTORY] Erro HTTP:', { status: response.status, error: errorText });
+      throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    logger.debug('[BINANCE-ORDER-HISTORY] Resposta recebida:', responseData);
+
+    return responseData as BinanceOrderHistoryResponse;
+
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.error('[BINANCE-ORDER-HISTORY] Erro ao consultar histórico de ordens:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
+    return null;
+  }
+}
+
 // ==================== WITHDRAWAL FUNCTIONS ====================
 
 /**
@@ -517,9 +589,14 @@ export async function consultarSaldosBinance(): Promise<BinanceSpotBalancesRespo
  * 📜 Histórico de Saques
  * Endpoint: GET /api/binance/withdrawal/historico
  */
-export async function consultarHistoricoSaquesBinance(coin?: string, status?: number): Promise<BinanceWithdrawalHistoryResponse | null> {
+export async function consultarHistoricoSaquesBinance(
+  coin?: string, 
+  status?: number,
+  startTime?: number,
+  endTime?: number
+): Promise<BinanceWithdrawalHistoryResponse | null> {
   try {
-    logger.debug('[BINANCE-WITHDRAWAL-HISTORY] Consultando histórico de saques...', { coin, status });
+    logger.debug('[BINANCE-WITHDRAWAL-HISTORY] Consultando histórico de saques...', { coin, status, startTime, endTime });
 
     // Validar configuração da API
     const configValidation = validateApiConfiguration();
@@ -544,6 +621,8 @@ export async function consultarHistoricoSaquesBinance(coin?: string, status?: nu
     const params = new URLSearchParams();
     if (coin) params.append('coin', coin);
     if (status !== undefined) params.append('status', status.toString());
+    if (startTime !== undefined) params.append('startTime', startTime.toString());
+    if (endTime !== undefined) params.append('endTime', endTime.toString());
     
     const requestUrl = `${API_CONFIG.BASE_URL}${BINANCE_CONFIG.endpoints.historicoSaques}${params.toString() ? `?${params.toString()}` : ''}`;
     const requestHeaders = {

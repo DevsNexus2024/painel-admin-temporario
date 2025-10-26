@@ -138,7 +138,18 @@ export async function getBinanceTransactions(params?: {
     if (params?.limit) searchParams.append('limit', String(params.limit));
     
     const url = `${OTC_BINANCE_BASE_URL}/transactions${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
-    const response = await api.get(url);
+    const response = await api.get<{
+      success: boolean;
+      data: {
+        transactions: BinanceTransaction[];
+        pagination: {
+          page: number;
+          limit: number;
+          total: number;
+          total_pages: number;
+        };
+      };
+    }>(url);
     
     if (response.data.success) {
       logger.debug('[BINANCE-TRANSACTIONS] Transações obtidas:', response.data.data);
@@ -153,18 +164,48 @@ export async function getBinanceTransactions(params?: {
 }
 
 /**
- * Atualizar anotação de uma transação Binance OTC
+ * Atualizar anotação de uma transação Binance OTC por ID interno
  */
 export async function updateBinanceTransactionNotes(
   transactionId: number,
   notes: string
 ): Promise<BinanceTransaction | null> {
   try {
-    logger.debug('[BINANCE-TRANSACTION] Atualizando anotação...', { transactionId, notes });
+    logger.debug('[BINANCE-TRANSACTION] Atualizando anotação por ID interno...', { transactionId, notes });
     
     const response = await api.patch<BinanceTransactionResponse>(
       `${OTC_BINANCE_BASE_URL}/transactions/${transactionId}/notes`,
       { transaction_notes: notes }
+    );
+    
+    if (response.data.success) {
+      logger.debug('[BINANCE-TRANSACTION] Anotação atualizada:', response.data.data);
+      return response.data.data;
+    }
+    
+    throw new Error(response.data.message || 'Erro ao atualizar anotação');
+  } catch (error: any) {
+    logger.error('[BINANCE-TRANSACTION] Erro ao atualizar anotação:', error);
+    return null;
+  }
+}
+
+/**
+ * Atualizar anotação de uma transação Binance OTC por binance_transaction_id
+ */
+export async function updateBinanceTransactionNotesByBinanceId(
+  binanceTransactionId: string,
+  notes: string
+): Promise<BinanceTransaction | null> {
+  try {
+    logger.debug('[BINANCE-TRANSACTION] Atualizando anotação por binance_transaction_id...', { binanceTransactionId, notes });
+    
+    const response = await api.patch<BinanceTransactionResponse>(
+      `${OTC_BINANCE_BASE_URL}/transactions/0/notes`,
+      { 
+        binance_transaction_id: binanceTransactionId,
+        transaction_notes: notes 
+      }
     );
     
     if (response.data.success) {
