@@ -1,0 +1,31 @@
+alerts:
+- rule: DEPLOYMENT_FAILED
+- rule: DOMAIN_FAILED
+domains:
+- domain: otc.uneverhide.com.br
+  type: PRIMARY
+features:
+- buildpack-stack=ubuntu-22
+ingress:
+  rules:
+  - component:
+      name: painel-admin-temporario
+    match:
+      authority:
+        exact: ""
+      path:
+        prefix: /
+name: otc-painel-tcr
+region: sgp
+static_sites:
+- build_command: npm run build
+  environment_slug: node-js
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: DevsNexus2024/painel-admin-temporario
+  name: painel-admin-temporario
+  source_dir: /
+  # ✅ ADICIONAR ESTA LINHA PARA SUPORTE A ROTAS SPA
+  catchall_document: index.html
+

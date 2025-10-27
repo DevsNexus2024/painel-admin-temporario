@@ -1,0 +1,13 @@
+name: painel-admin-temporario
+static_sites:
+  - name: frontend
+    github:
+      repo: seu-usuario/seu-repo
+      branch: main
+      deploy_on_push: true
+    build_command: npm run build
+    output_dir: dist
+    routes:
+      - path: /
+    catchall_document: index.html
+

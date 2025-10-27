@@ -67,6 +67,87 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
 
   const networks = NETWORKS[coin as keyof typeof NETWORKS] || [{ value: 'TRX', label: 'TRX' }];
 
+  /**
+   * Converte formato brasileiro para formato americano
+   * Ex: "1.000,50" -> "1000.50"
+   */
+  const convertBrazilianToUS = (value: string): string => {
+    // Remove separadores de milhar (pontos)
+    // Substitui vírgula por ponto decimal
+    return value
+      .replace(/\./g, '')      // Remove pontos (separadores de milhar)
+      .replace(',', '.');      // Substitui vírgula por ponto
+  };
+
+  /**
+   * Formata valor para o padrão brasileiro (visual)
+   * Ex: "1000.50" -> "1.000,50"
+   */
+  const formatBrazilian = (value: string): string => {
+    // Remove tudo que não é número ou vírgula/ponto
+    const cleanValue = value.replace(/[^\d,.]/g, '');
+    
+    // Se vazio, retorna vazio
+    if (!cleanValue) return '';
+    
+    // Se for apenas vírgula ou ponto sozinho, retorna vazio
+    if (cleanValue === ',' || cleanValue === '.') return '';
+    
+    // Normaliza: se tem ambos vírgula e ponto, mantém apenas o último como decimal
+    let normalizedValue = cleanValue;
+    if (cleanValue.includes(',') && cleanValue.includes('.')) {
+      // Se o último caractere é vírgula ou ponto
+      const lastComma = cleanValue.lastIndexOf(',');
+      const lastDot = cleanValue.lastIndexOf('.');
+      if (lastComma > lastDot) {
+        // Vírgula é o decimal, remove pontos
+        normalizedValue = cleanValue.replace(/\./g, '');
+      } else {
+        // Ponto é o decimal, remove vírgulas
+        normalizedValue = cleanValue.replace(/,/g, '');
+      }
+    }
+    
+    // Verifica se tem vírgula ou ponto decimal
+    const hasDecimal = normalizedValue.includes(',') || normalizedValue.includes('.');
+    
+    if (hasDecimal) {
+      // Separa parte inteira e decimal
+      const parts = normalizedValue.replace(',', '.').split('.');
+      const integerPart = parts[0] || '0';
+      const decimalPart = parts[1] || '';
+      
+      // Formata parte inteira com separador de milhar
+      const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      
+      // Retorna com vírgula como separador decimal
+      return decimalPart ? `${formattedInteger},${decimalPart}` : formattedInteger;
+    } else {
+      // Apenas parte inteira - adiciona separador de milhar
+      return normalizedValue.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+  };
+
+  /**
+   * Handler para mudança do input de valor
+   */
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = e.target.value;
+    
+    // Permite apenas números, vírgula e ponto
+    const validInput = inputValue.replace(/[^\d,.]/g, '');
+    
+    // Se vazio, apenas limpa
+    if (!validInput) {
+      setAmount('');
+      return;
+    }
+    
+    // Formata para padrão brasileiro
+    const formatted = formatBrazilian(validInput);
+    setAmount(formatted);
+  };
+
   // Atualizar rede quando moeda mudar
   useEffect(() => {
     const defaultNetwork = networks[0]?.value || 'TRX';
@@ -89,9 +170,12 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
       return;
     }
 
+    // Converte valor brasileiro para formato americano antes de enviar
+    const convertedAmount = convertBrazilianToUS(amount);
+
     onConfirm({
       coin,
-      amount,
+      amount: convertedAmount,
       address,
       network,
       addressTag: addressTag || undefined,
@@ -106,7 +190,9 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
       // Definir valor máximo descontando a taxa de rede (0.0001)
       const maxAmount = parseFloat(coinBalance.free) - 0.0001;
       if (maxAmount > 0) {
-        setAmount(maxAmount.toFixed(8));
+        // Formata para padrão brasileiro (ex: "1.000,50000000")
+        const brazilianFormat = maxAmount.toFixed(8).replace('.', ',');
+        setAmount(brazilianFormat);
       } else {
         setAmount('0');
       }
@@ -115,7 +201,14 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
     }
   };
 
-  const isValid = amount && address && parseFloat(amount) > 0;
+  // Valida se o valor é válido (converte brasileiro para número)
+  const getNumericValue = (value: string): number => {
+    if (!value) return 0;
+    const converted = convertBrazilianToUS(value);
+    return parseFloat(converted) || 0;
+  };
+
+  const isValid = amount && address && getNumericValue(amount) > 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -205,8 +298,8 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
               <Input
                 type="text"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
+                onChange={handleAmountChange}
+                placeholder="0,00"
                 className="bg-muted/50 text-sm pr-16 h-10"
               />
               <Button
@@ -218,6 +311,9 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
                 MAX
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Use vírgula para separar decimais (ex: 10,50)
+            </p>
           </div>
 
           {/* Fee Info */}
@@ -225,14 +321,14 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
             <CardContent className="pt-3">
               <div className="flex justify-between text-xs mb-1">
                 <span className="text-muted-foreground">Taxa de rede</span>
-                <span className="font-medium">0.0001 {coin}</span>
+                <span className="font-medium">0,0001 {coin}</span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Você receberá</span>
                 <span className="font-semibold text-foreground">
-                  {amount && parseFloat(amount) > 0
-                    ? (parseFloat(amount) - 0.0001).toFixed(8)
-                    : '0.0000'}{' '}
+                  {amount && getNumericValue(amount) > 0
+                    ? (getNumericValue(amount) - 0.0001).toFixed(8).replace('.', ',')
+                    : '0,0000'}{' '}
                   {coin}
                 </span>
               </div>

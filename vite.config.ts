@@ -38,6 +38,12 @@ export default defineConfig(({ mode }) => ({
     // 🔒 Plugin temporariamente desabilitado para debug
     // mode === 'production' && removeSensitiveDataPlugin(),
   ].filter(Boolean),
+  
+  // Configuração para garantir que todos os assets sejam servidos corretamente
+  preview: {
+    port: 8080,
+    strictPort: true,
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
