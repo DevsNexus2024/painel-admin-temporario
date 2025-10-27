@@ -6,14 +6,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-dist
 rules.mdc
 
 planejamento-md
 .env
 node_modules
-dist
-dist-ssr
 *.local
 
 # Editor directories and files
@@ -36,4 +33,3 @@ dist-ssr
 *.pptx
 *.ppt
 *.zip   
-dist
