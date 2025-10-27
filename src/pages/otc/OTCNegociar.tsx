@@ -51,6 +51,7 @@ import { toastError, toastSuccess } from '@/utils/toast';
 import type { BinanceTransaction } from '@/types/binance';
 import type { OTCClient } from '@/types/otc';
 import type { BinanceTransaction as SavedBinanceTransaction } from '@/services/otc-binance';
+import { useAuth } from '@/hooks/useAuth';
 
 const OTCNegociar: React.FC = () => {
   // ==================== TRADING HOOKS ====================
@@ -103,6 +104,9 @@ const OTCNegociar: React.FC = () => {
 
   // Hook para operações OTC
   const { createOperation } = useOTCOperations();
+
+  // Hook para autenticação (pegar email do usuário logado)
+  const { user } = useAuth();
 
   const [quantity, setQuantity] = useState('');
   const [total, setTotal] = useState('');
@@ -468,6 +472,18 @@ const OTCNegociar: React.FC = () => {
     network?: string;
     addressTag?: string;
   }) => {
+    // Validar se cliente foi selecionado
+    if (!selectedClient) {
+      toastError('Cliente não selecionado', 'Por favor, selecione um cliente antes de realizar o saque');
+      return;
+    }
+
+    // Validar se há usuário logado
+    if (!user?.email) {
+      toastError('Usuário não identificado', 'Não foi possível identificar o usuário logado');
+      return;
+    }
+
     const response = await criarSaque(
       data.coin,
       data.amount,
@@ -476,8 +492,49 @@ const OTCNegociar: React.FC = () => {
       data.addressTag
     );
 
-    if (response) {
+    if (response && response.data) {
+      // Fechar modal
       setShowWithdrawalModal(false);
+      
+      // Criar operação de débito USD automaticamente
+      try {
+        // IMPORTANTE: O withdrawId é o ID interno da Binance, NÃO o hash da blockchain
+        // O txId (hash da transação) só será disponível depois que o saque for confirmado
+        // na blockchain. Por isso, por enquanto, vamos usar o withdrawId como referência
+        const withdrawId = response.data.withdrawId || 'N/A';
+        
+        // Construir descrição com email do usuário
+        // O link da blockchain será adicionado depois quando o txId estiver disponível
+        const description = `Operação Automática USDT por ${user.email}: SAQUE - Binance ID: ${withdrawId}`;
+        
+        console.log('📝 Criando operação de débito:', {
+          clientId: selectedClient,
+          amount: data.amount,
+          withdrawId,
+          description
+        });
+        
+        // Criar operação de débito USD
+        const debitOperation = {
+          otc_client_id: parseInt(selectedClient),
+          operation_type: 'debit' as const,
+          currency: 'USD' as const,
+          amount: parseFloat(data.amount),
+          description: description,
+        };
+        
+        await createOperation(debitOperation);
+        
+        console.log('✅ Operação de débito USD criada automaticamente:', debitOperation);
+        
+        // Recarregar histórico de saques
+        const { startTime, endTime } = getMonthDateRange();
+        await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
+        
+      } catch (error) {
+        console.error('❌ Erro ao criar operação de débito:', error);
+        toastError('Aviso', 'Saque realizado mas não foi possível criar operação de débito USD');
+      }
     }
   };
 
@@ -1166,11 +1223,18 @@ const OTCNegociar: React.FC = () => {
               {/* Botão de Saque */}
               <Button
                 size="lg"
-                className="w-full bg-orange-600 hover:bg-orange-700 text-xs font-bold h-10 text-white"
-                onClick={() => setShowWithdrawalModal(true)}
+                className="w-full bg-orange-600 hover:bg-orange-700 text-xs font-bold h-10 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (!selectedClient) {
+                    toastError('Cliente não selecionado', 'Por favor, selecione um cliente antes de realizar o saque');
+                    return;
+                  }
+                  setShowWithdrawalModal(true);
+                }}
+                disabled={!selectedClient}
               >
                 <Wallet className="w-3 h-3 mr-2" />
-                Solicitar Saque
+                {selectedClient ? 'Solicitar Saque' : 'Selecione um Cliente'}
               </Button>
             </CardContent>
           </Card>

@@ -52,9 +52,12 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setHasBeenEdited(false);
-      setNotes('');
+      setIsEditing(false);
+      setNotes(`Cliente: ${selectedClient?.name || ''}`);
+      setOriginalPrice('');
+      setEditedPrice('');
     }
-  }, [isOpen, quote]);
+  }, [isOpen, quote, selectedClient]);
 
   // Calcular preço final
   const calculateFinalPrice = () => {
@@ -84,11 +87,11 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
 
   // Salvar preço original ao montar
   useEffect(() => {
-    if (finalPrice > 0 && !originalPrice) {
+    if (finalPrice > 0 && isOpen) {
       setOriginalPrice(finalPrice.toFixed(4));
       setEditedPrice(finalPrice.toFixed(4));
     }
-  }, [finalPrice, originalPrice]);
+  }, [finalPrice, isOpen]);
 
   // Atualizar preço editado quando finalPrice mudar (APENAS se nunca foi editado)
   useEffect(() => {
@@ -243,7 +246,7 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
               id="notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Descreva a operação realizada..."
+              placeholder="Adicione detalhes adicionais..."
               className="bg-muted/50 text-sm min-h-[80px]"
               rows={3}
             />
