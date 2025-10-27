@@ -60,7 +60,7 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   balances = [],
 }) => {
   const [coin, setCoin] = useState('USDT');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState('0,00');
   const [address, setAddress] = useState('');
   const [network, setNetwork] = useState('TRX');
   const [addressTag, setAddressTag] = useState('');
@@ -80,52 +80,31 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   };
 
   /**
-   * Formata valor para o padrão brasileiro (visual)
-   * Ex: "1000.50" -> "1.000,50"
+   * Formata número monetário preenchendo da direita para esquerda
+   * Mantém sempre 2 casas decimais
+   * Ex: digita "1" → "0,01", digita "1000" → "10,00"
    */
-  const formatBrazilian = (value: string): string => {
-    // Remove tudo que não é número ou vírgula/ponto
-    const cleanValue = value.replace(/[^\d,.]/g, '');
+  const formatMonetaryInput = (value: string): string => {
+    // Remove tudo que não é número
+    const numbersOnly = value.replace(/\D/g, '');
     
-    // Se vazio, retorna vazio
-    if (!cleanValue) return '';
+    // Se vazio, retorna formato inicial
+    if (!numbersOnly) return '0,00';
     
-    // Se for apenas vírgula ou ponto sozinho, retorna vazio
-    if (cleanValue === ',' || cleanValue === '.') return '';
+    // Converte para número e divide por 100 para ter decimais
+    const numValue = parseInt(numbersOnly, 10) / 100;
     
-    // Normaliza: se tem ambos vírgula e ponto, mantém apenas o último como decimal
-    let normalizedValue = cleanValue;
-    if (cleanValue.includes(',') && cleanValue.includes('.')) {
-      // Se o último caractere é vírgula ou ponto
-      const lastComma = cleanValue.lastIndexOf(',');
-      const lastDot = cleanValue.lastIndexOf('.');
-      if (lastComma > lastDot) {
-        // Vírgula é o decimal, remove pontos
-        normalizedValue = cleanValue.replace(/\./g, '');
-      } else {
-        // Ponto é o decimal, remove vírgulas
-        normalizedValue = cleanValue.replace(/,/g, '');
-      }
-    }
+    // Formata com 2 casas decimais sempre
+    const formatted = numValue.toFixed(2);
     
-    // Verifica se tem vírgula ou ponto decimal
-    const hasDecimal = normalizedValue.includes(',') || normalizedValue.includes('.');
+    // Separa parte inteira e decimal
+    const [integerPart, decimalPart] = formatted.split('.');
     
-    if (hasDecimal) {
-      // Separa parte inteira e decimal
-      const parts = normalizedValue.replace(',', '.').split('.');
-      const integerPart = parts[0] || '0';
-      const decimalPart = parts[1] || '';
-      
-      // Formata parte inteira com separador de milhar
-      const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-      
-      // Retorna com vírgula como separador decimal
-      return decimalPart ? `${formattedInteger},${decimalPart}` : formattedInteger;
-    } else {
-      // Apenas parte inteira - adiciona separador de milhar
-      return normalizedValue.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    }
+    // Adiciona separador de milhar na parte inteira
+    const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    
+    // Retorna no formato brasileiro
+    return `${formattedInteger},${decimalPart}`;
   };
 
   /**
@@ -134,17 +113,8 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
     
-    // Permite apenas números, vírgula e ponto
-    const validInput = inputValue.replace(/[^\d,.]/g, '');
-    
-    // Se vazio, apenas limpa
-    if (!validInput) {
-      setAmount('');
-      return;
-    }
-    
-    // Formata para padrão brasileiro
-    const formatted = formatBrazilian(validInput);
+    // Formata como input monetário
+    const formatted = formatMonetaryInput(inputValue);
     setAmount(formatted);
   };
 
@@ -158,7 +128,7 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   useEffect(() => {
     if (!isOpen) {
       setCoin('USDT');
-      setAmount('');
+      setAmount('0,00');
       setAddress('');
       setNetwork('TRX');
       setAddressTag('');
@@ -190,14 +160,14 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
       // Definir valor máximo descontando a taxa de rede (0.0001)
       const maxAmount = parseFloat(coinBalance.free) - 0.0001;
       if (maxAmount > 0) {
-        // Formata para padrão brasileiro (ex: "1.000,50000000")
-        const brazilianFormat = maxAmount.toFixed(8).replace('.', ',');
+        // Converte para string e formata como monetário
+        const brazilianFormat = formatMonetaryInput(maxAmount.toFixed(2).replace('.', ''));
         setAmount(brazilianFormat);
       } else {
-        setAmount('0');
+        setAmount('0,00');
       }
     } else {
-      setAmount('0');
+      setAmount('0,00');
     }
   };
 
@@ -312,7 +282,7 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Use vírgula para separar decimais (ex: 10,50)
+              Digite o valor normalmente: digite 100 para R$ 1,00
             </p>
           </div>
 
