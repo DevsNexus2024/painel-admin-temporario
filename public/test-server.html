@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Servidor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .test {
+            background: #2a2a2a;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #4CAF50;
+        }
+        .error {
+            border-left-color: #f44336;
+        }
+        code {
+            background: #000;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Diagnóstico do Servidor</h1>
+    
+    <div class="test">
+        <h3>✅ Página carregada com sucesso!</h3>
+        <p>Se você está vendo esta página, o servidor está funcionando.</p>
+    </div>
+
+    <div class="test">
+        <h3>🌐 URLs de Teste:</h3>
+        <ul>
+            <li><a href="/otc/negociar" style="color: #4CAF50;">Testar: /otc/negociar</a></li>
+            <li><a href="/otc" style="color: #4CAF50;">Testar: /otc</a></li>
+            <li><a href="/login" style="color: #4CAF50;">Testar: /login</a></li>
+        </ul>
+        <p><strong>Se essas URLs derem 404:</strong> O servidor NÃO está configurado para SPA</p>
+    </div>
+
+    <div class="test">
+        <h3>📋 Informações do Servidor:</h3>
+        <p><strong>User-Agent:</strong> <code id="userAgent"></code></p>
+        <p><strong>URL Atual:</strong> <code id="currentUrl"></code></p>
+        <p><strong>Host:</strong> <code id="host"></code></p>
+    </div>
+
+    <div class="test error">
+        <h3>⚠️ Se ainda estiver com 404:</h3>
+        <ol>
+            <li>Verifique no painel Digital Ocean qual servidor web está usando (Apache ou Nginx)</li>
+            <li>Apache: use o arquivo <code>.htaccess</code></li>
+            <li>Nginx: configure manualmente usando o arquivo <code>nginx.conf</code> como referência</li>
+            <li>Static Sites: pode precisar de configuração especial no painel</li>
+        </ol>
+    </div>
+
+    <script>
+        document.getElementById('userAgent').textContent = navigator.userAgent;
+        document.getElementById('currentUrl').textContent = window.location.href;
+        document.getElementById('host').textContent = window.location.host;
+    </script>
+</body>
+</html>
+

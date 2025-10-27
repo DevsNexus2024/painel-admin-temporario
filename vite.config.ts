@@ -3,8 +3,8 @@ import path from "path";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  // Configuração para produção no cPanel
-  base: mode === 'production' ? './' : '/',
+  // Configuração base para produção - usar '/' para suportar rotas absolutas
+  base: '/',
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
