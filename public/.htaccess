@@ -1,11 +1,14 @@
 # Habilitar reescrita de URL
-RewriteEngine On
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
 
-# Configuração para SPA (Single Page Application)
-# Redireciona todas as rotas para o index.html
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule . /index.html [L]
+  # Configuração para SPA (Single Page Application)
+  # Redireciona todas as rotas para o index.html
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
 
 # Configurações de cache para assets
 <IfModule mod_expires.c>
@@ -22,9 +25,11 @@ RewriteRule . /index.html [L]
 </IfModule>
 
 # Configurações de segurança
-Header always set X-Content-Type-Options nosniff
-Header always set X-Frame-Options DENY
-Header always set X-XSS-Protection "1; mode=block"
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options nosniff
+  Header always set X-Frame-Options SAMEORIGIN
+  Header always set X-XSS-Protection "1; mode=block"
+</IfModule>
 
 # Compressão GZIP
 <IfModule mod_deflate.c>
