@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Wallet, ArrowDown } from 'lucide-react';
+import { AlertTriangle, Wallet, ArrowDown, Check } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { formatMonetaryInput, convertBrazilianToUS, getNumericValue } from '@/utils/monetaryInput';
+import type { OTCClient } from '@/types/otc';
+import type { BinanceQuoteData } from '@/types/binance';
 
 interface BinanceWithdrawalModalProps {
   isOpen: boolean;
@@ -41,6 +43,9 @@ interface BinanceWithdrawalModalProps {
     free: string;
     locked: string;
   }>;
+  client?: OTCClient | null;
+  quote?: BinanceQuoteData | null;
+  onRequestQuote?: () => Promise<void>;
 }
 
 const NETWORKS = {
@@ -59,12 +64,16 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   onConfirm,
   loading = false,
   balances = [],
+  client = null,
+  quote = null,
+  onRequestQuote,
 }) => {
   const [coin, setCoin] = useState('USDT');
   const [amount, setAmount] = useState('0,00');
   const [address, setAddress] = useState('');
   const [network, setNetwork] = useState('TRX');
   const [addressTag, setAddressTag] = useState('');
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   const networks = NETWORKS[coin as keyof typeof NETWORKS] || [{ value: 'TRX', label: 'TRX' }];
 
@@ -93,8 +102,33 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
       setAddress('');
       setNetwork('TRX');
       setAddressTag('');
+      setShowConfirmation(false);
     }
   }, [isOpen]);
+
+  // Solicitar cotação automaticamente quando o modal abrir
+  useEffect(() => {
+    if (isOpen && !quote && onRequestQuote) {
+      onRequestQuote();
+    }
+  }, [isOpen, quote, onRequestQuote]);
+
+  // Calcular BRL aproximado baseado na cotação
+  const calculateBrlApproximate = () => {
+    if (!quote || !amount || getNumericValue(amount) <= 0) return 0;
+    
+    const usdtAmount = getNumericValue(amount) - 0.0001; // Valor que receberá
+    const brlPrice = quote.averagePrice; // Cotação USDT/BRL
+    
+    return usdtAmount * brlPrice;
+  };
+
+  const handleContinue = () => {
+    if (!amount || !address) {
+      return;
+    }
+    setShowConfirmation(true);
+  };
 
   const handleConfirm = () => {
     if (!amount || !address) {
@@ -111,6 +145,10 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
       network,
       addressTag: addressTag || undefined,
     });
+  };
+
+  const handleCancelConfirmation = () => {
+    setShowConfirmation(false);
   };
 
   const handleMaxAmount = () => {
@@ -133,6 +171,7 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   };
 
   const isValid = amount && address && getNumericValue(amount) > 0;
+  const brlApproximate = calculateBrlApproximate();
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -140,14 +179,31 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <Wallet className="w-4 h-4 text-orange-500" />
-            Solicitar Saque
+            {!showConfirmation ? 'Solicitar Saque' : 'Confirmar Saque'}
           </DialogTitle>
           <DialogDescription className="text-sm">
-            Preencha os dados para solicitar um saque
+            {!showConfirmation 
+              ? 'Preencha os dados para solicitar um saque'
+              : 'Revise os dados antes de confirmar'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        {!showConfirmation ? (
+          // Formulário principal
+          <>
+          {/* Informações do Cliente */}
+          {client && (
+            <Card className="bg-muted/30 border-border/50">
+              <CardContent className="pt-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Cliente:</span>
+                  <span className="font-semibold">{client.name}</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="space-y-3">
           {/* Coin Selection */}
           <div>
             <label className="text-sm font-medium text-foreground mb-2 block">
@@ -247,13 +303,21 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
                 <span className="text-muted-foreground">Taxa de rede</span>
                 <span className="font-medium">0,0001 {coin}</span>
               </div>
-              <div className="flex justify-between text-xs">
+              <div className="flex justify-between text-xs mb-1">
                 <span className="text-muted-foreground">Você receberá</span>
                 <span className="font-semibold text-foreground">
                   {amount && getNumericValue(amount) > 0
                     ? (getNumericValue(amount) - 0.0001).toFixed(8).replace('.', ',')
                     : '0,0000'}{' '}
                   {coin}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs pt-1 border-t border-border/50">
+                <span className="text-muted-foreground">BRL Aproximado</span>
+                <span className="font-semibold text-green-600">
+                  {brlApproximate > 0 
+                    ? `R$ ${brlApproximate.toFixed(2).replace('.', ',')}`
+                    : 'R$ 0,00'}
                 </span>
               </div>
             </CardContent>
@@ -270,32 +334,114 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
             </div>
           </div>
         </div>
+        </>
+        ) : (
+          // Tela de Confirmação
+          <div className="space-y-4">
+            <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+              <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-yellow-700 dark:text-yellow-400">
+                <p className="font-medium mb-0.5">Confirmação</p>
+                <p>Revise os dados antes de confirmar o saque</p>
+              </div>
+            </div>
+
+            {/* Resumo */}
+            <Card className="bg-muted/30 border-border/50">
+              <CardContent className="pt-3">
+                <div className="space-y-2 text-sm">
+                  {client && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Cliente:</span>
+                      <span className="font-semibold">{client.name}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Moeda:</span>
+                    <span className="font-semibold">{coin}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Valor:</span>
+                    <span className="font-semibold">{amount} {coin}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Você receberá:</span>
+                    <span className="font-semibold text-green-600">
+                      {amount && getNumericValue(amount) > 0
+                        ? (getNumericValue(amount) - 0.0001).toFixed(8).replace('.', ',')
+                        : '0,0000'}{' '}
+                      {coin}
+                    </span>
+                  </div>
+                  {brlApproximate > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">BRL Aproximado:</span>
+                      <span className="font-semibold text-green-600">
+                        R$ {brlApproximate.toFixed(2).replace('.', ',')}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Rede:</span>
+                    <span className="font-semibold">{network}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Endereço:</span>
+                    <span className="font-mono text-xs break-all">{address}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         <DialogFooter className="gap-2">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            disabled={loading}
-          >
-            Cancelar
-          </Button>
-          <Button
-            onClick={handleConfirm}
-            disabled={loading || !isValid}
-            className="bg-orange-600 hover:bg-orange-700"
-          >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                Processando...
-              </>
-            ) : (
-              <>
+          {!showConfirmation ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={onClose}
+                disabled={loading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleContinue}
+                disabled={loading || !isValid}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
                 <ArrowDown className="w-4 h-4 mr-2" />
-                Solicitar Saque
-              </>
-            )}
-          </Button>
+                Continuar
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleCancelConfirmation}
+                disabled={loading}
+              >
+                Voltar
+              </Button>
+              <Button
+                onClick={handleConfirm}
+                disabled={loading}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Processando...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 mr-2" />
+                    Confirmar Saque
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

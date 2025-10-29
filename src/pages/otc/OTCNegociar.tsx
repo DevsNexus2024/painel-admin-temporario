@@ -273,6 +273,17 @@ const OTCNegociar: React.FC = () => {
   };
 
   /**
+   * Solicitar cotação automática para saques (1000 USDT padrão)
+   */
+  const handleRequestQuoteForWithdrawal = async () => {
+    const symbol = 'USDTBRL';
+    const side = 'SELL'; // Para saque, vamos vender USDT por BRL
+    
+    // Solicitar cotação com 1000 USDT padrão
+    await solicitarCotacao(1000, 'USDT', symbol, side);
+  };
+
+  /**
    * Executar trade direto
    */
   const handleExecutarTrade = async () => {
@@ -314,7 +325,7 @@ const OTCNegociar: React.FC = () => {
       setShowConfirmationModal(false);
       
       // Toast de sucesso
-      toastSuccess('Trade executado com sucesso', `Ordem #${response.data.orderId} executada na Binance`);
+      toastSuccess('Trade executado com sucesso', `Ordem #${response.data.orderId} executada`);
       
       // Salvar transação no banco de dados
       try {
@@ -417,7 +428,7 @@ const OTCNegociar: React.FC = () => {
               brl_amount: brlValue,
               usd_amount: usdValue,
               conversion_rate: conversionRate,
-              description: `Conversão via Binance - ${notes.trim()}`,
+              description: `Conversão - ${notes.trim()}`,
             };
             
             console.log('📊 Detalhes da conversão:', {
@@ -434,7 +445,7 @@ const OTCNegociar: React.FC = () => {
             console.log('✅ Operação de conversão criada:', conversionData);
           } catch (conversionError) {
             console.error('❌ Erro ao criar operação de conversão:', conversionError);
-            toastError('Aviso', 'Transação Binance salva mas não foi possível criar operação de conversão');
+            toastError('Aviso', 'Transação salva mas não foi possível criar operação de conversão');
           }
         }
       } catch (error) {
@@ -508,7 +519,7 @@ const OTCNegociar: React.FC = () => {
         
         // Construir descrição com email do usuário
         // O link da blockchain será adicionado depois quando o txId estiver disponível
-        const description = `Operação Automática USDT por ${user.email}: SAQUE - Binance ID: ${withdrawId}`;
+        const description = `Operação Automática USDT por ${user.email}: SAQUE - ID: ${withdrawId}`;
         
         console.log('📝 Criando operação de débito:', {
           clientId: selectedClient,
@@ -861,7 +872,7 @@ const OTCNegociar: React.FC = () => {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
             </span>
-            Binance Connected • {new Date().toLocaleTimeString('pt-BR')}
+            Conectado • {new Date().toLocaleTimeString('pt-BR')}
           </p>
         </div>
         <Button
@@ -1612,6 +1623,13 @@ const OTCNegociar: React.FC = () => {
         onConfirm={handleSolicitarSaque}
         loading={withdrawalLoading}
         balances={balances}
+        client={(() => {
+          // Usar dados do cliente específico (que tem fee) se disponível, senão usar da lista
+          const clientToUse = selectedClientData || clients.find((c) => c.id.toString() === selectedClient);
+          return clientToUse || null;
+        })()}
+        quote={quote}
+        onRequestQuote={handleRequestQuoteForWithdrawal}
       />
 
       <TradeConfirmationModal

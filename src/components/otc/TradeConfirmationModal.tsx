@@ -183,7 +183,7 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
             Confirmar Trade
           </DialogTitle>
           <DialogDescription className="text-sm">
-            Revise os detalhes antes de executar o trade na Binance
+            Revise os detalhes antes de executar o trade
           </DialogDescription>
         </DialogHeader>
 
@@ -227,11 +227,11 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
                   <span className="font-mono">{quote.outputAmount.toFixed(4)} {quote.outputCurrency}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Preço Médio Binance:</span>
+                  <span className="text-muted-foreground">Preço Médio:</span>
                   <span className="font-mono">R$ {quote.averagePrice.toFixed(4)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Taxa Binance:</span>
+                  <span className="text-muted-foreground">Taxa:</span>
                   <span className="font-mono">{binanceFee}%</span>
                 </div>
               </div>
@@ -284,7 +284,7 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
             <div className="text-xs text-yellow-700 dark:text-yellow-400">
               <p className="font-medium mb-0.5">Atenção</p>
               <p>
-                O trade será executado na Binance com o preço médio ({quote.averagePrice.toFixed(4)}). 
+                O trade será executado com o preço médio ({quote.averagePrice.toFixed(4)}). 
                 O preço final editado será usado apenas para registro interno.
               </p>
             </div>
