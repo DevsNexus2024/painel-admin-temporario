@@ -7,19 +7,18 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Download, Filter, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Plus, Check, CheckSquare, X, RefreshCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon } from "lucide-react";
+import { Search, Download, Filter, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, DollarSign, CheckSquare, Check, X, RefreshCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
-import BulkCreditOTCModal from "@/components/otc/BulkCreditOTCModal";
+import CompensationModalInteligente from "@/components/CompensationModalInteligente";
 import { useBitsoWebSocket } from "@/hooks/useBitsoWebSocket";
 import { BitsoRealtimeService } from "@/services/bitso-realtime";
 import type { BitsoTransactionDB, BitsoTransactionFilters } from "@/services/bitso-realtime";
-import type { MovimentoExtrato } from "@/services/extrato";
+import { TCRVerificacaoService } from "@/services/tcrVerificacao";
 
-export default function ExtractTabBitso() {
+export default function ExtractTabBitsoTcr() {
   // WebSocket
   const { isConnected, newTransaction, transactionTimestamp } = useBitsoWebSocket();
 
@@ -55,15 +54,14 @@ export default function ExtractTabBitso() {
   const [showReversalsOnly, setShowReversalsOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Estados para funcionalidade OTC
-  const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
-  const [selectedExtractRecord, setSelectedExtractRecord] = useState<MovimentoExtrato | null>(null);
-  const [creditedRecords, setCreditedRecords] = useState<Set<string>>(new Set());
+  // Estados para funcionalidade de Compensação
+  const [compensationModalOpen, setCompensationModalOpen] = useState(false);
+  const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<any>(null);
+  const [compensatedRecords, setCompensatedRecords] = useState<Set<string>>(new Set());
 
-  // Estados para crédito em lote
+  // Estados para compensação em lote
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
-  const [bulkOTCModalOpen, setBulkOTCModalOpen] = useState(false);
 
   // Estado para controlar linha expandida
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
@@ -79,6 +77,7 @@ export default function ExtractTabBitso() {
         endDate: dateFilter.end,
         limit: pagination.limit,
         offset: resetOffset ? 0 : pagination.offset,
+        onlyTcr: true, // 🎯 IMPORTANTE: Bitso TCR só mostra transações com reconciliationId
       };
 
       if (typeFilter !== 'ALL') filters.type = typeFilter;
@@ -145,7 +144,15 @@ export default function ExtractTabBitso() {
 
   useEffect(() => {
     if (newTransaction && transactionTimestamp > 0) {
-      console.log('🔄 [ExtractTabBitso] Adicionando nova transação à tabela:', newTransaction.id);
+      console.log('🔄 [ExtractTabBitsoTcr] Nova transação recebida:', newTransaction.id);
+      
+      // ✅ Bitso TCR: só adiciona se tiver reconciliationId
+      if (!newTransaction.reconciliationId) {
+        console.log('⚠️ [ExtractTabBitsoTcr] Transação sem reconciliationId, ignorando');
+        return;
+      }
+      
+      console.log('✅ [ExtractTabBitsoTcr] Transação TCR válida, adicionando à tabela');
       
       const convertedTransaction: BitsoTransactionDB = {
         id: newTransaction.id,
@@ -176,7 +183,7 @@ export default function ExtractTabBitso() {
           console.log('⚠️ Transação duplicada (endToEndId), ignorando:', convertedTransaction.endToEndId);
           return prev;
         }
-        console.log('✅ Transação adicionada ao topo da tabela');
+        console.log('✅ Transação adicionada ao topo da tabela TCR');
         return [convertedTransaction, ...prev];
       });
       
@@ -243,43 +250,86 @@ export default function ExtractTabBitso() {
     toast.success('Extrato exportado com sucesso');
   };
 
-  const isRecordCredited = (transaction: BitsoTransactionDB): boolean => {
-    const recordKey = `bitso-${transaction.id}`;
-    return creditedRecords.has(recordKey);
+  const isRecordCompensated = (transaction: BitsoTransactionDB): boolean => {
+    const recordKey = `bitso-tcr-${transaction.id}`;
+    return compensatedRecords.has(recordKey);
   };
 
-  const handleCreditToOTC = async (transaction: BitsoTransactionDB, event: React.MouseEvent) => {
+  const handleCompensation = async (transaction: BitsoTransactionDB, event: React.MouseEvent) => {
     event.stopPropagation();
     
-    if (isRecordCredited(transaction)) {
-      toast.error('Registro já creditado');
+    if (isRecordCompensated(transaction)) {
+      toast.error('Registro já compensado');
       return;
     }
     
-    // Converter para o formato esperado pelo modal (MovimentoExtrato)
-    setSelectedExtractRecord({
+    // ✅ Converter para formato MovimentoExtrato esperado pelo modal (IGUAL CorpX TCR)
+    let extractRecord = {
       id: transaction.transactionId,
       dateTime: transaction.createdAt,
       value: parseFloat(transaction.amount),
       type: transaction.type === 'FUNDING' ? 'CRÉDITO' : 'DÉBITO',
-      document: transaction.payerTaxId || '',
       client: transaction.payerName || transaction.payeeName || 'N/A',
-      identified: true,
+      document: transaction.payerTaxId || '',
       code: transaction.endToEndId,
-      descCliente: `Bitso OTC - ${transaction.payerName || transaction.payeeName || 'N/A'}`,
+      descCliente: `Bitso TCR - ${transaction.payerName || transaction.payeeName || 'N/A'}`,
+      identified: true,
+      descricaoOperacao: `Bitso TCR - ${transaction.payerName || transaction.payeeName || 'N/A'}`,
       _original: transaction
-    });
-    setCreditOTCModalOpen(true);
-  };
-
-  const handleCloseCreditOTCModal = (wasSuccessful?: boolean) => {
-    if (wasSuccessful && selectedExtractRecord) {
-      const recordKey = `bitso-${selectedExtractRecord._original.id}`;
-      setCreditedRecords(prev => new Set(prev).add(recordKey));
+    };
+    
+    // ✅ Buscar id_usuario automaticamente via endtoend (IGUAL CorpX TCR)
+    try {
+      toast.info('Buscando usuário...', {
+        description: 'Verificando endtoend da transação via API'
+      });
+      
+      // Criar objeto compatível com TCRVerificacaoService
+      const tcTransaction = {
+        _original: {
+          idEndToEnd: transaction.endToEndId,
+          endToEndId: transaction.endToEndId
+        },
+        code: transaction.endToEndId
+      };
+      
+      const resultado = await TCRVerificacaoService.verificarTransacaoTCR(tcTransaction);
+      
+      if (resultado.encontrou && resultado.id_usuario) {
+        // ✅ ENCONTROU! Modificar descCliente para incluir o ID do usuário
+        extractRecord.descCliente = `Usuario ${resultado.id_usuario}; ${extractRecord.descCliente}`;
+        
+        toast.success(`Usuário encontrado: ID ${resultado.id_usuario}`, {
+          description: 'Abrindo modal com todas as funcionalidades'
+        });
+      } else {
+        // ❌ Não encontrou - mostrar aviso mas abrir modal mesmo assim
+        toast.warning('Usuário não encontrado automaticamente', {
+          description: 'Modal aberto - você pode informar o ID manualmente'
+        });
+      }
+    } catch (error) {
+      console.error('[BITSO-TCR-VERIFICACAO] Erro:', error);
+      toast.error('Erro na verificação automática', {
+        description: 'Modal aberto - você pode informar o ID manualmente'
+      });
     }
     
-    setCreditOTCModalOpen(false);
-    setSelectedExtractRecord(null);
+    // ✅ SEMPRE abrir o modal (com ou sem id_usuario encontrado)
+    setSelectedCompensationRecord(extractRecord);
+    setCompensationModalOpen(true);
+  };
+
+  const handleCloseCompensationModal = (wasSuccessful?: boolean) => {
+    if (wasSuccessful && selectedCompensationRecord) {
+      const recordKey = `bitso-tcr-${selectedCompensationRecord._original.id}`;
+      setCompensatedRecords(prev => new Set(prev).add(recordKey));
+      toast.success('Compensação realizada com sucesso!');
+      fetchTransactions(true); // Recarregar dados
+    }
+    
+    setCompensationModalOpen(false);
+    setSelectedCompensationRecord(null);
   };
 
   const toggleTransactionSelection = (transactionId: number) => {
@@ -296,8 +346,8 @@ export default function ExtractTabBitso() {
   };
 
   const selectAllVisibleCredits = () => {
-    const creditTransactions = transactions
-      .filter(t => t.type === 'FUNDING' && !isRecordCredited(t))
+    const creditTransactions = filteredTransactions
+      .filter(t => t.type === 'FUNDING' && !isRecordCompensated(t) && t.reconciliationId)
       .map(t => t.id.toString());
     
     setSelectedTransactions(new Set(creditTransactions));
@@ -315,46 +365,7 @@ export default function ExtractTabBitso() {
     if (!newBulkMode) {
       clearSelection();
     }
-  };
-
-  const handleBulkCredit = () => {
-    if (selectedTransactions.size === 0) {
-      toast.error('Selecione pelo menos uma transação');
-      return;
-    }
-    
-    setBulkOTCModalOpen(true);
-  };
-
-  const handleCloseBulkOTCModal = (wasSuccessful?: boolean, successfulIds?: string[]) => {
-    if (wasSuccessful && successfulIds && successfulIds.length > 0) {
-      setCreditedRecords(prev => {
-        const newSet = new Set(prev);
-        successfulIds.forEach(id => newSet.add(`bitso-${id}`));
-        return newSet;
-      });
-      
-      clearSelection();
-    }
-    
-    setBulkOTCModalOpen(false);
-  };
-
-  const getSelectedTransactionsData = () => {
-    return transactions
-      .filter(t => selectedTransactions.has(t.id.toString()))
-      .map(t => ({
-        id: t.transactionId,
-        dateTime: t.createdAt,
-        value: parseFloat(t.amount),
-        type: t.type === 'FUNDING' ? 'CRÉDITO' as const : 'DÉBITO' as const,
-        document: t.payerTaxId || '',
-        client: t.payerName || t.payeeName || 'N/A',
-        identified: true,
-        code: t.endToEndId,
-        descCliente: `Bitso OTC - ${t.payerName || t.payeeName || 'N/A'}`,
-        _original: t
-      }));
+    toast.info(newBulkMode ? 'Modo compensação em lote ativado' : 'Modo normal ativado');
   };
 
   const handlePreviousPage = () => {
@@ -393,6 +404,7 @@ export default function ExtractTabBitso() {
         endDate: dateFilter.end,
         limit: pagination.limit,
         offset: offset,
+        onlyTcr: true, // 🎯 IMPORTANTE: Bitso TCR só mostra transações com reconciliationId
       };
 
       if (typeFilter !== 'ALL') filters.type = typeFilter;
@@ -628,65 +640,59 @@ export default function ExtractTabBitso() {
 
       {/* Tabela */}
       <Card className="overflow-hidden">
-      {/* 🆕 Barra de Ações em Lote */}
+        {/* 🆕 Barra de Ações para Compensação */}
         <div className={cn(
           "px-6 py-4 border-b border-border transition-all",
-          bulkMode ? "bg-purple-50 dark:bg-purple-950/20" : "bg-muted/30"
-      )}>
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              variant={bulkMode ? "default" : "outline"}
-              onClick={toggleBulkMode}
-                className={bulkMode ? "bg-purple-600 hover:bg-purple-700" : ""}
-            >
-              <CheckSquare className="h-4 w-4 mr-2" />
-              {bulkMode ? "Sair do Modo Lote" : "Modo Seleção em Lote"}
-            </Button>
-            
-            {bulkMode && (
-              <>
-                <Badge variant="secondary" className="text-sm px-3 py-1">
-                  {selectedTransactions.size} selecionada{selectedTransactions.size !== 1 ? 's' : ''}
-                </Badge>
-                
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={selectAllVisibleCredits}
-                    disabled={filteredTransactions.filter(t => t.type === 'FUNDING' && !isRecordCredited(t)).length === 0}
-                >
-                  Selecionar Todas Visíveis
-                </Button>
-                
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearSelection}
-                  disabled={selectedTransactions.size === 0}
-                >
-                  <X className="h-3 w-3 mr-1" />
-                  Limpar Seleção
-                </Button>
-              </>
-            )}
+          bulkMode ? "bg-orange-50 dark:bg-orange-950/20" : "bg-muted/30"
+        )}>
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant={bulkMode ? "default" : "outline"}
+                onClick={toggleBulkMode}
+                className={bulkMode ? "bg-orange-600 hover:bg-orange-700" : ""}
+              >
+                <CheckSquare className="h-4 w-4 mr-2" />
+                {bulkMode ? "Sair do Modo Seleção" : "Modo Seleção Individual"}
+              </Button>
+              
+              {bulkMode && (
+                <>
+                  <Badge variant="secondary" className="text-sm px-3 py-1">
+                    {selectedTransactions.size} selecionada{selectedTransactions.size !== 1 ? 's' : ''}
+                  </Badge>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={selectAllVisibleCredits}
+                    disabled={filteredTransactions.filter(t => t.type === 'FUNDING' && !isRecordCompensated(t) && t.reconciliationId).length === 0}
+                  >
+                    Selecionar Todas Visíveis
+                  </Button>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearSelection}
+                    disabled={selectedTransactions.size === 0}
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Limpar Seleção
+                  </Button>
+                  
+                  <div className="text-sm text-muted-foreground">
+                    💡 Selecione transações para compensar individualmente
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-          
-          {bulkMode && selectedTransactions.size > 0 && (
-            <Button
-              onClick={handleBulkCredit}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Creditar {selectedTransactions.size} em Lote
-            </Button>
-          )}
-        </div>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
           </div>
         ) : error ? (
           <div className="p-6 text-center">
@@ -715,6 +721,7 @@ export default function ExtractTabBitso() {
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Valor</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Status</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">End-to-End</th>
+                    <th className="text-left p-3 text-xs font-medium text-muted-foreground">Reconciliation ID</th>
                     {!bulkMode && <th className="w-24 p-3"></th>}
                   </tr>
                 </thead>
@@ -729,7 +736,7 @@ export default function ExtractTabBitso() {
                         expandedRow === tx.id && "bg-muted/10 dark:bg-muted/5"
             )}
             onClick={() => {
-                        if (bulkMode && tx.type === 'FUNDING' && !isRecordCredited(tx)) {
+                        if (bulkMode && tx.type === 'FUNDING' && !isRecordCompensated(tx) && tx.reconciliationId) {
                           toggleTransactionSelection(tx.id);
                         } else if (!bulkMode) {
                           setExpandedRow(expandedRow === tx.id ? null : tx.id);
@@ -738,7 +745,7 @@ export default function ExtractTabBitso() {
                     >
                       {bulkMode && (
                         <td className="p-3">
-                          {tx.type === 'FUNDING' && !isRecordCredited(tx) && (
+                          {tx.type === 'FUNDING' && !isRecordCompensated(tx) && tx.reconciliationId && (
                 <Checkbox
                               checked={selectedTransactions.has(tx.id.toString())}
                               onCheckedChange={() => toggleTransactionSelection(tx.id)}
@@ -756,11 +763,11 @@ export default function ExtractTabBitso() {
                               <ChevronDown className="h-4 w-4 text-muted-foreground" />
                             )
                           )}
-                  <div>
+                          <div>
                             <div className="text-sm">{formatDate(tx.createdAt).split(' ')[0]}</div>
                             <div className="text-xs text-muted-foreground">{formatDate(tx.createdAt).split(' ')[1]}</div>
-                  </div>
-                </div>
+                          </div>
+                        </div>
                       </td>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
@@ -798,35 +805,40 @@ export default function ExtractTabBitso() {
                           {tx.endToEndId ? `${tx.endToEndId.substring(0, 20)}...` : '-'}
                         </div>
                       </td>
+                      <td className="p-3">
+                        <div className="text-xs font-mono text-muted-foreground">
+                          {tx.reconciliationId || '-'}
+                        </div>
+                      </td>
                       {!bulkMode && (
                         <td className="p-3">
-                          {tx.type === 'FUNDING' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                              onClick={(e) => handleCreditToOTC(tx, e)}
-                              disabled={isRecordCredited(tx)}
-                      className={cn(
+                          {tx.type === 'FUNDING' && tx.reconciliationId && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => handleCompensation(tx, e)}
+                              disabled={isRecordCompensated(tx)}
+                              className={cn(
                                 "h-7 px-2 text-xs transition-all",
-                                isRecordCredited(tx)
-                          ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                  : "bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200 hover:border-purple-300"
-                      )}
-                              title={isRecordCredited(tx) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
-                    >
-                              {isRecordCredited(tx) ? (
-                        <>
-                          <Check className="h-3 w-3 mr-1" />
-                          Creditado
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="h-3 w-3 mr-1" />
-                          OTC
-                        </>
-                      )}
-                    </Button>
-                  )}
+                                isRecordCompensated(tx)
+                                  ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                  : "bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200 hover:border-orange-300"
+                              )}
+                              title={isRecordCompensated(tx) ? "Já compensado" : "Realizar compensação"}
+                            >
+                              {isRecordCompensated(tx) ? (
+                                <>
+                                  <Check className="h-3 w-3 mr-1" />
+                                  Compensado
+                                </>
+                              ) : (
+                                <>
+                                  <DollarSign className="h-3 w-3 mr-1" />
+                                  Verificar
+                                </>
+                              )}
+                            </Button>
+                          )}
                         </td>
                       )}
                     </tr>
@@ -834,10 +846,10 @@ export default function ExtractTabBitso() {
                     {/* Linha expandida com detalhes */}
                     {expandedRow === tx.id && !bulkMode && (
                       <tr className="bg-muted/5 dark:bg-muted/5 border-b border-border/50">
-                        <td colSpan={7} className="p-0">
+                        <td colSpan={8} className="p-0">
                           <div className="p-6 space-y-4">
                             <div className="flex items-center justify-between mb-4">
-                              <h4 className="text-sm font-semibold text-purple-700">Detalhes da Transação</h4>
+                              <h4 className="text-sm font-semibold text-orange-700">Detalhes da Transação</h4>
                               <Badge variant="outline" className="text-xs">ID: {tx.id}</Badge>
                             </div>
                             
@@ -888,7 +900,7 @@ export default function ExtractTabBitso() {
                                   <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">Reconciliation ID</label>
                                     <div className="flex items-center gap-2 mt-1">
-                                      <p className="text-sm font-mono">{tx.reconciliationId}</p>
+                                      <p className="text-sm font-mono text-orange-600 font-semibold">{tx.reconciliationId}</p>
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -1008,17 +1020,11 @@ export default function ExtractTabBitso() {
         )}
           </Card>
 
-      {/* Modais */}
-      <CreditExtractToOTCModal
-        isOpen={creditOTCModalOpen}
-        onClose={handleCloseCreditOTCModal}
-        extractRecord={selectedExtractRecord}
-      />
-
-      <BulkCreditOTCModal
-        isOpen={bulkOTCModalOpen}
-        onClose={handleCloseBulkOTCModal}
-        transactions={getSelectedTransactionsData()}
+      {/* Modal de Compensação */}
+      <CompensationModalInteligente
+        isOpen={compensationModalOpen}
+        onClose={handleCloseCompensationModal}
+        extractRecord={selectedCompensationRecord}
       />
     </div>
   );

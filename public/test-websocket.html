@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>🧪 Teste WebSocket Bitso - Diagnóstico</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      padding: 20px;
+      background: #0d1117;
+      color: #c9d1d9;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .container {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 10px 0;
+    }
+    h1 { color: #58a6ff; }
+    h2 { color: #79c0ff; margin-top: 0; }
+    .log {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      padding: 15px;
+      border-radius: 6px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .log-entry {
+      margin: 5px 0;
+      padding: 5px;
+      border-left: 3px solid transparent;
+    }
+    .log-success { border-left-color: #3fb950; color: #3fb950; }
+    .log-error { border-left-color: #f85149; color: #f85149; }
+    .log-info { border-left-color: #58a6ff; color: #58a6ff; }
+    .log-warn { border-left-color: #d29922; color: #d29922; }
+    .status {
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-weight: bold;
+      margin: 5px;
+    }
+    .status-connected { background: #238636; color: white; }
+    .status-disconnected { background: #da3633; color: white; }
+    .status-connecting { background: #d29922; color: white; }
+    button {
+      background: #238636;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 5px;
+      font-size: 14px;
+    }
+    button:hover { background: #2ea043; }
+    button:disabled { background: #6e7681; cursor: not-allowed; }
+    .transaction {
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-left: 4px solid #3fb950;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 6px;
+      animation: slideIn 0.3s;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(-20px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    .highlight { color: #58a6ff; font-weight: bold; }
+    input {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 8px 12px;
+      border-radius: 6px;
+      width: 300px;
+      margin: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧪 Teste de Conexão WebSocket - Bitso</h1>
+  
+  <div class="container">
+    <h2>📊 Status da Conexão</h2>
+    <div id="status">
+      <span class="status status-disconnected">⚫ Desconectado</span>
+    </div>
+    <div style="margin-top: 15px;">
+      <button onclick="testConnection(false)">🔌 Conectar SEM Auth</button>
+      <button onclick="testConnection(true)">🔐 Conectar COM Auth</button>
+      <button onclick="disconnect()">❌ Desconectar</button>
+    </div>
+    <div style="margin-top: 10px;">
+      <input type="text" id="jwtInput" placeholder="Cole seu JWT aqui (opcional)">
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>📝 Logs de Conexão</h2>
+    <div class="log" id="logs"></div>
+  </div>
+
+  <div class="container">
+    <h2>💰 Transações Recebidas</h2>
+    <div id="transactions">
+      <p style="color: #8b949e;">Aguardando transações...</p>
+    </div>
+  </div>
+
+  <script>
+    let socket = null;
+    const statusEl = document.getElementById('status');
+    const logsEl = document.getElementById('logs');
+    const txEl = document.getElementById('transactions');
+
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString('pt-BR');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      entry.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
+      logsEl.insertBefore(entry, logsEl.firstChild);
+    }
+
+    function updateStatus(status, text) {
+      statusEl.innerHTML = `<span class="status status-${status}">${text}</span>`;
+    }
+
+    function testConnection(useAuth) {
+      if (socket) {
+        log('⚠️ Desconectando conexão anterior...', 'warn');
+        socket.disconnect();
+      }
+
+      const jwt = document.getElementById('jwtInput').value.trim();
+      
+      if (useAuth && !jwt) {
+        log('❌ JWT necessário para conexão com autenticação', 'error');
+        alert('Por favor, cole um JWT no campo acima');
+        return;
+      }
+
+      log(`🔌 Iniciando conexão ${useAuth ? 'COM' : 'SEM'} autenticação...`, 'info');
+      updateStatus('connecting', '🟡 Conectando...');
+
+      const options = {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 3,
+        reconnectionDelay: 1000,
+        timeout: 10000,
+      };
+
+      if (useAuth && jwt) {
+        options.auth = { token: jwt };
+        log(`🔑 JWT: ${jwt.substring(0, 30)}...`, 'info');
+      }
+
+      log(`📡 Conectando em: https://api-bank-v2.gruponexus.com.br/realtime`, 'info');
+
+      socket = io('https://api-bank-v2.gruponexus.com.br/realtime', options);
+
+      socket.on('connect', () => {
+        log(`✅ CONECTADO! Socket ID: ${socket.id}`, 'success');
+        updateStatus('connected', `🟢 Conectado: ${socket.id}`);
+        
+        // Tentar entrar na sala
+        socket.emit('join_room', 'platform');
+        log('📡 Solicitando entrada na sala: platform', 'info');
+      });
+
+      socket.on('joined_room', (room) => {
+        log(`✅ Entrou na sala: ${room}`, 'success');
+      });
+
+      socket.on('connect_error', (error) => {
+        log(`❌ ERRO DE CONEXÃO: ${error.message}`, 'error');
+        log(`   Tipo: ${error.type || 'N/A'}`, 'error');
+        log(`   Descrição: ${error.description || 'N/A'}`, 'error');
+        updateStatus('disconnected', '⚫ Erro de Conexão');
+      });
+
+      socket.on('disconnect', (reason) => {
+        log(`👋 Desconectado: ${reason}`, 'warn');
+        updateStatus('disconnected', '⚫ Desconectado');
+      });
+
+      socket.on('bitso:transaction', (data) => {
+        log('💰 NOVA TRANSAÇÃO RECEBIDA!', 'success');
+        console.log('Transação completa:', data);
+        
+        const tx = data.data || data;
+        const txDiv = document.createElement('div');
+        txDiv.className = 'transaction';
+        txDiv.innerHTML = `
+          <h3>💰 ${tx.type === 'funding' ? 'Recebimento' : 'Envio'} PIX</h3>
+          <p><span class="highlight">Valor:</span> R$ ${tx.amount}</p>
+          <p><span class="highlight">Status:</span> ${tx.status}</p>
+          <p><span class="highlight">${tx.type === 'funding' ? 'Pagador' : 'Beneficiário'}:</span> ${tx.payerName || tx.payeeName || 'N/A'}</p>
+          <p><span class="highlight">End-to-End:</span> ${tx.endToEndId}</p>
+          <p><span class="highlight">Horário:</span> ${new Date(tx.createdAt).toLocaleString('pt-BR')}</p>
+        `;
+        txEl.insertBefore(txDiv, txEl.firstChild);
+      });
+
+      socket.on('bitso:balance', (data) => {
+        log('💰 Saldo atualizado', 'success');
+        console.log('Saldo:', data);
+      });
+
+      socket.on('pong', (data) => {
+        log('🏓 Pong recebido', 'info');
+      });
+
+      // Log de todos os eventos recebidos
+      socket.onAny((eventName, ...args) => {
+        log(`📨 Evento recebido: ${eventName}`, 'info');
+        console.log(`Evento: ${eventName}`, args);
+      });
+    }
+
+    function disconnect() {
+      if (socket) {
+        socket.disconnect();
+        log('❌ Desconectado manualmente', 'warn');
+      }
+    }
+
+    // Inicializar
+    log('🚀 Sistema de teste inicializado', 'info');
+    log('📝 Clique em um dos botões acima para testar a conexão', 'info');
+  </script>
+</body>
+</html>
+

@@ -19,6 +19,7 @@ import CorpXPage from "./pages/CorpXPage";
 import TcrPage from "./pages/TcrPage";
 import CorpXTTFPage from "./pages/CorpXTTFPage";
 import BitsoPage from "./pages/BitsoPage";
+import BitsoTcrPage from "./pages/BitsoTcrPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIAMENTE
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
@@ -148,6 +149,7 @@ const App = () => (
                 <Route path="/otc/negociar" element={<OTCNegociar />} />
                 <Route path="/otc/admin-statement/:clientId" element={<AdminClientStatement />} />
                 <Route path="/bitso" element={<BitsoPage />} />
+                <Route path="/bitso-tcr" element={<BitsoTcrPage />} />
                 <Route path="/analise-usuario/:id" element={<AnaliseUsuario />} />
               </Route>
               

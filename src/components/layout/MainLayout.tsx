@@ -272,6 +272,15 @@ export default function MainLayout() {
                                         label="Análise de Usuário BRBTC"
                                         isCollapsed={isCollapsed}
                                     />
+                                    
+                                    {/* ✅ MENU ATIVO */}
+                                    <SidebarLink
+                                        to="/bitso-tcr"
+                                        icon={<CreditCard className="h-4 w-4" />}
+                                        label="Bitso <> TCR"
+                                        badge="NOVO"
+                                        isCollapsed={isCollapsed}
+                                    />
                                 </div>
                             </div>
 
@@ -282,44 +291,41 @@ export default function MainLayout() {
                                     </h3>
                                 )}
                                 <div className="space-y-1">
-                                    <SidebarLink
+                                    {/* Gerenciador de Contas DESATIVADO - Funcionalidade movida para Bitso OTC/TCR */}
+                                    {/* <SidebarLink
                                         to="/pagamentos"
                                         icon={<CreditCard className="h-4 w-4" />}
                                         label="Gerenciador de Contas"
                                         isCollapsed={isCollapsed}
-                                    />
+                                    /> */}
                                     <SidebarLink
                                         to="/cotacoes"
                                         icon={<BarChart3 className="h-4 w-4" />}
                                         label="Cotações em Tempo Real"
-                                        badge="LIVE"
                                         isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
                                         to="/bot-cotacao"
                                         icon={<Bot className="h-4 w-4" />}
                                         label="Bot de Cotação"
-                                        badge="BETA"
                                         isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
                                         to="/otc"
                                         icon={<Users className="h-4 w-4" />}
                                         label="Clientes OTC"
-                                        badge="NOVO"
                                         isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
                                         to="/otc/negociar"
                                         icon={<TrendingUp className="h-4 w-4" />}
                                         label="Negociar"
-                                        badge="NOVO"
                                         isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
                                         to="/bitso"
                                         icon={<CreditCard className="h-4 w-4" />}
-                                        label="Bitso"
+                                        label="Bitso <> OTC"
                                         badge="NOVO"
                                         isCollapsed={isCollapsed}
                                     />

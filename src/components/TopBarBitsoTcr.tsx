@@ -6,7 +6,7 @@ import { useBitsoWebSocket } from "@/hooks/useBitsoWebSocket";
 import { BitsoRealtimeService } from "@/services/bitso-realtime";
 import AnimatedBalance from "@/components/AnimatedBalance";
 
-export default function TopBarBitso() {
+export default function TopBarBitsoTcr() {
   const { isConnected, isReconnecting, newBalance, newTransaction } = useBitsoWebSocket();
   const [balanceData, setBalanceData] = useState({
     currency: 'BRL',
@@ -49,7 +49,7 @@ export default function TopBarBitso() {
       setTotalTransacoes(transactionsData.pagination.total || 0);
     } catch (err: any) {
       setErrorSaldo(err.message || 'Erro ao consultar saldo');
-      console.error('[TopBarBitso] Erro ao buscar saldo:', err);
+      console.error('[TopBarBitsoTcr] Erro ao buscar saldo:', err);
     } finally {
       setIsLoadingSaldo(false);
     }
@@ -100,7 +100,7 @@ export default function TopBarBitso() {
     return (
       <div className="text-xs text-muted-foreground">
         <span>
-          Bitso • {balanceData.currency} • {new Date().toLocaleTimeString('pt-BR')}
+          Bitso → TCR • {balanceData.currency} • {new Date().toLocaleTimeString('pt-BR')}
         </span>
       </div>
     );
@@ -108,7 +108,7 @@ export default function TopBarBitso() {
 
   const getStatusIcon = () => {
     if (isLoadingSaldo) {
-      return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+      return <Loader2 className="h-4 w-4 animate-spin text-orange-500" />;
     }
     if (errorSaldo) {
       return <AlertCircle className="h-4 w-4 text-red-500" />;
@@ -117,17 +117,17 @@ export default function TopBarBitso() {
   };
 
   return (
-    <div className="sticky top-0 z-30 bg-gradient-to-r from-blue-600/10 to-purple-600/10 backdrop-blur-xl border-b border-border h-auto p-6">
+    <div className="sticky top-0 z-30 bg-gradient-to-r from-orange-600/10 to-red-600/10 backdrop-blur-xl border-b border-border h-auto p-6">
       {/* Header principal */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 shadow-xl">
+          <div className="p-3 rounded-2xl bg-gradient-to-br from-orange-600 to-red-600 shadow-xl">
             <SendHorizontal className="h-6 w-6 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground">Bitso</h1>
-              <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-medium">
+              <h1 className="text-2xl font-bold text-foreground">Bitso → TCR</h1>
+              <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs font-medium">
                 Banking
               </Badge>
               {getStatusIcon()}
@@ -178,12 +178,12 @@ export default function TopBarBitso() {
       {/* Cards lado a lado - 5 cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Card 1: Total */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-purple-500/10 to-indigo-500/10 backdrop-blur-sm border border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 group shadow-lg">
+        <div className="p-5 rounded-2xl bg-gradient-to-br from-orange-500/10 to-red-500/10 backdrop-blur-sm border border-orange-500/20 hover:border-orange-500/40 transition-all duration-300 group shadow-lg">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-muted-foreground font-medium">Total</span>
-            <TrendingUp className="h-4 w-4 text-purple-500 group-hover:scale-110 transition-transform" />
+            <TrendingUp className="h-4 w-4 text-orange-500 group-hover:scale-110 transition-transform" />
           </div>
-          <div className="text-xl font-bold text-purple-600 overflow-hidden">
+          <div className="text-xl font-bold text-orange-600 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -223,7 +223,7 @@ export default function TopBarBitso() {
         </div>
 
         {/* Card 3: Locked */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-sm border border-amber-500/20 hover:border-amber-500/40 transition-all duration-300 group shadow-lg">
+        <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 to-yellow-500/10 backdrop-blur-sm border border-amber-500/20 hover:border-amber-500/40 transition-all duration-300 group shadow-lg">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-muted-foreground font-medium">Bloqueado</span>
             <Lock className="h-4 w-4 text-amber-500 group-hover:scale-110 transition-transform" />
@@ -285,6 +285,4 @@ export default function TopBarBitso() {
     </div>
   );
 }
-
-
 

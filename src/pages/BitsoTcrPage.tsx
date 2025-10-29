@@ -2,16 +2,16 @@ import React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, SendHorizontal } from "lucide-react";
 
-// Componentes Bitso
-import TopBarBitso from "@/components/TopBarBitso";
-import ExtractTabBitso from "@/components/ExtractTabBitso";
+// Componentes Bitso TCR
+import TopBarBitsoTcr from "@/components/TopBarBitsoTcr";
+import ExtractTabBitsoTcr from "@/components/ExtractTabBitsoTcr";
 import MoneyRainEffect from "@/components/MoneyRainEffect";
 import BitsoPixActions from "@/components/BitsoPixActions";
 
 // WebSocket Hook
 import { useBitsoWebSocket } from "@/hooks/useBitsoWebSocket";
 
-export default function BitsoPage() {
+export default function BitsoTcrPage() {
   // WebSocket para efeitos visuais
   const { showMoneyEffect, newTransaction, transactionQueue } = useBitsoWebSocket();
 
@@ -28,7 +28,7 @@ export default function BitsoPage() {
       )}
       
       {/* Top Bar com Saldos */}
-      <TopBarBitso />
+      <TopBarBitsoTcr />
 
       {/* Conteúdo Principal */}
       <div className="container mx-auto px-4 py-6">
@@ -46,7 +46,7 @@ export default function BitsoPage() {
 
           {/* ABA: Extrato */}
           <TabsContent value="extract">
-            <ExtractTabBitso />
+            <ExtractTabBitsoTcr />
           </TabsContent>
 
           {/* ABA: Ações PIX (Enviar, QR Dinâmico, QR Estático) */}
