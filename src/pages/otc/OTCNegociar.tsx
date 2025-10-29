@@ -52,6 +52,7 @@ import type { BinanceTransaction } from '@/types/binance';
 import type { OTCClient } from '@/types/otc';
 import type { BinanceTransaction as SavedBinanceTransaction } from '@/services/otc-binance';
 import { useAuth } from '@/hooks/useAuth';
+import { formatUSDTInput, formatMonetaryInput, convertBrazilianUSDTToUS, convertBrazilianToUS, getNumericUSDTValue, getNumericValue } from '@/utils/monetaryInput';
 
 const OTCNegociar: React.FC = () => {
   // ==================== TRADING HOOKS ====================
@@ -108,8 +109,8 @@ const OTCNegociar: React.FC = () => {
   // Hook para autenticação (pegar email do usuário logado)
   const { user } = useAuth();
 
-  const [quantity, setQuantity] = useState('');
-  const [total, setTotal] = useState('');
+  const [quantity, setQuantity] = useState('0,0000');
+  const [total, setTotal] = useState('0,00');
   const [searchQuery, setSearchQuery] = useState('');
   const [countdown, setCountdown] = useState(0);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -227,15 +228,17 @@ const OTCNegociar: React.FC = () => {
   // Preencher automaticamente o campo não preenchido quando a cotação chegar
   useEffect(() => {
     if (quote && countdown === 5) {
-      const quantityValue = parseFloat(quantity.replace(/[^0-9.-]+/g, ''));
-      const totalValue = parseFloat(total.replace(/[^0-9.-]+/g, ''));
+      const quantityValue = getNumericUSDTValue(quantity);
+      const totalValue = getNumericValue(total);
       
-      if (quantityValue > 0 && !totalValue) {
+      if (quantityValue > 0 && totalValue === 0) {
         // Se preencheu quantidade em USDT, preencher total em BRL
-        setTotal(quote.outputAmount.toFixed(4));
-      } else if (totalValue > 0 && !quantityValue) {
+        const formatted = formatMonetaryInput(quote.outputAmount.toFixed(2).replace('.', ''));
+        setTotal(formatted);
+      } else if (totalValue > 0 && quantityValue === 0) {
         // Se preencheu total em BRL, preencher quantidade em USDT
-        setQuantity(quote.outputAmount.toFixed(8));
+        const formatted = formatUSDTInput(quote.outputAmount.toFixed(4).replace('.', ''));
+        setQuantity(formatted);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -250,15 +253,15 @@ const OTCNegociar: React.FC = () => {
     const symbol = getSymbolFromCurrency(selectedCurrency);
     const side = operationType === 'buy' ? 'BUY' : 'SELL';
     
-    // Verificar qual campo foi preenchido
-    const quantityValue = parseFloat(quantity.replace(/[^0-9.-]+/g, ''));
-    const totalValue = parseFloat(total.replace(/[^0-9.-]+/g, ''));
+    // Verificar qual campo foi preenchido e converter para formato americano
+    const quantityValue = getNumericUSDTValue(quantity);
+    const totalValue = getNumericValue(total);
     
     if (quantityValue > 0) {
-      // Enviar USDT
+      // Enviar USDT (já convertido para formato americano)
       await solicitarCotacao(quantityValue, 'USDT', symbol, side);
     } else if (totalValue > 0) {
-      // Enviar BRL
+      // Enviar BRL (já convertido para formato americano)
       await solicitarCotacao(totalValue, 'BRL', symbol, side);
     } else {
       toastError('Valor inválido', 'Por favor, informe um valor válido em USDT ou BRL');
@@ -542,12 +545,12 @@ const OTCNegociar: React.FC = () => {
    * Handler para mudança no campo Quantidade (USDT)
    */
   const handleQuantityChange = (value: string) => {
-    // Aceitar apenas números e ponto decimal
-    const numericValue = value.replace(/[^0-9.]/g, '');
-    setQuantity(numericValue);
+    // Formata como input USDT (4 casas decimais)
+    const formatted = formatUSDTInput(value);
+    setQuantity(formatted);
     // Limpar campo Total quando quantidade é editada
-    if (numericValue) {
-      setTotal('');
+    if (getNumericUSDTValue(formatted) > 0) {
+      setTotal('0,00');
     }
   };
 
@@ -555,12 +558,12 @@ const OTCNegociar: React.FC = () => {
    * Handler para mudança no campo Total (BRL)
    */
   const handleTotalChange = (value: string) => {
-    // Aceitar apenas números e ponto decimal
-    const numericValue = value.replace(/[^0-9.]/g, '');
-    setTotal(numericValue);
+    // Formata como input monetário (2 casas decimais)
+    const formatted = formatMonetaryInput(value);
+    setTotal(formatted);
     // Limpar campo Quantity quando total é editado
-    if (numericValue) {
-      setQuantity('');
+    if (getNumericValue(formatted) > 0) {
+      setQuantity('0,0000');
     }
   };
 
@@ -571,9 +574,11 @@ const OTCNegociar: React.FC = () => {
     if (brlBalance) {
       const maxBRL = parseFloat(brlBalance.free);
       if (!isNaN(maxBRL) && maxBRL > 0) {
-        setTotal(maxBRL.toFixed(4));
+        // Formata como monetário brasileiro
+        const formatted = formatMonetaryInput(maxBRL.toFixed(2).replace('.', ''));
+        setTotal(formatted);
         // Limpar quantidade quando usar MAX
-        setQuantity('');
+        setQuantity('0,0000');
       }
     }
   };
@@ -1052,7 +1057,7 @@ const OTCNegociar: React.FC = () => {
                   value={quantity}
                   onChange={(e) => handleQuantityChange(e.target.value)}
                   className="bg-muted/80 text-base h-10 border-2 border-transparent hover:border-primary/30 focus:border-primary transition-colors font-semibold"
-                  placeholder="0.0000"
+                  placeholder="0,0000"
                 />
               </div>
 
@@ -1068,7 +1073,7 @@ const OTCNegociar: React.FC = () => {
                     value={total}
                     onChange={(e) => handleTotalChange(e.target.value)}
                     className="bg-muted/80 text-base h-10 pr-14 border-2 border-transparent hover:border-primary/30 focus:border-primary transition-colors font-semibold"
-                    placeholder="0.0000"
+                    placeholder="0,00"
                   />
                   <Button
                     size="sm"

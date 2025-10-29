@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
+import { formatMonetaryInput, convertBrazilianToUS, getNumericValue } from '@/utils/monetaryInput';
 
 interface BinanceWithdrawalModalProps {
   isOpen: boolean;
@@ -66,46 +67,6 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   const [addressTag, setAddressTag] = useState('');
 
   const networks = NETWORKS[coin as keyof typeof NETWORKS] || [{ value: 'TRX', label: 'TRX' }];
-
-  /**
-   * Converte formato brasileiro para formato americano
-   * Ex: "1.000,50" -> "1000.50"
-   */
-  const convertBrazilianToUS = (value: string): string => {
-    // Remove separadores de milhar (pontos)
-    // Substitui vírgula por ponto decimal
-    return value
-      .replace(/\./g, '')      // Remove pontos (separadores de milhar)
-      .replace(',', '.');      // Substitui vírgula por ponto
-  };
-
-  /**
-   * Formata número monetário preenchendo da direita para esquerda
-   * Mantém sempre 2 casas decimais
-   * Ex: digita "1" → "0,01", digita "1000" → "10,00"
-   */
-  const formatMonetaryInput = (value: string): string => {
-    // Remove tudo que não é número
-    const numbersOnly = value.replace(/\D/g, '');
-    
-    // Se vazio, retorna formato inicial
-    if (!numbersOnly) return '0,00';
-    
-    // Converte para número e divide por 100 para ter decimais
-    const numValue = parseInt(numbersOnly, 10) / 100;
-    
-    // Formata com 2 casas decimais sempre
-    const formatted = numValue.toFixed(2);
-    
-    // Separa parte inteira e decimal
-    const [integerPart, decimalPart] = formatted.split('.');
-    
-    // Adiciona separador de milhar na parte inteira
-    const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    
-    // Retorna no formato brasileiro
-    return `${formattedInteger},${decimalPart}`;
-  };
 
   /**
    * Handler para mudança do input de valor
@@ -169,13 +130,6 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
     } else {
       setAmount('0,00');
     }
-  };
-
-  // Valida se o valor é válido (converte brasileiro para número)
-  const getNumericValue = (value: string): number => {
-    if (!value) return 0;
-    const converted = convertBrazilianToUS(value);
-    return parseFloat(converted) || 0;
   };
 
   const isValid = amount && address && getNumericValue(amount) > 0;

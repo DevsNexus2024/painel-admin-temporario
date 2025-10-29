@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Pencil, Check, X, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import type { BinanceQuoteData } from '@/types/binance';
 import type { OTCClient } from '@/types/otc';
+import { getNumericValue } from '@/utils/monetaryInput';
 
 interface TradeConfirmationModalProps {
   isOpen: boolean;
@@ -42,20 +43,15 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
   operationType,
   binanceFee = 0.039, // Default 0.039%
 }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedPrice, setEditedPrice] = useState('');
-  const [originalPrice, setOriginalPrice] = useState('');
+  const [editedPrice, setEditedPrice] = useState('0,00');
   const [notes, setNotes] = useState('');
-  const [hasBeenEdited, setHasBeenEdited] = useState(false);
+  const [priceError, setPriceError] = useState('');
 
-  // Resetar flag de edição quando modal abrir ou cotação mudar
+  // Resetar campos quando modal abrir ou cotação mudar
   useEffect(() => {
     if (isOpen) {
-      setHasBeenEdited(false);
-      setIsEditing(false);
       setNotes(`Cliente: ${selectedClient?.name || ''}`);
-      setOriginalPrice('');
-      setEditedPrice('');
+      setPriceError('');
     }
   }, [isOpen, quote, selectedClient]);
 
@@ -85,38 +81,93 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
 
   const finalPrice = calculateFinalPrice();
 
-  // Salvar preço original ao montar
+  // Função para converter número decimal diretamente para formato brasileiro com 4 casas
+  const formatDecimalToBrazilian = (value: number): string => {
+    // Formata com 4 casas decimais
+    const formatted = value.toFixed(4);
+    
+    // Separa parte inteira e decimal
+    const [integerPart, decimalPart] = formatted.split('.');
+    
+    // Adiciona separador de milhar na parte inteira
+    const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    
+    // Retorna no formato brasileiro
+    return `${formattedInteger},${decimalPart}`;
+  };
+
+  // Função para formatar input com 4 casas decimais (da direita para esquerda)
+  const formatPriceInput = (value: string): string => {
+    // Remove tudo que não é número
+    const numbersOnly = value.replace(/\D/g, '');
+    
+    // Se vazio, retorna formato inicial
+    if (!numbersOnly) return '0,0000';
+    
+    // Converte para número e divide por 10000 para ter 4 decimais
+    const numValue = parseInt(numbersOnly, 10) / 10000;
+    
+    // Formata com 4 casas decimais sempre
+    const formatted = numValue.toFixed(4);
+    
+    // Separa parte inteira e decimal
+    const [integerPart, decimalPart] = formatted.split('.');
+    
+    // Adiciona separador de milhar na parte inteira
+    const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    
+    // Retorna no formato brasileiro
+    return `${formattedInteger},${decimalPart}`;
+  };
+
+  // Atualizar preço editado quando finalPrice mudar
   useEffect(() => {
     if (finalPrice > 0 && isOpen) {
-      setOriginalPrice(finalPrice.toFixed(4));
-      setEditedPrice(finalPrice.toFixed(4));
+      // Formatar para formato brasileiro diretamente do decimal
+      const formatted = formatDecimalToBrazilian(finalPrice);
+      setEditedPrice(formatted);
     }
   }, [finalPrice, isOpen]);
 
-  // Atualizar preço editado quando finalPrice mudar (APENAS se nunca foi editado)
-  useEffect(() => {
-    if (!hasBeenEdited && !isEditing) {
-      setEditedPrice(finalPrice.toFixed(4));
-    }
-  }, [finalPrice, hasBeenEdited, isEditing]);
-
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditedPrice(originalPrice);
-    setHasBeenEdited(false); // Resetar flag de edição
+  // Handler para mudança do preço
+  const handlePriceChange = (value: string) => {
+    const formatted = formatPriceInput(value);
+    setEditedPrice(formatted);
+    setPriceError(''); // Limpar erro ao digitar
   };
 
-  const handleSaveEdit = () => {
-    setIsEditing(false);
-    setHasBeenEdited(true); // Marcar que o valor foi editado
-    // O preço já está em editedPrice
+  // Calcular preço mínimo permitido
+  const calculateMinimumPrice = () => {
+    if (!quote) return 0;
+    
+    const avgPrice = quote.averagePrice;
+    const binanceFeeAmount = avgPrice * (binanceFee / 100);
+    
+    if (operationType === 'buy') {
+      // Comprar: preço médio + taxa binance (mínimo)
+      return avgPrice + binanceFeeAmount;
+    } else {
+      // Vender: preço médio - taxa binance (mínimo)
+      return avgPrice - binanceFeeAmount;
+    }
   };
 
   const handleConfirm = () => {
-    const priceToUse = parseFloat(editedPrice);
-    if (priceToUse > 0) {
-      onConfirm(priceToUse, notes);
+    // Validar preço
+    const priceToUse = getNumericValue(editedPrice);
+    const minimumPrice = calculateMinimumPrice();
+    
+    if (priceToUse <= 0) {
+      setPriceError('Preço deve ser maior que zero');
+      return;
     }
+    
+    if (priceToUse < minimumPrice) {
+      setPriceError(`Preço mínimo permitido: R$ ${minimumPrice.toFixed(4)}`);
+      return;
+    }
+    
+    onConfirm(priceToUse, notes);
   };
 
   if (!quote || !selectedClient) {
@@ -192,44 +243,16 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
             <label className="text-sm font-medium text-foreground mb-2 block">
               Preço Final (com taxas)
             </label>
-            <div className="relative">
-              <Input
-                type="text"
-                value={editedPrice}
-                onChange={(e) => setEditedPrice(e.target.value)}
-                disabled={!isEditing}
-                className="bg-muted/50 text-lg font-semibold pr-16"
-              />
-              {isEditing ? (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleCancelEdit}
-                    className="h-7 w-7 p-0 hover:bg-red-500/10"
-                  >
-                    <X className="h-4 w-4 text-red-600" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleSaveEdit}
-                    className="h-7 w-7 p-0 hover:bg-green-500/10"
-                  >
-                    <Check className="h-4 w-4 text-green-600" />
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsEditing(true)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
-                >
-                  <Pencil className="h-4 w-4 text-blue-600" />
-                </Button>
-              )}
-            </div>
+            <Input
+              type="text"
+              value={editedPrice}
+              onChange={(e) => handlePriceChange(e.target.value)}
+              className={`bg-muted/50 text-lg font-semibold ${priceError ? 'border-red-500 focus:border-red-500' : ''}`}
+              placeholder="0,0000"
+            />
+            {priceError && (
+              <p className="text-xs text-red-500 mt-1">{priceError}</p>
+            )}
             <p className="text-xs text-muted-foreground mt-1">
               {operationType === 'buy' 
                 ? 'Preço aplicado ao cliente (com taxas adicionadas)' 
@@ -278,7 +301,7 @@ export const TradeConfirmationModal: React.FC<TradeConfirmationModalProps> = ({
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={loading || !editedPrice || parseFloat(editedPrice) <= 0 || !notes.trim()}
+            disabled={loading || !editedPrice || getNumericValue(editedPrice) <= 0 || !notes.trim() || !!priceError}
             className="bg-green-600 hover:bg-green-700"
           >
             {loading ? (
