@@ -46,6 +46,22 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
   onCreateOperation,
   onViewBalance
 }) => {
+  // Estado para controlar dropdown aberto/fechado por linha
+  const [openDropdowns, setOpenDropdowns] = useState<Record<number, boolean>>({});
+  
+  const handleOpenChange = (clientId: number, open: boolean) => {
+    setOpenDropdowns(prev => ({ ...prev, [clientId]: open }));
+  };
+  
+  // Wrapper para handlers que fazem navegação - fecha dropdown primeiro
+  const handleNavigate = (client: OTCClient, handler: (client: OTCClient) => void) => {
+    // Fechar dropdown primeiro
+    setOpenDropdowns(prev => ({ ...prev, [client.id]: false }));
+    // Pequeno delay para garantir que o dropdown feche antes da navegação
+    setTimeout(() => {
+      handler(client);
+    }, 0);
+  };
   const [filters, setFilters] = useState<OTCFilters>({
     search: '',
     isActive: null,
@@ -300,7 +316,10 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
                             </Button>
                             
                             {/* Menu dropdown com outras ações */}
-                            <DropdownMenu>
+                            <DropdownMenu 
+                              open={openDropdowns[client.id] || false}
+                              onOpenChange={(open) => handleOpenChange(client.id, open)}
+                            >
                               <DropdownMenuTrigger asChild>
                                 <Button 
                                   variant="ghost" 
@@ -316,14 +335,24 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
                                 <DropdownMenuSeparator />
                                 
                                 <DropdownMenuItem
-                                  onClick={() => onViewStatement?.(client)}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    if (onViewStatement) {
+                                      handleNavigate(client, onViewStatement);
+                                    }
+                                  }}
                                 >
                                   <Eye className="mr-2 h-4 w-4" />
                                   Ver Extrato
                                 </DropdownMenuItem>
                                 
                                 <DropdownMenuItem
-                                  onClick={() => onViewBalance?.(client)}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    if (onViewBalance) {
+                                      handleNavigate(client, onViewBalance);
+                                    }
+                                  }}
                                 >
                                   <DollarSign className="mr-2 h-4 w-4" />
                                   Ver Saldo
