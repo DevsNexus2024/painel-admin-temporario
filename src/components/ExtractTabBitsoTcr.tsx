@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Download, Filter, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, DollarSign, CheckSquare, Check, X, RefreshCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon } from "lucide-react";
+import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -51,17 +51,14 @@ export default function ExtractTabBitsoTcr() {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'COMPLETE' | 'FAILED' | 'CANCELLED'>('ALL');
   const [minAmount, setMinAmount] = useState<string>("");
   const [maxAmount, setMaxAmount] = useState<string>("");
+  const [specificAmount, setSpecificAmount] = useState<string>("");
   const [showReversalsOnly, setShowReversalsOnly] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
 
   // Estados para funcionalidade de Compensação
   const [compensationModalOpen, setCompensationModalOpen] = useState(false);
   const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<any>(null);
   const [compensatedRecords, setCompensatedRecords] = useState<Set<string>>(new Set());
-
-  // Estados para compensação em lote
-  const [bulkMode, setBulkMode] = useState(false);
-  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
+  const [syncing, setSyncing] = useState(false);
 
   // Estado para controlar linha expandida
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
@@ -82,8 +79,14 @@ export default function ExtractTabBitsoTcr() {
 
       if (typeFilter !== 'ALL') filters.type = typeFilter;
       if (statusFilter !== 'ALL') filters.status = statusFilter;
-      if (minAmount) filters.minAmount = parseFloat(minAmount);
-      if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
+      if (specificAmount) {
+        const amount = parseFloat(specificAmount);
+        filters.minAmount = amount;
+        filters.maxAmount = amount;
+      } else {
+        if (minAmount) filters.minAmount = parseFloat(minAmount);
+        if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
+      }
       // searchTerm é filtrado localmente no frontend
       if (showReversalsOnly) filters.isReversal = true;
 
@@ -112,7 +115,7 @@ export default function ExtractTabBitsoTcr() {
     }, 500); // Debounce de 500ms
 
     return () => clearTimeout(timer);
-  }, [typeFilter, statusFilter, minAmount, maxAmount, showReversalsOnly]);
+  }, [typeFilter, statusFilter, minAmount, maxAmount, specificAmount, showReversalsOnly]);
 
   // Sincronizar dateRange com dateFilter
   useEffect(() => {
@@ -224,30 +227,79 @@ export default function ExtractTabBitsoTcr() {
     }
   };
 
-  const exportToCSV = () => {
-    const headers = ['Data', 'Tipo', 'Status', 'Valor', 'Nome', 'EndToEndId', 'ID'];
-    const rows = filteredTransactions.map((t: BitsoTransactionDB) => [
-      formatDate(t.createdAt),
-      BitsoRealtimeService.getTransactionTypeLabel(t.type),
-      t.status,
-      t.amount,
-      t.payerName || t.payeeName || 'N/A',
-      t.endToEndId,
-      t.transactionId
-    ]);
+  const exportToCSV = async () => {
+    try {
+      toast.info('Preparando exportação...', { description: 'Buscando todos os registros TCR filtrados' });
+      
+      // ✅ Buscar TODOS os registros TCR com os filtros aplicados (sem paginação)
+      const filters: BitsoTransactionFilters = {
+        startDate: dateFilter.start,
+        endDate: dateFilter.end,
+        type: typeFilter !== 'ALL' ? typeFilter : undefined,
+        status: statusFilter !== 'ALL' ? statusFilter : undefined,
+        minAmount: minAmount ? parseFloat(minAmount) : undefined,
+        maxAmount: maxAmount ? parseFloat(maxAmount) : undefined,
+        isReversal: showReversalsOnly ? true : undefined,
+        onlyTcr: true, // ✅ IMPORTANTE: Somente registros TCR
+        limit: 999999, // ✅ Buscar todos os registros (sem limite de paginação)
+        offset: 0,
+      };
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
+      const response = await BitsoRealtimeService.getTransactions(filters);
+      const allTransactions = response.data;
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `extrato-bitso-${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    
-    toast.success('Extrato exportado com sucesso');
+      // Aplicar filtro de busca local (searchTerm)
+      let transactionsToExport = allTransactions;
+      if (searchTerm.trim()) {
+        const searchLower = searchTerm.toLowerCase();
+        transactionsToExport = allTransactions.filter((t: BitsoTransactionDB) => {
+          return (
+            t.payerName?.toLowerCase().includes(searchLower) ||
+            t.payeeName?.toLowerCase().includes(searchLower) ||
+            t.endToEndId?.toLowerCase().includes(searchLower) ||
+            t.transactionId?.toLowerCase().includes(searchLower) ||
+            t.reconciliationId?.toLowerCase().includes(searchLower) ||
+            t.amount.toString().includes(searchLower)
+          );
+        });
+      }
+
+      // Gerar CSV com todas as colunas relevantes para TCR
+      const headers = ['Data', 'Tipo', 'Status', 'Valor', 'Moeda', 'Nome Pagador', 'Nome Beneficiário', 'Banco', 'End-to-End ID', 'Transaction ID', 'Reconciliation ID'];
+      const rows = transactionsToExport.map((t: BitsoTransactionDB) => [
+        formatDate(t.createdAt),
+        BitsoRealtimeService.getTransactionTypeLabel(t.type),
+        t.status,
+        t.amount,
+        t.currency,
+        t.payerName || '',
+        t.payeeName || '',
+        t.payerBankName || '',
+        t.endToEndId || '',
+        t.transactionId || '',
+        t.reconciliationId || ''
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `extrato-bitso-tcr-${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      
+      toast.success(`${transactionsToExport.length} registros TCR exportados com sucesso!`, {
+        description: `Arquivo: extrato-bitso-tcr-${new Date().toISOString().split('T')[0]}.csv`
+      });
+    } catch (error: any) {
+      console.error('Erro ao exportar:', error);
+      toast.error('Erro ao exportar extrato', {
+        description: error.message || 'Não foi possível gerar o arquivo CSV'
+      });
+    }
   };
 
   const isRecordCompensated = (transaction: BitsoTransactionDB): boolean => {
@@ -332,40 +384,40 @@ export default function ExtractTabBitsoTcr() {
     setSelectedCompensationRecord(null);
   };
 
-  const toggleTransactionSelection = (transactionId: number) => {
-    setSelectedTransactions(prev => {
-      const newSet = new Set(prev);
-      const key = transactionId.toString();
-      if (newSet.has(key)) {
-        newSet.delete(key);
-      } else {
-        newSet.add(key);
+  const handleSyncExtrato = async () => {
+    setSyncing(true);
+    try {
+      const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
+      const response = await fetch(`${API_BASE_URL}/api/bitso/pix/extrato/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem('auth_token') && {
+            Authorization: `Bearer ${localStorage.getItem('auth_token')}`
+          })
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Erro ao sincronizar extrato');
       }
-      return newSet;
-    });
-  };
 
-  const selectAllVisibleCredits = () => {
-    const creditTransactions = filteredTransactions
-      .filter(t => t.type === 'FUNDING' && !isRecordCompensated(t) && t.reconciliationId)
-      .map(t => t.id.toString());
-    
-    setSelectedTransactions(new Set(creditTransactions));
-    toast.success(`${creditTransactions.length} transações selecionadas`);
-  };
-
-  const clearSelection = () => {
-    setSelectedTransactions(new Set());
-  };
-
-  const toggleBulkMode = () => {
-    const newBulkMode = !bulkMode;
-    setBulkMode(newBulkMode);
-    
-    if (!newBulkMode) {
-      clearSelection();
+      const data = await response.json();
+      toast.success('Extrato sincronizado com sucesso!', {
+        description: data.message || 'Dados atualizados do servidor Bitso'
+      });
+      
+      // Recarregar transações após sincronização
+      await fetchTransactions(true);
+    } catch (err: any) {
+      console.error('[BitsoTCR] Erro ao sincronizar extrato:', err);
+      toast.error('Erro ao sincronizar extrato', {
+        description: err.message || 'Não foi possível sincronizar os dados'
+      });
+    } finally {
+      setSyncing(false);
     }
-    toast.info(newBulkMode ? 'Modo compensação em lote ativado' : 'Modo normal ativado');
   };
 
   const handlePreviousPage = () => {
@@ -409,8 +461,14 @@ export default function ExtractTabBitsoTcr() {
 
       if (typeFilter !== 'ALL') filters.type = typeFilter;
       if (statusFilter !== 'ALL') filters.status = statusFilter;
-      if (minAmount) filters.minAmount = parseFloat(minAmount);
-      if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
+      if (specificAmount) {
+        const amount = parseFloat(specificAmount);
+        filters.minAmount = amount;
+        filters.maxAmount = amount;
+      } else {
+        if (minAmount) filters.minAmount = parseFloat(minAmount);
+        if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
+      }
       if (showReversalsOnly) filters.isReversal = true;
 
       const response = await BitsoRealtimeService.getTransactions(filters);
@@ -447,14 +505,6 @@ export default function ExtractTabBitsoTcr() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <Filter className="h-4 w-4 mr-2" />
-            Filtros
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
             onClick={() => fetchTransactions(true)}
             disabled={loading}
           >
@@ -469,226 +519,226 @@ export default function ExtractTabBitsoTcr() {
             <Download className="h-4 w-4 mr-2" />
             Exportar
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncExtrato}
+            disabled={syncing}
+          >
+            <RotateCcw className={cn("h-4 w-4 mr-2", syncing && "animate-spin")} />
+            Sync Extrato
+          </Button>
         </div>
       </div>
 
-      {/* Filtros (expansível) */}
-      {showFilters && (
-        <Card className="p-6 bg-gradient-to-br from-muted/30 to-muted/10">
-          <div className="space-y-4">
-            {/* Linha 1: Busca e Selects */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Buscar</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Nome, CPF, ID..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 h-10 bg-background border-2 focus:border-primary"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tipo</label>
-                <Select value={typeFilter} onValueChange={(v: any) => setTypeFilter(v)}>
-                  <SelectTrigger className="h-10 bg-background border-2 focus:border-primary">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">📋 Todos</SelectItem>
-                    <SelectItem value="FUNDING">📥 Recebimentos</SelectItem>
-                    <SelectItem value="WITHDRAWAL">📤 Envios</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</label>
-                <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
-                  <SelectTrigger className="h-10 bg-background border-2 focus:border-primary">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">📋 Todos</SelectItem>
-                    <SelectItem value="COMPLETE">✅ Completo</SelectItem>
-                    <SelectItem value="PENDING">⏳ Pendente</SelectItem>
-                    <SelectItem value="FAILED">❌ Falhou</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Linha 2: Período e Valores */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Período</label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "h-10 w-full justify-start text-left font-normal bg-background border-2",
-                        !dateRange.from && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dateRange.from ? (
-                        dateRange.to ? (
-                          <>
-                            {format(dateRange.from, "dd/MM/yyyy", { locale: ptBR })} -{" "}
-                            {format(dateRange.to, "dd/MM/yyyy", { locale: ptBR })}
-                          </>
-                        ) : (
-                          format(dateRange.from, "dd/MM/yyyy", { locale: ptBR })
-                        )
-                      ) : (
-                        <span>Selecione o período</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      initialFocus
-                      mode="range"
-                      defaultMonth={dateRange.from}
-                      selected={{ from: dateRange.from, to: dateRange.to }}
-                      onSelect={(range) => {
-                        if (range?.from && range?.to) {
-                          setDateRange({ from: range.from, to: range.to });
-                        }
-                      }}
-                      numberOfMonths={2}
-                      locale={ptBR}
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor Mínimo</label>
+      {/* Filtros (sempre visíveis) */}
+      <Card className="p-4 lg:p-6 bg-background border border-[rgba(255,255,255,0.1)]">
+        <div className="space-y-3 lg:space-y-4">
+          {/* Linha 1: Busca, Tipo, Status, Valor específico */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Buscar</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  type="number"
-                  placeholder="0.00"
-                  value={minAmount}
-                  onChange={(e) => setMinAmount(e.target.value)}
-                  className="h-10 bg-background border-2 focus:border-primary"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor Máximo</label>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  value={maxAmount}
-                  onChange={(e) => setMaxAmount(e.target.value)}
-                  className="h-10 bg-background border-2 focus:border-primary"
+                  placeholder="Nome, CPF, ID..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
                 />
               </div>
             </div>
 
-            {/* Linha 3: Checkboxes e Limpar */}
-            <div className="flex items-center justify-between pt-2">
-              <div className="flex items-center gap-6">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="reversals"
-                    checked={showReversalsOnly}
-                    onCheckedChange={(checked) => setShowReversalsOnly(checked as boolean)}
-                    className="border-2"
-                  />
-                  <label htmlFor="reversals" className="text-sm font-medium cursor-pointer">
-                    Apenas Estornos
-                  </label>
-                </div>
-                
-                {loading && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Aplicando filtros...
-                  </div>
-            )}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tipo</label>
+              <Select value={typeFilter} onValueChange={(v: any) => setTypeFilter(v)}>
+                <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todos</SelectItem>
+                  <SelectItem value="FUNDING">Recebimento</SelectItem>
+                  <SelectItem value="WITHDRAWAL">Envio</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</label>
+              <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
+                <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todos</SelectItem>
+                  <SelectItem value="COMPLETE">Completo</SelectItem>
+                  <SelectItem value="PENDING">Pendente</SelectItem>
+                  <SelectItem value="FAILED">Falhou</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor específico</label>
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={specificAmount}
+                onChange={(e) => setSpecificAmount(e.target.value)}
+                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
+              />
+            </div>
           </div>
+
+          {/* Linha 2: Data inicial, Data final, Valor mínimo, Valor máximo */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Data inicial</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "h-10 w-full justify-start text-left font-normal bg-background border-2 transition-all",
+                      !dateRange.from && "text-muted-foreground",
+                      dateRange.from && "border-[rgba(255,140,0,0.6)]"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateRange.from ? (
+                      format(dateRange.from, "dd/MM/yyyy", { locale: ptBR })
+                    ) : (
+                      <span>Selecione</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateRange.from}
+                    onSelect={(date) => {
+                      if (date) {
+                        setDateRange({ ...dateRange, from: date });
+                      }
+                    }}
+                    locale={ptBR}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Data final</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "h-10 w-full justify-start text-left font-normal bg-background border-2 transition-all",
+                      !dateRange.to && "text-muted-foreground",
+                      dateRange.to && "border-[rgba(255,140,0,0.6)]"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateRange.to ? (
+                      format(dateRange.to, "dd/MM/yyyy", { locale: ptBR })
+                    ) : (
+                      <span>Selecione</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateRange.to}
+                    onSelect={(date) => {
+                      if (date) {
+                        setDateRange({ ...dateRange, to: date });
+                      }
+                    }}
+                    locale={ptBR}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor mínimo</label>
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={minAmount}
+                onChange={(e) => setMinAmount(e.target.value)}
+                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor máximo</label>
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={maxAmount}
+                onChange={(e) => setMaxAmount(e.target.value)}
+                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
+              />
+            </div>
+          </div>
+
+          {/* Linha 3: Checkbox e Limpar Filtros */}
+          <div className="flex items-center justify-between pt-2">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="reversals"
+                  checked={showReversalsOnly}
+                  onCheckedChange={(checked) => setShowReversalsOnly(checked as boolean)}
+                  className="border-2"
+                />
+                <label htmlFor="reversals" className="text-sm font-medium cursor-pointer">
+                  Apenas Estornos
+                </label>
+              </div>
+              
+              {loading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Aplicando filtros...
+                </div>
+              )}
+            </div>
           
             <Button
-                variant="outline"
-                onClick={() => {
-                  setSearchTerm("");
-                  setTypeFilter('ALL');
-                  setStatusFilter('ALL');
-                  setMinAmount("");
-                  setMaxAmount("");
-                  setShowReversalsOnly(false);
-                  setDateFilter({
-                    start: BitsoRealtimeService.getDateStringDaysAgo(7),
-                    end: BitsoRealtimeService.getTodayDateString()
-                  });
-                }}
-                className="h-10"
-                disabled={loading}
-              >
-                <X className="h-4 w-4 mr-2" />
-                Limpar Filtros
+              variant="outline"
+              onClick={() => {
+                setSearchTerm("");
+                setTypeFilter('ALL');
+                setStatusFilter('ALL');
+                setMinAmount("");
+                setMaxAmount("");
+                setSpecificAmount("");
+                setShowReversalsOnly(false);
+                setDateRange({
+                  from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+                  to: new Date()
+                });
+                setDateFilter({
+                  start: BitsoRealtimeService.getDateStringDaysAgo(7),
+                  end: BitsoRealtimeService.getTodayDateString()
+                });
+              }}
+              className="h-10 bg-black border border-orange-500 text-white hover:bg-orange-500 hover:text-white transition-all duration-200 rounded-md px-3 lg:px-4"
+              disabled={loading}
+            >
+              <X className="h-4 w-4 mr-2" />
+              Limpar Filtros
             </Button>
-            </div>
+          </div>
         </div>
       </Card>
-      )}
 
       {/* Tabela */}
       <Card className="overflow-hidden">
-        {/* 🆕 Barra de Ações para Compensação */}
-        <div className={cn(
-          "px-6 py-4 border-b border-border transition-all",
-          bulkMode ? "bg-orange-50 dark:bg-orange-950/20" : "bg-muted/30"
-        )}>
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                variant={bulkMode ? "default" : "outline"}
-                onClick={toggleBulkMode}
-                className={bulkMode ? "bg-orange-600 hover:bg-orange-700" : ""}
-              >
-                <CheckSquare className="h-4 w-4 mr-2" />
-                {bulkMode ? "Sair do Modo Seleção" : "Modo Seleção Individual"}
-              </Button>
-              
-              {bulkMode && (
-                <>
-                  <Badge variant="secondary" className="text-sm px-3 py-1">
-                    {selectedTransactions.size} selecionada{selectedTransactions.size !== 1 ? 's' : ''}
-                  </Badge>
-                  
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={selectAllVisibleCredits}
-                    disabled={filteredTransactions.filter(t => t.type === 'FUNDING' && !isRecordCompensated(t) && t.reconciliationId).length === 0}
-                  >
-                    Selecionar Todas Visíveis
-                  </Button>
-                  
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearSelection}
-                    disabled={selectedTransactions.size === 0}
-                  >
-                    <X className="h-3 w-3 mr-1" />
-                    Limpar Seleção
-                  </Button>
-                  
-                  <div className="text-sm text-muted-foreground">
-                    💡 Selecione transações para compensar individualmente
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
@@ -714,7 +764,6 @@ export default function ExtractTabBitsoTcr() {
               <table className="w-full">
                 <thead className="bg-muted/50 border-b sticky top-0 z-10">
                   <tr>
-                    {bulkMode && <th className="w-12 p-3"></th>}
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Data/Hora</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Tipo</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Nome</th>
@@ -722,46 +771,29 @@ export default function ExtractTabBitsoTcr() {
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Status</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">End-to-End</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Reconciliation ID</th>
-                    {!bulkMode && <th className="w-24 p-3"></th>}
+                    <th className="w-24 p-3"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredTransactions.map((tx) => (
+                  {filteredTransactions.map((tx, index) => (
                     <>
                     <tr
                       key={tx.id}
             className={cn(
                         "border-b hover:bg-muted/30 transition-colors cursor-pointer",
-                        bulkMode && selectedTransactions.has(tx.id.toString()) && "bg-muted/20 dark:bg-muted/10",
+                        index % 2 === 0 ? "bg-[#181818]" : "bg-[#1E1E1E]",
                         expandedRow === tx.id && "bg-muted/10 dark:bg-muted/5"
             )}
             onClick={() => {
-                        if (bulkMode && tx.type === 'FUNDING' && !isRecordCompensated(tx) && tx.reconciliationId) {
-                          toggleTransactionSelection(tx.id);
-                        } else if (!bulkMode) {
-                          setExpandedRow(expandedRow === tx.id ? null : tx.id);
-                        }
+                        setExpandedRow(expandedRow === tx.id ? null : tx.id);
                       }}
                     >
-                      {bulkMode && (
-                        <td className="p-3">
-                          {tx.type === 'FUNDING' && !isRecordCompensated(tx) && tx.reconciliationId && (
-                <Checkbox
-                              checked={selectedTransactions.has(tx.id.toString())}
-                              onCheckedChange={() => toggleTransactionSelection(tx.id)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              )}
-                        </td>
-                      )}
                       <td className="p-3">
                         <div className="flex items-center gap-2">
-                          {!bulkMode && (
-                            expandedRow === tx.id ? (
-                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                            )
+                          {expandedRow === tx.id ? (
+                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           )}
                           <div>
                             <div className="text-sm">{formatDate(tx.createdAt).split(' ')[0]}</div>
@@ -810,41 +842,39 @@ export default function ExtractTabBitsoTcr() {
                           {tx.reconciliationId || '-'}
                         </div>
                       </td>
-                      {!bulkMode && (
-                        <td className="p-3">
-                          {tx.type === 'FUNDING' && tx.reconciliationId && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => handleCompensation(tx, e)}
-                              disabled={isRecordCompensated(tx)}
-                              className={cn(
-                                "h-7 px-2 text-xs transition-all",
-                                isRecordCompensated(tx)
-                                  ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                  : "bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200 hover:border-orange-300"
-                              )}
-                              title={isRecordCompensated(tx) ? "Já compensado" : "Realizar compensação"}
-                            >
-                              {isRecordCompensated(tx) ? (
-                                <>
-                                  <Check className="h-3 w-3 mr-1" />
-                                  Compensado
-                                </>
-                              ) : (
-                                <>
-                                  <DollarSign className="h-3 w-3 mr-1" />
-                                  Verificar
-                                </>
-                              )}
-                            </Button>
-                          )}
-                        </td>
-                      )}
+                      <td className="p-3">
+                        {tx.type === 'FUNDING' && tx.reconciliationId && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => handleCompensation(tx, e)}
+                            disabled={isRecordCompensated(tx)}
+                            className={cn(
+                              "h-7 px-2 text-xs transition-all",
+                              isRecordCompensated(tx)
+                                ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                : "bg-[rgba(255,140,0,0.1)] hover:bg-[rgba(255,140,0,0.2)] text-[#ff8c00] border-[rgba(255,140,0,0.4)] hover:border-[rgba(255,140,0,0.6)]"
+                            )}
+                            title={isRecordCompensated(tx) ? "Já compensado" : "Realizar compensação"}
+                          >
+                            {isRecordCompensated(tx) ? (
+                              <>
+                                <Check className="h-3 w-3 mr-1" />
+                                Compensado
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Compensar
+                              </>
+                            )}
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                     
                     {/* Linha expandida com detalhes */}
-                    {expandedRow === tx.id && !bulkMode && (
+                    {expandedRow === tx.id && (
                       <tr className="bg-muted/5 dark:bg-muted/5 border-b border-border/50">
                         <td colSpan={8} className="p-0">
                           <div className="p-6 space-y-4">

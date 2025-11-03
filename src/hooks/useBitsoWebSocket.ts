@@ -171,11 +171,23 @@ export function useBitsoWebSocket() {
       }
     }, 30000);
 
-    // Cleanup ao desmontar
+    // Cleanup ao desmontar (CRÍTICO para evitar memory leaks e DOM errors)
     return () => {
       console.log('🔌 Desconectando WebSocket...');
       clearInterval(pingInterval);
-      socketInstance.disconnect();
+      
+      // ✅ Remover TODOS os listeners antes de desconectar
+      socketInstance.removeAllListeners();
+      
+      // ✅ Desconectar apenas se ainda estiver conectado
+      if (socketInstance.connected) {
+        socketInstance.disconnect();
+      }
+      
+      // ✅ Limpar estados para evitar updates em componentes desmontados
+      setSocket(null);
+      setIsConnected(false);
+      setIsReconnecting(false);
     };
   }, []);
 

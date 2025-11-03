@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SendHorizontal, RefreshCcw, Loader2, DollarSign, Wifi, WifiOff, CheckCircle, AlertCircle, TrendingUp, Lock, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
+import { SendHorizontal, RefreshCcw, Loader2, DollarSign, Wifi, WifiOff, CheckCircle, AlertCircle, FileText, Banknote, Lock, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useBitsoWebSocket } from "@/hooks/useBitsoWebSocket";
 import { BitsoRealtimeService } from "@/services/bitso-realtime";
@@ -117,15 +117,16 @@ export default function TopBarBitsoTcr() {
   };
 
   return (
-    <div className="sticky top-0 z-30 bg-gradient-to-r from-orange-600/10 to-red-600/10 backdrop-blur-xl border-b border-border h-auto p-6">
+    <div className="sticky top-0 z-30 bg-background border-b border-border h-auto p-6">
       {/* Header principal */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-gradient-to-br from-orange-600 to-red-600 shadow-xl">
-            <SendHorizontal className="h-6 w-6 text-white" />
+          <div className="p-3 rounded-2xl bg-orange-600 shadow-xl">
+            <Banknote className="h-6 w-6 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-3">
+              <Banknote className="h-5 w-5 text-orange-500" />
               <h1 className="text-2xl font-bold text-foreground">Bitso → TCR</h1>
               <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs font-medium">
                 Banking
@@ -176,14 +177,14 @@ export default function TopBarBitsoTcr() {
       </div>
 
       {/* Cards lado a lado - 5 cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
         {/* Card 1: Total */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-orange-500/10 to-red-500/10 backdrop-blur-sm border border-orange-500/20 hover:border-orange-500/40 transition-all duration-300 group shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground font-medium">Total</span>
-            <TrendingUp className="h-4 w-4 text-orange-500 group-hover:scale-110 transition-transform" />
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <FileText className="h-[18px] w-[18px] text-[rgb(0,105,209)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Total</span>
           </div>
-          <div className="text-xl font-bold text-orange-600 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(0,105,209)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -192,18 +193,15 @@ export default function TopBarBitsoTcr() {
               <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(balanceData.total)} /></div>
             )}
           </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            Saldo total
-          </div>
         </div>
 
         {/* Card 2: Available */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-green-500/10 to-emerald-500/10 backdrop-blur-sm border border-green-500/20 hover:border-green-500/40 transition-all duration-300 group shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground font-medium">Disponível</span>
-            <DollarSign className="h-4 w-4 text-green-500 group-hover:scale-110 transition-transform" />
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <CheckCircle className="h-[18px] w-[18px] text-[rgb(56,209,0)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Disponível</span>
           </div>
-          <div className="text-xl font-bold text-green-600 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(56,209,0)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -212,23 +210,15 @@ export default function TopBarBitsoTcr() {
               <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(balanceData.available)} /></div>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-2">
-            <div className="text-xs text-muted-foreground">
-              Uso imediato
-            </div>
-            {isConnected && (
-              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-            )}
-          </div>
         </div>
 
         {/* Card 3: Locked */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 to-yellow-500/10 backdrop-blur-sm border border-amber-500/20 hover:border-amber-500/40 transition-all duration-300 group shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground font-medium">Bloqueado</span>
-            <Lock className="h-4 w-4 text-amber-500 group-hover:scale-110 transition-transform" />
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <Lock className="h-[18px] w-[18px] text-[rgb(184,0,0)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Bloqueado</span>
           </div>
-          <div className="text-xl font-bold text-amber-600 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(184,0,0)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -237,18 +227,15 @@ export default function TopBarBitsoTcr() {
               <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(balanceData.locked)} /></div>
             )}
           </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            Em processamento
-          </div>
         </div>
 
         {/* Card 4: Pending Deposit */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 backdrop-blur-sm border border-blue-500/20 hover:border-blue-500/40 transition-all duration-300 group shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground font-medium">Depósito Pendente</span>
-            <ArrowDownCircle className="h-4 w-4 text-blue-500 group-hover:scale-110 transition-transform" />
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowDownCircle className="h-[18px] w-[18px] text-[rgb(218,114,45)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Depósito Pendente</span>
           </div>
-          <div className="text-xl font-bold text-blue-600 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(218,114,45)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -257,18 +244,15 @@ export default function TopBarBitsoTcr() {
               <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(balanceData.pendingDeposit)} /></div>
             )}
           </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            A receber
-          </div>
         </div>
 
         {/* Card 5: Pending Withdrawal */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-red-500/10 to-pink-500/10 backdrop-blur-sm border border-red-500/20 hover:border-red-500/40 transition-all duration-300 group shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground font-medium">Saque Pendente</span>
-            <ArrowUpCircle className="h-4 w-4 text-red-500 group-hover:scale-110 transition-transform" />
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowUpCircle className="h-[18px] w-[18px] text-[rgb(160,38,29)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saque Pendente</span>
           </div>
-          <div className="text-xl font-bold text-red-600 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(160,38,29)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -276,9 +260,6 @@ export default function TopBarBitsoTcr() {
             ) : (
               <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(balanceData.pendingWithdrawal)} /></div>
             )}
-          </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            A enviar
           </div>
         </div>
       </div>

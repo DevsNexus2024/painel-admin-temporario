@@ -20,6 +20,9 @@ import TcrPage from "./pages/TcrPage";
 import CorpXTTFPage from "./pages/CorpXTTFPage";
 import BitsoPage from "./pages/BitsoPage";
 import BitsoTcrPage from "./pages/BitsoTcrPage";
+import ContasOrganizacoesLayout from "./pages/ContasOrganizacoes/ContasOrganizacoesLayout";
+import OrganizacaoDetailsPage from "./pages/ContasOrganizacoes/OrganizacaoDetailsPage";
+import ContaDetailsPage from "./pages/ContasOrganizacoes/ContaDetailsPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIAMENTE
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
@@ -150,6 +153,9 @@ const App = () => (
                 <Route path="/otc/admin-statement/:clientId" element={<AdminClientStatement />} />
                 <Route path="/bitso" element={<BitsoPage />} />
                 <Route path="/bitso-tcr" element={<BitsoTcrPage />} />
+                <Route path="/contas-organizacoes" element={<ContasOrganizacoesLayout />} />
+                <Route path="/contas-organizacoes/organizacao/:id" element={<OrganizacaoDetailsPage />} />
+                <Route path="/contas-organizacoes/conta/:id" element={<ContaDetailsPage />} />
                 <Route path="/analise-usuario/:id" element={<AnaliseUsuario />} />
               </Route>
               

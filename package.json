@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/clean-dist.js",
     "build:dev": "vite build --mode development",
+    "clean-dist": "node scripts/clean-dist.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },

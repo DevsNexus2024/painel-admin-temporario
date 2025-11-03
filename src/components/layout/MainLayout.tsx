@@ -17,7 +17,8 @@ import {
     ListChecks,
     UserSearch,
     TrendingUp,
-    Lock
+    Lock,
+    Building2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -333,6 +334,24 @@ export default function MainLayout() {
                                         to="/corpx"
                                         icon={<CreditCard className="h-4 w-4" />}
                                         label="CORPX TTF"
+                                        isCollapsed={isCollapsed}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* ========== GRUPO CONTAS E ORGANIZAÇÕES ========== */}
+                            <div className="pb-2">
+                                {!isCollapsed && (
+                                    <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                        Contas e Organizações
+                                    </h3>
+                                )}
+                                <div className="space-y-1">
+                                    <SidebarLink
+                                        to="/contas-organizacoes"
+                                        icon={<Building2 className="h-4 w-4" />}
+                                        label="Contas e Organizações"
+                                        badge="NOVO"
                                         isCollapsed={isCollapsed}
                                     />
                                 </div>
