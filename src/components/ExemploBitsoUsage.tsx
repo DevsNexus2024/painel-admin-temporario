@@ -40,10 +40,10 @@ export const ExemploBitsoUsage: React.FC = () => {
           count: resultado.data.balances.length
         });
       } else {
-        console.error('Erro ao carregar saldos:', resultado.mensagem);
+        // Erro ao carregar saldos
       }
     } catch (error) {
-      console.error('Erro ao carregar saldos Bitso:', error);
+      // Erro ao carregar saldos Bitso
     } finally {
       setLoading(false);
     }
@@ -102,7 +102,6 @@ export const ExemploBitsoUsage: React.FC = () => {
       }
       
     } catch (error: any) {
-      console.error('Erro ao enviar PIX:', error);
       alert(`Erro: ${error.message}`);
     } finally {
       setLoading(false);
@@ -127,14 +126,12 @@ export const ExemploBitsoUsage: React.FC = () => {
       });
       
       if (resultado.sucesso) {
-        console.log('Extrato Bitso:', resultado.data);
         alert(`Extrato consultado! Verifique o console para detalhes.`);
       } else {
         alert(`Erro ao consultar extrato: ${resultado.mensagem}`);
       }
       
     } catch (error: any) {
-      console.error('Erro ao consultar extrato:', error);
       alert(`Erro: ${error.message}`);
     } finally {
       setLoading(false);

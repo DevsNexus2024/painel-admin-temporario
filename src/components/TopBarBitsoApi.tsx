@@ -5,17 +5,11 @@ import { useState, useEffect } from "react";
 import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 import { BitsoRealtimeService } from "@/services/bitso-realtime";
 import AnimatedBalance from "@/components/AnimatedBalance";
-import { ledgerApi } from "@/services/ledger-api";
 
-// Constantes para TCR
-const TCR_TENANT_ID = 2;
-const TCR_ACCOUNT_ID = 26;
-
-export default function TopBarBitsoTcr() {
-  // WebSocket filtrado para TCR
+export default function TopBarBitsoApi() {
+  // WebSocket para API - mostra tudo (sem filtro)
   const { isConnected, isReconnecting, newBalance, newTransaction } = useFilteredBitsoWebSocket({
-    context: 'tcr',
-    tenantId: TCR_TENANT_ID,
+    context: 'api',
   });
   const [balanceData, setBalanceData] = useState({
     currency: 'BRL',
@@ -35,49 +29,27 @@ export default function TopBarBitsoTcr() {
     setErrorSaldo(null);
     
     try {
-      // Buscar apenas a primeira transação para obter o saldo mais recente
-      const transactionsResponse = await ledgerApi.listTransactions(TCR_TENANT_ID, {
-        provider: 'BITSO',
-        accountId: TCR_ACCOUNT_ID,
-        limit: 1,
-        offset: 0,
-        includePostings: true,
-      });
-
-      if (transactionsResponse?.data && transactionsResponse.data.length > 0) {
-        const firstTransaction = transactionsResponse.data[0];
-
-        // Buscar o posting com accountId=26 (LIQUIDITY_POOL) - pode ser PAY_IN ou PAY_OUT
-        // O balance está sempre no posting do LIQUIDITY_POOL
-        const liquidityPoolPosting = firstTransaction.postings?.find(
-          (p: any) => p.accountId === TCR_ACCOUNT_ID.toString() && p.account?.accountType === 'LIQUIDITY_POOL'
-        );
-
-        if (liquidityPoolPosting?.account?.balance) {
-          const balance = parseFloat(liquidityPoolPosting.account.balance);
-          const currency = liquidityPoolPosting.account.currency || 'BRL';
-
-          setBalanceData({
-            currency: currency,
-            total: String(balance),
-            available: String(balance),
-            locked: '0',
-            pendingDeposit: '0',
-            pendingWithdrawal: '0'
-          });
-        }
-        setTotalTransacoes(transactionsResponse.pagination?.total || 0);
-      } else {
+      const response = await BitsoRealtimeService.getBalanceCached();
+      
+      // A API retorna: { success: true, data: { balance: { currency, total, available, locked, pendingDeposit, pendingWithdrawal }, timestamp } }
+      if (response?.data?.balance) {
+        const balance = response.data.balance;
         setBalanceData({
-          currency: 'BRL',
-          total: '0',
-          available: '0',
-          locked: '0',
-          pendingDeposit: '0',
-          pendingWithdrawal: '0'
+          currency: balance.currency?.toUpperCase() || 'BRL',
+          total: String(balance.total || 0),
+          available: String(balance.available || 0),
+          locked: String(balance.locked || 0),
+          pendingDeposit: String(balance.pendingDeposit || 0),
+          pendingWithdrawal: String(balance.pendingWithdrawal || 0)
         });
-        setTotalTransacoes(0);
       }
+
+      // Buscar total de transações
+      const transactionsData = await BitsoRealtimeService.getTransactions({
+        limit: 1,
+        offset: 0
+      });
+      setTotalTransacoes(transactionsData.pagination.total || 0);
     } catch (err: any) {
       setErrorSaldo(err.message || 'Erro ao consultar saldo');
     } finally {
@@ -130,7 +102,7 @@ export default function TopBarBitsoTcr() {
     return (
       <div className="text-xs text-muted-foreground">
         <span>
-          Bitso → TCR • {balanceData.currency} • {new Date().toLocaleTimeString('pt-BR')}
+          Bitso • {balanceData.currency} • {new Date().toLocaleTimeString('pt-BR')}
         </span>
       </div>
     );
@@ -138,7 +110,7 @@ export default function TopBarBitsoTcr() {
 
   const getStatusIcon = () => {
     if (isLoadingSaldo) {
-      return <Loader2 className="h-4 w-4 animate-spin text-orange-500" />;
+      return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
     }
     if (errorSaldo) {
       return <AlertCircle className="h-4 w-4 text-red-500" />;
@@ -151,14 +123,14 @@ export default function TopBarBitsoTcr() {
       {/* Header principal */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-orange-600 shadow-xl">
+          <div className="p-3 rounded-2xl bg-[#9333ea] shadow-xl">
             <Banknote className="h-6 w-6 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-3">
-              <Banknote className="h-5 w-5 text-orange-500" />
-              <h1 className="text-2xl font-bold text-foreground">Bitso → TCR</h1>
-              <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs font-medium">
+              <Banknote className="h-5 w-5 text-[#9333ea]" />
+              <h1 className="text-2xl font-bold text-foreground">Bitso</h1>
+              <Badge className="bg-[rgba(147,51,234,0.2)] text-[#9333ea] border-[rgba(147,51,234,0.4)] text-xs font-medium">
                 Banking
               </Badge>
               {getStatusIcon()}
@@ -262,10 +234,10 @@ export default function TopBarBitsoTcr() {
         {/* Card 4: Pending Deposit */}
         <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
           <div className="flex items-center gap-2 mb-1">
-            <ArrowDownCircle className="h-[18px] w-[18px] text-[rgb(218,114,45)] group-hover:opacity-80 transition-opacity" />
+            <ArrowDownCircle className="h-[18px] w-[18px] text-[#9333ea] group-hover:opacity-80 transition-opacity" />
             <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Depósito Pendente</span>
           </div>
-          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(218,114,45)] mt-1 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[#9333ea] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -279,10 +251,10 @@ export default function TopBarBitsoTcr() {
         {/* Card 5: Pending Withdrawal */}
         <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
           <div className="flex items-center gap-2 mb-1">
-            <ArrowUpCircle className="h-[18px] w-[18px] text-[rgb(160,38,29)] group-hover:opacity-80 transition-opacity" />
+            <ArrowUpCircle className="h-[18px] w-[18px] text-[#9333ea] group-hover:opacity-80 transition-opacity" />
             <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saque Pendente</span>
           </div>
-          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(160,38,29)] mt-1 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[#9333ea] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (

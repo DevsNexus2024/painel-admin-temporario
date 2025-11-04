@@ -25,7 +25,6 @@ export async function consultarSaldoBitso(): Promise<BitsoBalance | null> {
     
     return null;
   } catch (error: any) {
-    console.error('[BITSO-SALDO] Erro ao consultar saldo:', error.message);
     return null;
   }
 }
@@ -76,7 +75,6 @@ export async function consultarExtratoBitso(filters?: BitsoFilters): Promise<{
       totalPages: 1
     };
   } catch (error: any) {
-    console.error('[BITSO-EXTRATO] Erro ao consultar extrato:', error.message);
     return {
       erro: true,
       transactions: [],
@@ -107,7 +105,6 @@ export async function listarChavesPixBitso(): Promise<{
       chaves: []
     };
   } catch (error: any) {
-    console.error('[BITSO-PIX-CHAVES] Erro ao listar chaves:', error.message);
     return {
       erro: true,
       chaves: []
@@ -123,7 +120,6 @@ export async function enviarPixBitso(dados: BitsoPixData): Promise<BitsoResponse
     const response = await bitsoClient.sendPix(dados);
     return response;
   } catch (error: any) {
-    console.error('[BITSO-PIX-TRANSFER] Erro ao enviar PIX:', error.message);
     return null;
   }
 }
@@ -154,7 +150,6 @@ export async function gerarQRCodePixBitso(valor: string): Promise<{
       message: response.mensagem || 'Erro ao gerar QR Code'
     };
   } catch (error: any) {
-    console.error('[BITSO-PIX-QR] Erro ao gerar QR Code:', error.message);
     return {
       erro: true,
       message: error.message

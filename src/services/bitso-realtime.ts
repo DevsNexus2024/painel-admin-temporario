@@ -120,7 +120,6 @@ export async function getBalanceReal(): Promise<any> {
     
     return data;
   } catch (error: any) {
-    console.error('[BITSO-REALTIME] Erro ao buscar saldo real:', error);
     throw new Error(error.message || 'Erro ao consultar saldo');
   }
 }
@@ -146,7 +145,6 @@ export async function getBalanceCached(currency: string = 'brl'): Promise<BitsoB
 
     return await response.json();
   } catch (error: any) {
-    console.error('[BITSO-REALTIME] Erro ao buscar saldo cached:', error);
     throw new Error(error.message || 'Erro ao consultar saldo');
   }
 }
@@ -191,7 +189,6 @@ export async function getTransactions(filters?: BitsoTransactionFilters): Promis
 
     return await response.json();
   } catch (error: any) {
-    console.error('[BITSO-REALTIME] Erro ao buscar transações:', error);
     throw new Error(error.message || 'Erro ao consultar transações');
   }
 }

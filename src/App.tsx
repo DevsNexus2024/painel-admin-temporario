@@ -20,6 +20,8 @@ import TcrPage from "./pages/TcrPage";
 import CorpXTTFPage from "./pages/CorpXTTFPage";
 import BitsoPage from "./pages/BitsoPage";
 import BitsoTcrPage from "./pages/BitsoTcrPage";
+import BitsoApiPage from "./pages/BitsoApiPage";
+import SupportPage from "./pages/SupportPage";
 import ContasOrganizacoesLayout from "./pages/ContasOrganizacoes/ContasOrganizacoesLayout";
 import OrganizacaoDetailsPage from "./pages/ContasOrganizacoes/OrganizacaoDetailsPage";
 import ContaDetailsPage from "./pages/ContasOrganizacoes/ContaDetailsPage";
@@ -153,7 +155,9 @@ const App = () => (
                 <Route path="/otc/admin-statement/:clientId" element={<AdminClientStatement />} />
                 <Route path="/bitso" element={<BitsoPage />} />
                 <Route path="/bitso-tcr" element={<BitsoTcrPage />} />
+                <Route path="/bitso-api" element={<BitsoApiPage />} />
                 <Route path="/contas-organizacoes" element={<ContasOrganizacoesLayout />} />
+                <Route path="/suporte" element={<SupportPage />} />
                 <Route path="/contas-organizacoes/organizacao/:id" element={<OrganizacaoDetailsPage />} />
                 <Route path="/contas-organizacoes/conta/:id" element={<ContaDetailsPage />} />
                 <Route path="/analise-usuario/:id" element={<AnaliseUsuario />} />

@@ -2,12 +2,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SendHorizontal, RefreshCcw, Loader2, DollarSign, Wifi, WifiOff, CheckCircle, AlertCircle, FileText, Banknote, Lock, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useBitsoWebSocket } from "@/hooks/useBitsoWebSocket";
+import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 import { BitsoRealtimeService } from "@/services/bitso-realtime";
 import AnimatedBalance from "@/components/AnimatedBalance";
+import { ledgerApi } from "@/services/ledger-api";
+
+// Constantes para OTC
+const OTC_TENANT_ID = 3;
+const OTC_ACCOUNT_ID = 27;
 
 export default function TopBarBitso() {
-  const { isConnected, isReconnecting, newBalance, newTransaction } = useBitsoWebSocket();
+  // WebSocket filtrado para OTC
+  const { isConnected, isReconnecting, newBalance, newTransaction } = useFilteredBitsoWebSocket({
+    context: 'otc',
+    tenantId: OTC_TENANT_ID,
+    accountId: OTC_ACCOUNT_ID,
+  });
   const [balanceData, setBalanceData] = useState({
     currency: 'BRL',
     total: '0',
@@ -20,36 +30,59 @@ export default function TopBarBitso() {
   const [isLoadingSaldo, setIsLoadingSaldo] = useState(false);
   const [errorSaldo, setErrorSaldo] = useState<string | null>(null);
 
-  // Buscar saldo REAL da API
+  // Buscar saldo do último registro da API de extrato (balance do posting accountId=27)
   const fetchSaldo = async () => {
     setIsLoadingSaldo(true);
     setErrorSaldo(null);
     
     try {
-      const response = await BitsoRealtimeService.getBalanceCached();
-      
-      // A API retorna: { success: true, data: { balance: { currency, total, available, locked, pendingDeposit, pendingWithdrawal }, timestamp } }
-      if (response?.data?.balance) {
-        const balance = response.data.balance;
-        setBalanceData({
-          currency: balance.currency?.toUpperCase() || 'BRL',
-          total: String(balance.total || 0),
-          available: String(balance.available || 0),
-          locked: String(balance.locked || 0),
-          pendingDeposit: String(balance.pendingDeposit || 0),
-          pendingWithdrawal: String(balance.pendingWithdrawal || 0)
-        });
-      }
-
-      // Buscar total de transações
-      const transactionsData = await BitsoRealtimeService.getTransactions({
+      // Buscar apenas a primeira transação para obter o saldo mais recente
+      const transactionsResponse = await ledgerApi.listTransactions(OTC_TENANT_ID, {
+        provider: 'BITSO',
+        accountId: OTC_ACCOUNT_ID,
         limit: 1,
-        offset: 0
+        offset: 0,
+        includePostings: true,
       });
-      setTotalTransacoes(transactionsData.pagination.total || 0);
+      
+      if (transactionsResponse?.data && transactionsResponse.data.length > 0) {
+        const firstTransaction = transactionsResponse.data[0];
+        
+        // Buscar o posting com accountId=27 (LIQUIDITY_POOL) e side=PAY_IN
+        const liquidityPoolPosting = firstTransaction.postings?.find(
+          (p: any) => p.accountId === OTC_ACCOUNT_ID.toString() && p.side === 'PAY_IN'
+        );
+        
+        if (liquidityPoolPosting?.account?.balance) {
+          const balance = parseFloat(liquidityPoolPosting.account.balance);
+          const currency = liquidityPoolPosting.account.currency || 'BRL';
+          
+          setBalanceData({
+            currency: currency,
+            total: String(balance),
+            available: String(balance), // Disponível = total (não há bloqueio separado no ledger)
+            locked: '0',
+            pendingDeposit: '0',
+            pendingWithdrawal: '0'
+          });
+        }
+        
+        // Total de transações
+        setTotalTransacoes(transactionsResponse.pagination?.total || 0);
+      } else {
+        // Se não houver transações, inicializar com zero
+        setBalanceData({
+          currency: 'BRL',
+          total: '0',
+          available: '0',
+          locked: '0',
+          pendingDeposit: '0',
+          pendingWithdrawal: '0'
+        });
+        setTotalTransacoes(0);
+      }
     } catch (err: any) {
       setErrorSaldo(err.message || 'Erro ao consultar saldo');
-      console.error('[TopBarBitso] Erro ao buscar saldo:', err);
     } finally {
       setIsLoadingSaldo(false);
     }
@@ -70,20 +103,20 @@ export default function TopBarBitso() {
           total: String(brlBalance.total || 0),
           available: String(brlBalance.available || 0),
           locked: String(brlBalance.locked || 0),
-          pendingDeposit: String(brlBalance.pendingDeposit || 0),
-          pendingWithdrawal: String(brlBalance.pendingWithdrawal || 0)
+          pendingDeposit: '0',
+          pendingWithdrawal: '0'
         });
       }
     }
   }, [newBalance]);
 
-  // Recarregar saldo quando receber nova transação
+  // Recarregar saldo quando receber nova transação (após toast aparecer)
   useEffect(() => {
     if (newTransaction) {
-      console.log('💰 Nova transação detectada, recarregando saldo...');
+      // Delay maior para que o toast apareça primeiro (2s após evento)
       setTimeout(() => {
         fetchSaldo();
-      }, 500);
+      }, 2000);
     }
   }, [newTransaction]);
 

@@ -14,14 +14,23 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
 import BulkCreditOTCModal from "@/components/otc/BulkCreditOTCModal";
-import { useBitsoWebSocket } from "@/hooks/useBitsoWebSocket";
+import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 import { BitsoRealtimeService } from "@/services/bitso-realtime";
 import type { BitsoTransactionDB, BitsoTransactionFilters } from "@/services/bitso-realtime";
 import type { MovimentoExtrato } from "@/services/extrato";
+import { ledgerApi } from "@/services/ledger-api";
+
+// Constantes para OTC
+const OTC_TENANT_ID = 3;
+const OTC_ACCOUNT_ID = 27;
 
 export default function ExtractTabBitso() {
-  // WebSocket
-  const { isConnected, newTransaction, transactionTimestamp } = useBitsoWebSocket();
+  // WebSocket filtrado para OTC
+  const { isConnected, newTransaction, transactionTimestamp } = useFilteredBitsoWebSocket({
+    context: 'otc',
+    tenantId: OTC_TENANT_ID,
+    accountId: OTC_ACCOUNT_ID,
+  });
 
   // Estados de transações
   const [transactions, setTransactions] = useState<BitsoTransactionDB[]>([]);
@@ -69,36 +78,148 @@ export default function ExtractTabBitso() {
   // Estado para controlar linha expandida
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
-  // Buscar transações
+  // Função para converter LedgerTransaction para BitsoTransactionDB
+  const mapLedgerToBitsoTransaction = (ledgerTx: any): BitsoTransactionDB => {
+    const metadata = ledgerTx.metadata || {};
+    const posting = ledgerTx.postings?.find((p: any) => p.accountId === OTC_ACCOUNT_ID.toString() && p.side === 'PAY_IN') || ledgerTx.postings?.[0];
+    
+    // Para DEPOSIT: payer_name vem do metadata
+    // Para WITHDRAWAL: verificar se há payee_name nos metadados
+    const isDeposit = ledgerTx.journalType === 'DEPOSIT';
+    let payerName = '';
+    let payeeName = '';
+    
+    if (isDeposit) {
+      payerName = metadata.payer_name || '';
+      payeeName = metadata.payee_name || '';
+    } else {
+      // Para saques, verificar se há payee_name nos metadados
+      payeeName = metadata.payee_name || '';
+      
+      // Se não houver, tentar extrair da description se houver padrão " - NOME"
+      if (!payeeName) {
+        const description = ledgerTx.description || '';
+        const nameMatch = description.match(/ - (.+)$/);
+        if (nameMatch && nameMatch[1]) {
+          payeeName = nameMatch[1].trim();
+        }
+      }
+    }
+    
+    // Determinar status real baseado nos metadados
+    // Para WITHDRAWAL: usar withdrawal_status
+    // Para DEPOSIT: usar deposit_status ou status padrão
+    let status: 'PENDING' | 'COMPLETE' | 'FAILED' | 'CANCELLED' = 'COMPLETE';
+    
+    if (ledgerTx.journalType === 'WITHDRAWAL') {
+      const withdrawalStatus = metadata.withdrawal_status?.toUpperCase();
+      if (withdrawalStatus === 'FAILED') {
+        status = 'FAILED';
+      } else if (withdrawalStatus === 'PENDING' || withdrawalStatus === 'IN_PROGRESS') {
+        status = 'PENDING';
+      } else if (withdrawalStatus === 'CANCELLED') {
+        status = 'CANCELLED';
+      } else if (withdrawalStatus === 'COMPLETE' || withdrawalStatus === 'COMPLETED') {
+        status = 'COMPLETE';
+      }
+      // Se há failed_at mas não há withdrawal_status, considerar como FAILED
+      if (metadata.failed_at && !withdrawalStatus) {
+        status = 'FAILED';
+      }
+    } else if (ledgerTx.journalType === 'DEPOSIT') {
+      const depositStatus = metadata.deposit_status?.toUpperCase();
+      if (depositStatus === 'FAILED') {
+        status = 'FAILED';
+      } else if (depositStatus === 'PENDING' || depositStatus === 'IN_PROGRESS') {
+        status = 'PENDING';
+      } else if (depositStatus === 'CANCELLED') {
+        status = 'CANCELLED';
+      } else if (depositStatus === 'COMPLETE' || depositStatus === 'COMPLETED') {
+        status = 'COMPLETE';
+      }
+    }
+    
+    return {
+      id: parseInt(ledgerTx.id),
+      type: ledgerTx.journalType === 'DEPOSIT' ? 'FUNDING' : 'WITHDRAWAL',
+      transactionId: ledgerTx.providerTxId || ledgerTx.externalId || ledgerTx.id,
+      endToEndId: ledgerTx.endToEndId || '',
+      reconciliationId: ledgerTx.idemKey || '',
+      status: status,
+      amount: metadata.net_amount || metadata.gross_amount || posting?.amount || '0',
+      fee: metadata.fee || '0',
+      currency: ledgerTx.functionalCurrency || 'BRL',
+      method: 'pixstark',
+      methodName: 'Pix',
+      payerName: payerName,
+      payerTaxId: metadata.payer_tax_id || '',
+      payerBankName: '',
+      payeeName: payeeName,
+      createdAt: ledgerTx.createdAt,
+      receivedAt: ledgerTx.createdAt,
+      updatedAt: ledgerTx.updatedAt || ledgerTx.createdAt,
+      isReversal: false,
+      originEndToEndId: null
+    };
+  };
+
+  // Buscar transações do ledger
   const fetchTransactions = async (resetOffset: boolean = false) => {
     setLoading(true);
     setError(null);
     
     try {
-      const filters: BitsoTransactionFilters = {
+      const offset = resetOffset ? 0 : pagination.offset;
+      
+      const response = await ledgerApi.listTransactions(OTC_TENANT_ID, {
+        provider: 'BITSO',
+        accountId: OTC_ACCOUNT_ID,
         startDate: dateFilter.start,
         endDate: dateFilter.end,
         limit: pagination.limit,
-        offset: resetOffset ? 0 : pagination.offset,
-      };
+        offset: offset,
+        includePostings: true,
+      });
 
-      if (typeFilter !== 'ALL') filters.type = typeFilter;
-      if (statusFilter !== 'ALL') filters.status = statusFilter;
+      // Converter dados do ledger para formato BitsoTransactionDB
+      const mappedTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
+      
+      // Aplicar filtros locais que não estão na API
+      let filtered = mappedTransactions;
+      
+      if (typeFilter !== 'ALL') {
+        filtered = filtered.filter(tx => tx.type === typeFilter);
+      }
+      
+      if (statusFilter !== 'ALL') {
+        filtered = filtered.filter(tx => tx.status === statusFilter);
+      }
+      
       if (specificAmount) {
         const amount = parseFloat(specificAmount);
-        filters.minAmount = amount;
-        filters.maxAmount = amount;
+        filtered = filtered.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
       } else {
-        if (minAmount) filters.minAmount = parseFloat(minAmount);
-        if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
+        if (minAmount) {
+          const min = parseFloat(minAmount);
+          filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
+        }
+        if (maxAmount) {
+          const max = parseFloat(maxAmount);
+          filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
+        }
       }
-      // searchTerm é filtrado localmente no frontend
-      if (showReversalsOnly) filters.isReversal = true;
-
-      const response = await BitsoRealtimeService.getTransactions(filters);
       
-      setTransactions(response.data);
-      setPagination(response.pagination);
+      setTransactions(filtered);
+      
+      // Atualizar paginação baseada na resposta
+      setPagination({
+        total: response.pagination?.total || filtered.length,
+        limit: pagination.limit,
+        offset: offset,
+        has_more: response.pagination?.hasMore || false,
+        current_page: Math.floor(offset / pagination.limit) + 1,
+        total_pages: Math.ceil((response.pagination?.total || filtered.length) / pagination.limit)
+      });
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar transações');
       toast.error('Erro ao carregar extrato', {
@@ -150,47 +271,14 @@ export default function ExtractTabBitso() {
     }
   }, [dateFilter.start, dateFilter.end]); // Dependências específicas para evitar disparo individual
 
+  // WebSocket ainda funciona para notificações toast, mas não adiciona transações automaticamente
+  // pois agora buscamos do ledger. O WebSocket pode ser usado para refresh quando necessário.
   useEffect(() => {
     if (newTransaction && transactionTimestamp > 0) {
-      console.log('🔄 [ExtractTabBitso] Adicionando nova transação à tabela:', newTransaction.id);
-      
-      const convertedTransaction: BitsoTransactionDB = {
-        id: newTransaction.id,
-        type: newTransaction.type === 'funding' ? 'FUNDING' : 'WITHDRAWAL',
-        transactionId: newTransaction.transactionId,
-        endToEndId: newTransaction.endToEndId,
-        reconciliationId: newTransaction.reconciliationId,
-        status: newTransaction.status.toUpperCase() as any,
-        amount: newTransaction.amount,
-        fee: '0.00',
-        currency: newTransaction.currency,
-        method: 'pixstark',
-        methodName: 'Pix',
-        payerName: newTransaction.payerName,
-        payeeName: newTransaction.payeeName,
-        payerTaxId: newTransaction.payerTaxId,
-        payerBankName: newTransaction.payerBankName,
-        createdAt: newTransaction.createdAt,
-        receivedAt: newTransaction.receivedAt,
-        updatedAt: newTransaction.updatedAt,
-        isReversal: newTransaction.isReversal,
-        originEndToEndId: null
-      };
-
-      setTransactions(prev => {
-        // ✅ Evitar duplicatas usando endToEndId (idempotência)
-        if (prev.some(tx => tx.endToEndId === convertedTransaction.endToEndId)) {
-          console.log('⚠️ Transação duplicada (endToEndId), ignorando:', convertedTransaction.endToEndId);
-          return prev;
-        }
-        console.log('✅ Transação adicionada ao topo da tabela');
-        return [convertedTransaction, ...prev];
-      });
-      
-      setPagination(prev => ({
-        ...prev,
-        total: prev.total + 1
-      }));
+      // Delay maior para que o toast apareça primeiro (2.5s após evento)
+      setTimeout(() => {
+        fetchTransactions(true);
+      }, 2500);
     }
   }, [transactionTimestamp]); // ✅ Usar timestamp como dependência
 
@@ -257,20 +345,16 @@ export default function ExtractTabBitso() {
       toast.info('Preparando exportação...', { description: 'Buscando todos os registros filtrados' });
       
       // ✅ Buscar TODOS os registros com os filtros aplicados (sem paginação)
-      const filters: BitsoTransactionFilters = {
+      const response = await ledgerApi.listTransactions(OTC_TENANT_ID, {
+        provider: 'BITSO',
+        accountId: OTC_ACCOUNT_ID,
         startDate: dateFilter.start,
         endDate: dateFilter.end,
-        type: typeFilter !== 'ALL' ? typeFilter : undefined,
-        status: statusFilter !== 'ALL' ? statusFilter : undefined,
-        minAmount: minAmount ? parseFloat(minAmount) : undefined,
-        maxAmount: maxAmount ? parseFloat(maxAmount) : undefined,
-        isReversal: showReversalsOnly ? true : undefined,
-        limit: 999999, // ✅ Buscar todos os registros (sem limite de paginação)
+        limit: 999999,
         offset: 0,
-      };
-
-      const response = await BitsoRealtimeService.getTransactions(filters);
-      const allTransactions = response.data;
+        includePostings: true,
+      });
+      const allTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
 
       // Aplicar filtro de busca local (searchTerm)
       let transactionsToExport = allTransactions;
@@ -318,7 +402,6 @@ export default function ExtractTabBitso() {
         description: `Arquivo: extrato-bitso-otc-${new Date().toISOString().split('T')[0]}.csv`
       });
     } catch (error: any) {
-      console.error('Erro ao exportar:', error);
       toast.error('Erro ao exportar extrato', {
         description: error.message || 'Não foi possível gerar o arquivo CSV'
       });
@@ -345,10 +428,14 @@ export default function ExtractTabBitso() {
       value: parseFloat(transaction.amount),
       type: transaction.type === 'FUNDING' ? 'CRÉDITO' : 'DÉBITO',
       document: transaction.payerTaxId || '',
-      client: transaction.payerName || transaction.payeeName || 'N/A',
+      client: transaction.type === 'FUNDING' 
+        ? (transaction.payerName || 'N/A')  // Quem enviou (para depósitos)
+        : (transaction.payeeName || 'N/A'),  // Quem recebeu (para saques)
       identified: true,
       code: transaction.endToEndId,
-      descCliente: `Bitso OTC - ${transaction.payerName || transaction.payeeName || 'N/A'}`,
+      descCliente: `Bitso OTC - ${transaction.type === 'FUNDING' 
+        ? (transaction.payerName || 'N/A')
+        : (transaction.payeeName || 'N/A')}`,
       _original: transaction
     });
     setCreditOTCModalOpen(true);
@@ -367,33 +454,14 @@ export default function ExtractTabBitso() {
   const handleSyncExtrato = async () => {
     setSyncing(true);
     try {
-      const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
-      const response = await fetch(`${API_BASE_URL}/api/bitso/pix/extrato/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(localStorage.getItem('auth_token') && {
-            Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-          })
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Erro ao sincronizar extrato');
-      }
-
-      const data = await response.json();
-      toast.success('Extrato sincronizado com sucesso!', {
-        description: data.message || 'Dados atualizados do servidor Bitso'
-      });
-      
-      // Recarregar transações após sincronização
+      // Recarregar do ledger (dados já estão sincronizados)
       await fetchTransactions(true);
+      toast.success('Extrato atualizado com sucesso!', {
+        description: 'Dados atualizados do ledger'
+      });
     } catch (err: any) {
-      console.error('[BitsoOTC] Erro ao sincronizar extrato:', err);
-      toast.error('Erro ao sincronizar extrato', {
-        description: err.message || 'Não foi possível sincronizar os dados'
+      toast.error('Erro ao atualizar extrato', {
+        description: err.message || 'Não foi possível atualizar os dados'
       });
     } finally {
       setSyncing(false);
@@ -467,10 +535,14 @@ export default function ExtractTabBitso() {
         value: parseFloat(t.amount),
         type: t.type === 'FUNDING' ? 'CRÉDITO' as const : 'DÉBITO' as const,
         document: t.payerTaxId || '',
-        client: t.payerName || t.payeeName || 'N/A',
+        client: t.type === 'FUNDING' 
+          ? (t.payerName || 'N/A')  // Quem enviou (para depósitos)
+          : (t.payeeName || 'N/A'),  // Quem recebeu (para saques)
         identified: true,
         code: t.endToEndId,
-        descCliente: `Bitso OTC - ${t.payerName || t.payeeName || 'N/A'}`,
+        descCliente: `Bitso OTC - ${t.type === 'FUNDING' 
+          ? (t.payerName || 'N/A')
+          : (t.payeeName || 'N/A')}`,
         _original: t
       }));
   };
@@ -506,29 +578,54 @@ export default function ExtractTabBitso() {
     setError(null);
     
     try {
-      const filters: BitsoTransactionFilters = {
+      const response = await ledgerApi.listTransactions(OTC_TENANT_ID, {
+        provider: 'BITSO',
+        accountId: OTC_ACCOUNT_ID,
         startDate: dateFilter.start,
         endDate: dateFilter.end,
         limit: pagination.limit,
         offset: offset,
-      };
+        includePostings: true,
+      });
 
-      if (typeFilter !== 'ALL') filters.type = typeFilter;
-      if (statusFilter !== 'ALL') filters.status = statusFilter;
+      // Converter dados do ledger para formato BitsoTransactionDB
+      const mappedTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
+      
+      // Aplicar filtros locais
+      let filtered = mappedTransactions;
+      
+      if (typeFilter !== 'ALL') {
+        filtered = filtered.filter(tx => tx.type === typeFilter);
+      }
+      
+      if (statusFilter !== 'ALL') {
+        filtered = filtered.filter(tx => tx.status === statusFilter);
+      }
+      
       if (specificAmount) {
         const amount = parseFloat(specificAmount);
-        filters.minAmount = amount;
-        filters.maxAmount = amount;
+        filtered = filtered.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
       } else {
-        if (minAmount) filters.minAmount = parseFloat(minAmount);
-        if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
+        if (minAmount) {
+          const min = parseFloat(minAmount);
+          filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
+        }
+        if (maxAmount) {
+          const max = parseFloat(maxAmount);
+          filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
+        }
       }
-      if (showReversalsOnly) filters.isReversal = true;
-
-      const response = await BitsoRealtimeService.getTransactions(filters);
       
-      setTransactions(response.data);
-      setPagination(response.pagination);
+      setTransactions(filtered);
+      
+      setPagination({
+        total: response.pagination?.total || filtered.length,
+        limit: pagination.limit,
+        offset: offset,
+        has_more: response.pagination?.hasMore || false,
+        current_page: Math.floor(offset / pagination.limit) + 1,
+        total_pages: Math.ceil((response.pagination?.total || filtered.length) / pagination.limit)
+      });
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar transações');
       toast.error('Erro ao carregar extrato', {
@@ -869,7 +966,7 @@ export default function ExtractTabBitso() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto max-h-[600px] overflow-y-auto relative">
+            <div className="overflow-x-auto max-h-[1000px] overflow-y-auto relative">
               <table className="w-full">
                 <thead className="bg-muted/50 border-b sticky top-0 z-10">
                   <tr>
@@ -941,7 +1038,12 @@ export default function ExtractTabBitso() {
                         </div>
                       </td>
                       <td className="p-3">
-                        <div className="text-sm font-medium">{tx.payerName || tx.payeeName || 'N/A'}</div>
+                        <div className="text-sm font-medium">
+                          {tx.type === 'FUNDING' 
+                            ? (tx.payerName || 'N/A')  // Quem enviou (para depósitos)
+                            : (tx.payeeName || 'N/A')  // Quem recebeu (para saques)
+                          }
+                        </div>
                         {tx.isReversal && (
                           <Badge variant="destructive" className="text-xs mt-1">Estorno</Badge>
                         )}

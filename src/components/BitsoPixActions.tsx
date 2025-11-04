@@ -9,6 +9,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { useLocation } from "react-router-dom";
 import { 
   SendHorizontal, 
   QrCode, 
@@ -33,14 +34,16 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
-// Importar funções do gerenciador unificado
+// Importar funções do gerenciador unificado (para QR Codes)
 import { 
-  sendPix,
   criarQRCodeDinamicoBitso,
   criarQRCodeEstaticoBitso,
   switchAccount,
   getAvailableAccounts
 } from "@/services/banking";
+
+// Nova API para envio de PIX com ledger
+import { sendPixWithLedger } from "@/services/bitso-pix-send";
 
 // Schemas de validação
 const pixSendSchema = z.object({
@@ -52,7 +55,6 @@ const pixSendSchema = z.object({
     (val) => !isNaN(parseFloat(val)) && parseFloat(val) > 0,
     "Valor deve ser maior que zero"
   ),
-  description: z.string().optional(),
 });
 
 const qrDynamicSchema = z.object({
@@ -75,19 +77,32 @@ type PixSendData = z.infer<typeof pixSendSchema>;
 type QRDynamicData = z.infer<typeof qrDynamicSchema>;
 type QRStaticData = z.infer<typeof qrStaticSchema>;
 
-export default function BitsoPixActions() {
+interface BitsoPixActionsProps {
+  tenantId?: 2 | 3; // Opcional: se não fornecido, detecta pela rota
+}
+
+export default function BitsoPixActions({ tenantId }: BitsoPixActionsProps = {} as BitsoPixActionsProps) {
+  const location = useLocation();
+  
+  // Detectar tenant_id pela rota se não foi fornecido como prop
+  const detectedTenantId: 2 | 3 = tenantId || (location.pathname.includes('/bitso-tcr') ? 2 : 3);
+  const tenantName = detectedTenantId === 2 ? 'TCR' : 'OTC';
+  const isTcrPage = detectedTenantId === 2;
+  
   const [isLoading, setIsLoading] = useState(false);
   const [pixResult, setPixResult] = useState<any>(null);
   const [qrResult, setQrResult] = useState<any>(null);
+
+  // Chave PIX pré-preenchida apenas para TCR
+  const defaultPixKey = isTcrPage ? "453f4628-04ea-4582-a371-db9639ba693d" : "";
 
   // Forms
   const sendForm = useForm<PixSendData>({
     resolver: zodResolver(pixSendSchema),
     defaultValues: {
-      keyType: undefined,
-      pixKey: "",
+      keyType: isTcrPage ? "EVP" : undefined,
+      pixKey: defaultPixKey,
       amount: "",
-      description: "",
     },
   });
 
@@ -110,7 +125,7 @@ export default function BitsoPixActions() {
     },
   });
 
-  // Verificar se conta Bitso está ativa
+  // Verificar se conta Bitso está ativa (usado apenas para QR Codes)
   const checkBitsoActive = () => {
     const accounts = getAvailableAccounts();
     const bitsoAccount = accounts.find(acc => acc.provider === 'bitso');
@@ -130,31 +145,65 @@ export default function BitsoPixActions() {
 
   // Enviar PIX
   const onSendPix = async (data: PixSendData) => {
-    if (!checkBitsoActive()) return;
-
     try {
       setIsLoading(true);
       setPixResult(null);
 
-      const result = await sendPix({
-        key: data.pixKey,
+      // Usar nova API com ledger
+      const result = await sendPixWithLedger({
+        tenant_id: detectedTenantId,
+        pix_key: data.pixKey,
+        pix_key_type: data.keyType,
         amount: parseFloat(data.amount),
-        description: data.description || "PIX via Bitso",
-        keyType: data.keyType
       });
 
-      setPixResult({
-        success: true,
-        transaction: result,
-        message: "PIX enviado com sucesso!"
-      });
+      if (result.success) {
+        setPixResult({
+          success: true,
+          transaction: {
+            journal_id: result.journal_id,
+            end_to_end_id: result.end_to_end_id,
+            wid: result.wid,
+            status: result.status,
+          },
+          message: result.message || "PIX enviado com sucesso!"
+        });
 
-      toast.success("PIX enviado!", {
-        description: `R$ ${data.amount} para ${data.pixKey}`,
-        duration: 4000,
-      });
+        toast.success("PIX enviado!", {
+          description: `R$ ${data.amount} para ${data.pixKey} • Tenant: ${tenantName}`,
+          duration: 4000,
+        });
 
-      sendForm.reset();
+        sendForm.reset();
+      } else {
+        // Extrair mensagem de erro da API
+        let errorMessage = "Erro ao enviar PIX";
+        
+        if (result.error) {
+          if (typeof result.error === 'object' && result.error.message) {
+            // Formato: { error: { code, message, traceId } }
+            errorMessage = result.error.message;
+            if (result.error.traceId) {
+              errorMessage += ` (Trace ID: ${result.error.traceId})`;
+            }
+          } else if (typeof result.error === 'string') {
+            errorMessage = result.error;
+          }
+        } else if (result.message) {
+          errorMessage = result.message;
+        }
+        
+        setPixResult({
+          success: false,
+          message: errorMessage,
+          error: result.error,
+        });
+
+        toast.error("Erro ao enviar PIX", {
+          description: errorMessage,
+          duration: 8000,
+        });
+      }
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
@@ -166,7 +215,7 @@ export default function BitsoPixActions() {
 
       toast.error("Erro ao enviar PIX", {
         description: errorMessage,
-        duration: 6000,
+        duration: 8000,
       });
     } finally {
       setIsLoading(false);
@@ -326,8 +375,11 @@ export default function BitsoPixActions() {
                 <SendHorizontal className="h-5 w-5" />
                 Enviar PIX via Bitso
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="flex items-center gap-2">
                 Transferência imediata usando chave PIX do destinatário
+                <Badge variant="outline" className="ml-2">
+                  Tenant: {tenantName} (ID: {detectedTenantId})
+                </Badge>
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -405,25 +457,6 @@ export default function BitsoPixActions() {
                     )}
                   />
 
-                  {/* Descrição */}
-                  <FormField
-                    control={sendForm.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Descrição (opcional)</FormLabel>
-                        <FormControl>
-                          <Input 
-                            placeholder="Motivo da transferência"
-                            disabled={isLoading}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
                   <Button type="submit" disabled={isLoading} className="w-full">
                     {isLoading ? (
                       <>
@@ -454,12 +487,29 @@ export default function BitsoPixActions() {
                         <p className={`font-medium ${pixResult.success ? 'text-green-800' : 'text-red-800'}`}>
                           {pixResult.message}
                         </p>
-                        {pixResult.transaction && (
+                        {pixResult.success && pixResult.transaction && (
                           <div className="mt-2 text-sm text-muted-foreground">
-                            <p>ID: {pixResult.transaction.id}</p>
-                            <p>Status: {pixResult.transaction.status}</p>
-                            {pixResult.transaction.pixInfo?.endToEndId && (
-                              <p>End-to-End: {pixResult.transaction.pixInfo.endToEndId}</p>
+                            {pixResult.transaction.journal_id && (
+                              <p>Journal ID: {pixResult.transaction.journal_id}</p>
+                            )}
+                            {pixResult.transaction.end_to_end_id && (
+                              <p>End-to-End ID: {pixResult.transaction.end_to_end_id}</p>
+                            )}
+                            {pixResult.transaction.wid && (
+                              <p>WID: {pixResult.transaction.wid}</p>
+                            )}
+                            {pixResult.transaction.status && (
+                              <p>Status: {pixResult.transaction.status}</p>
+                            )}
+                          </div>
+                        )}
+                        {!pixResult.success && pixResult.error && (
+                          <div className="mt-2 text-sm text-red-700">
+                            {typeof pixResult.error === 'object' && pixResult.error.code && (
+                              <p><strong>Código:</strong> {pixResult.error.code}</p>
+                            )}
+                            {typeof pixResult.error === 'object' && pixResult.error.traceId && (
+                              <p><strong>Trace ID:</strong> {pixResult.error.traceId}</p>
                             )}
                           </div>
                         )}
