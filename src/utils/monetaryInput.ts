@@ -42,22 +42,22 @@ export const formatMonetaryInput = (value: string): string => {
 };
 
 /**
- * Formata número monetário para USDT (4 casas decimais)
+ * Formata número monetário para USDT (2 casas decimais)
  * Preenche da direita para esquerda
- * Ex: digita "1" → "0,0001", digita "10000" → "1,0000"
+ * Ex: digita "1" → "0,01", digita "10000" → "100,00"
  */
 export const formatUSDTInput = (value: string): string => {
   // Remove tudo que não é número
   const numbersOnly = value.replace(/\D/g, '');
   
   // Se vazio, retorna formato inicial
-  if (!numbersOnly) return '0,0000';
+  if (!numbersOnly) return '0,00';
   
-  // Converte para número e divide por 10000 para ter 4 decimais
-  const numValue = parseInt(numbersOnly, 10) / 10000;
+  // Converte para número e divide por 100 para ter 2 decimais
+  const numValue = parseInt(numbersOnly, 10) / 100;
   
-  // Formata com 4 casas decimais sempre
-  const formatted = numValue.toFixed(4);
+  // Formata com 2 casas decimais sempre
+  const formatted = numValue.toFixed(2);
   
   // Separa parte inteira e decimal
   const [integerPart, decimalPart] = formatted.split('.');
@@ -71,7 +71,7 @@ export const formatUSDTInput = (value: string): string => {
 
 /**
  * Converte formato brasileiro para formato americano para USDT
- * Ex: "1.000,5000" -> "1000.5000"
+ * Ex: "1.000,50" -> "1000.50"
  */
 export const convertBrazilianUSDTToUS = (value: string): string => {
   return value

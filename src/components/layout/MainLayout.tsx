@@ -17,7 +17,8 @@ import {
     ListChecks,
     UserSearch,
     TrendingUp,
-    Lock
+    Lock,
+    KeyRound
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
 import { FEATURE_FLAGS } from "@/config/env";
+import { WithdrawalPinModal } from "@/components/otc/WithdrawalPinModal";
+import { useOTCPin } from "@/hooks/useOTCPin";
+import { toast } from "sonner";
 
 interface SidebarLinkProps {
     to: string;
@@ -86,7 +90,19 @@ const SidebarLink = ({ to, icon, label, badge, isCollapsed }: SidebarLinkProps) 
 export default function MainLayout() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
+    const [pinModalOpen, setPinModalOpen] = useState(false);
     const { user, logout } = useAuth();
+    const { status: pinStatus } = useOTCPin();
+
+    // Debug: Log do status do PIN
+    useEffect(() => {
+        console.log('🔍 DEBUG PIN STATUS:', {
+            loading: pinStatus.loading,
+            isAdmin: pinStatus.isAdmin,
+            pinConfigured: pinStatus.pinConfigured,
+            user: user?.email
+        });
+    }, [pinStatus, user]);
 
     // Detectar tela móvel e fechar sidebar automaticamente
     useEffect(() => {
@@ -431,6 +447,24 @@ export default function MainLayout() {
                                         <Settings className="mr-2 h-4 w-4" />
                                         Configurações
                                     </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={() => {
+                                            // Verificar permissões antes de abrir
+                                            if (!pinStatus.isAdmin) {
+                                                toast.error('Apenas administradores podem gerenciar PIN de saque');
+                                                return;
+                                            }
+                                            setPinModalOpen(true);
+                                        }}
+                                        disabled={pinStatus.loading || !pinStatus.isAdmin}
+                                    >
+                                        <KeyRound className="mr-2 h-4 w-4" />
+                                        {pinStatus.loading 
+                                            ? 'Carregando...' 
+                                            : pinStatus.pinConfigured 
+                                            ? 'Alterar PIN de Saque' 
+                                            : 'Cadastrar PIN de Saque'}
+                                    </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem 
                                         className="text-destructive cursor-pointer"
@@ -449,6 +483,13 @@ export default function MainLayout() {
                 <main className="flex-1 overflow-auto">
                     <Outlet />
                 </main>
+
+                {/* Modal de PIN de Saque */}
+                <WithdrawalPinModal
+                    isOpen={pinModalOpen}
+                    onClose={() => setPinModalOpen(false)}
+                    hasExistingPin={pinStatus.pinConfigured}
+                />
             </div>
         </div>
     );

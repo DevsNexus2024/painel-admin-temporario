@@ -576,6 +576,123 @@ export class OTCService {
       minute: '2-digit'
     }).format(new Date(date));
   }
+
+  /**
+   * Verifica se usuário logado é admin/super_admin
+   * PIN está vinculado ao usuário, não ao cliente OTC
+   */
+  async checkUserIsAdmin(): Promise<OTCApiResponse<{
+    is_admin: boolean;
+    user_id: number;
+    role_id: number;
+    role_name: string;
+  }>> {
+    const response = await api.get<OTCApiResponse<{
+      is_admin: boolean;
+      user_id: number;
+      role_id: number;
+      role_name: string;
+    }>>(
+      `${OTC_BASE_URL}/admin/check`
+    );
+    
+    return response.data;
+  }
+
+  /**
+   * Verifica se PIN está configurado para o usuário logado
+   * PIN está vinculado ao usuário, não ao cliente OTC
+   */
+  async checkPinStatus(): Promise<OTCApiResponse<{
+    pin_configured: boolean;
+  }>> {
+    const response = await api.get<OTCApiResponse<{
+      pin_configured: boolean;
+    }>>(
+      `${OTC_BASE_URL}/pin/status`
+    );
+    
+    return response.data;
+  }
+
+  /**
+   * Cria PIN inicial para o usuário logado
+   * PIN está vinculado ao usuário, não ao cliente OTC
+   */
+  async createPin(pin: string): Promise<OTCApiResponse<{
+    message?: string;
+  }>> {
+    const response = await api.post<OTCApiResponse<{
+      message?: string;
+    }>>(
+      `${OTC_BASE_URL}/pin/create`,
+      { pin }
+    );
+    
+    return response.data;
+  }
+
+  /**
+   * Verifica PIN do usuário logado
+   * PIN está vinculado ao usuário, não ao cliente OTC
+   */
+  async verifyPin(pin: string): Promise<OTCApiResponse<{
+    verified: boolean;
+  }>> {
+    const response = await api.post<OTCApiResponse<{
+      verified: boolean;
+    }>>(
+      `${OTC_BASE_URL}/pin/verify`,
+      { pin }
+    );
+    
+    return response.data;
+  }
+
+  /**
+   * Atualiza PIN do usuário logado
+   * PIN está vinculado ao usuário, não ao cliente OTC
+   */
+  async updatePin(currentPin: string, newPin: string): Promise<OTCApiResponse<{
+    message?: string;
+  }>> {
+    const response = await api.put<OTCApiResponse<{
+      message?: string;
+    }>>(
+      `${OTC_BASE_URL}/pin/update`,
+      {
+        currentPin,
+        newPin
+      }
+    );
+    
+    return response.data;
+  }
+
+  /**
+   * Busca cliente OTC vinculado ao usuário logado
+   */
+  async findClientByUser(userId?: number, userEmail?: string): Promise<OTCClient | null> {
+    try {
+      const clientsResponse = await this.getClients({ limit: 200 });
+      
+      if (!clientsResponse.data?.clientes || clientsResponse.data.clientes.length === 0) {
+        return null;
+      }
+
+      // Buscar cliente específico vinculado ao usuário logado
+      const client = clientsResponse.data.clientes.find(c => {
+        if (userId && String(c.user?.id) === String(userId)) return true;
+        if (userEmail && c.user?.email === userEmail) return true;
+        return false;
+      });
+
+      return client || null;
+    } catch (error) {
+      console.error('Erro ao buscar cliente OTC do usuário:', error);
+      return null;
+    }
+  }
 }
 
 // Instância singleton do serviço

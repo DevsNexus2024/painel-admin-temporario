@@ -109,7 +109,7 @@ const OTCNegociar: React.FC = () => {
   // Hook para autenticação (pegar email do usuário logado)
   const { user } = useAuth();
 
-  const [quantity, setQuantity] = useState('0,0000');
+  const [quantity, setQuantity] = useState('');
   const [total, setTotal] = useState('0,00');
   const [searchQuery, setSearchQuery] = useState('');
   const [countdown, setCountdown] = useState(0);
@@ -164,11 +164,6 @@ const OTCNegociar: React.FC = () => {
       result.transactions.forEach(tx => {
         if (tx.binance_transaction_id) {
           map[tx.binance_transaction_id] = tx;
-          console.log('💾 Transação salva:', {
-            id: tx.id,
-            binance_transaction_id: tx.binance_transaction_id,
-            transaction_notes: tx.transaction_notes
-          });
         }
       });
       console.log('📦 Total de transações salvas:', Object.keys(map).length);
@@ -237,7 +232,7 @@ const OTCNegociar: React.FC = () => {
         setTotal(formatted);
       } else if (totalValue > 0 && quantityValue === 0) {
         // Se preencheu total em BRL, preencher quantidade em USDT
-        const formatted = formatUSDTInput(quote.outputAmount.toFixed(4).replace('.', ''));
+        const formatted = formatUSDTInput(quote.outputAmount.toFixed(2).replace('.', '').replace(',', ''));
         setQuantity(formatted);
       }
     }
@@ -556,12 +551,12 @@ const OTCNegociar: React.FC = () => {
    * Handler para mudança no campo Quantidade (USDT)
    */
   const handleQuantityChange = (value: string) => {
-    // Formata como input USDT (4 casas decimais)
+    // Formata como input USDT (2 casas decimais)
     const formatted = formatUSDTInput(value);
     setQuantity(formatted);
     // Limpar campo Total quando quantidade é editada
     if (getNumericUSDTValue(formatted) > 0) {
-      setTotal('0,00');
+      setTotal('');
     }
   };
 
@@ -574,7 +569,7 @@ const OTCNegociar: React.FC = () => {
     setTotal(formatted);
     // Limpar campo Quantity quando total é editado
     if (getNumericValue(formatted) > 0) {
-      setQuantity('0,0000');
+      setQuantity('');
     }
   };
 
@@ -589,7 +584,7 @@ const OTCNegociar: React.FC = () => {
         const formatted = formatMonetaryInput(maxBRL.toFixed(2).replace('.', ''));
         setTotal(formatted);
         // Limpar quantidade quando usar MAX
-        setQuantity('0,0000');
+        setQuantity('');
       }
     }
   };
@@ -675,19 +670,7 @@ const OTCNegociar: React.FC = () => {
    * Converter ordens da Binance para formato de Transaction
    */
   const converterOrdens = (): BinanceTransaction[] => {
-    console.log('📋 Ordens Binance:', ordens.map(item => ({ orderId: item.orderId, symbol: item.symbol, status: item.status })));
-    
     const transactions = ordens.map((item) => {
-      // Debug: Log dos valores recebidos
-      console.log('🔍 Ordem detalhada:', {
-        orderId: item.orderId,
-        status: item.status,
-        averagePrice: item.averagePrice,
-        executedQuantity: item.executedQuantity,
-        total: item.total,
-        price: item.price
-      });
-      
       // Ordem tem quantidade executada, preço médio e taxa
       // Usar os valores fornecidos pelo backend
       const price = item.averagePrice || 0;
@@ -702,16 +685,6 @@ const OTCNegociar: React.FC = () => {
       // Usar orderId da ordem completa
       const binanceOrderId = item.orderId.toString();
       const savedTx = savedTransactions[binanceOrderId];
-      
-      // Debug: Log para entender a vinculação
-      if (savedTx) {
-        console.log('🔗 Vinculando ordem:', {
-          orderId: item.orderId,
-          binanceOrderId,
-          savedTxId: savedTx.id,
-          note: savedTx.transaction_notes
-        });
-      }
       
       const noteFromDb = savedTx?.transaction_notes || '';
       const noteFromLocal = notes[`O${item.orderId}`] || '';
@@ -1068,7 +1041,7 @@ const OTCNegociar: React.FC = () => {
                   value={quantity}
                   onChange={(e) => handleQuantityChange(e.target.value)}
                   className="bg-muted/80 text-base h-10 border-2 border-transparent hover:border-primary/30 focus:border-primary transition-colors font-semibold"
-                  placeholder="0,0000"
+                  placeholder="0,00"
                 />
               </div>
 
