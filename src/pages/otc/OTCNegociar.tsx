@@ -45,6 +45,7 @@ import type { BinanceWithdrawalHistoryItem } from '@/types/binance';
 import { useOTCClients, useOTCClient } from '@/hooks/useOTCClients';
 import { BinanceWithdrawalModal } from '@/components/otc/BinanceWithdrawalModal';
 import { TradeConfirmationModal } from '@/components/otc/TradeConfirmationModal';
+import { PinVerificationModal } from '@/components/otc/PinVerificationModal';
 import { getBinanceConfigs, createBinanceTransaction, getBinanceTransactions, updateBinanceTransactionNotes, updateBinanceTransactionNotesByBinanceId } from '@/services/otc-binance';
 import { useOTCOperations } from '@/hooks/useOTCOperations';
 import { toastError, toastSuccess } from '@/utils/toast';
@@ -133,6 +134,14 @@ const OTCNegociar: React.FC = () => {
   // Modal states
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [showPinVerificationModal, setShowPinVerificationModal] = useState(false);
+  const [pendingWithdrawalData, setPendingWithdrawalData] = useState<{
+    coin: string;
+    amount: string;
+    address: string;
+    network?: string;
+    addressTag?: string;
+  } | null>(null);
   const [clientPopoverOpen, setClientPopoverOpen] = useState(false);
   
   // Binance config
@@ -472,9 +481,9 @@ const OTCNegociar: React.FC = () => {
   };
 
   /**
-   * Solicitar saque
+   * Handler intermediário - armazena dados e pede PIN
    */
-  const handleSolicitarSaque = async (data: {
+  const handleSolicitarSaqueRequest = (data: {
     coin: string;
     amount: string;
     address: string;
@@ -493,57 +502,103 @@ const OTCNegociar: React.FC = () => {
       return;
     }
 
-    const response = await criarSaque(
-      data.coin,
-      data.amount,
-      data.address,
-      data.network,
-      data.addressTag
-    );
+    // Armazenar dados do saque e pedir PIN
+    setPendingWithdrawalData(data);
+    setShowWithdrawalModal(false); // Fechar modal de saque
+    setShowPinVerificationModal(true); // Abrir modal de PIN
+  };
 
-    if (response && response.data) {
-      // Fechar modal
-      setShowWithdrawalModal(false);
-      
-      // Criar operação de débito USD automaticamente
-      try {
-        // IMPORTANTE: O withdrawId é o ID interno da Binance, NÃO o hash da blockchain
-        // O txId (hash da transação) só será disponível depois que o saque for confirmado
-        // na blockchain. Por isso, por enquanto, vamos usar o withdrawId como referência
-        const withdrawId = response.data.withdrawId || 'N/A';
+  /**
+   * Executar saque após PIN verificado
+   */
+  const handleSolicitarSaque = async () => {
+    if (!pendingWithdrawalData) {
+      toastError('Erro', 'Dados do saque não encontrados');
+      return;
+    }
+
+    const data = pendingWithdrawalData;
+
+    // Validar se cliente foi selecionado
+    if (!selectedClient) {
+      toastError('Cliente não selecionado', 'Por favor, selecione um cliente antes de realizar o saque');
+      setPendingWithdrawalData(null);
+      return;
+    }
+
+    // Validar se há usuário logado
+    if (!user?.email) {
+      toastError('Usuário não identificado', 'Não foi possível identificar o usuário logado');
+      setPendingWithdrawalData(null);
+      return;
+    }
+
+    try {
+      const response = await criarSaque(
+        data.coin,
+        data.amount,
+        data.address,
+        data.network,
+        data.addressTag
+      );
+
+      if (response && response.data) {
+        // Fechar modais e limpar dados pendentes
+        setShowWithdrawalModal(false);
+        setShowPinVerificationModal(false);
+        setPendingWithdrawalData(null);
         
-        // Construir descrição com email do usuário
-        // O link da blockchain será adicionado depois quando o txId estiver disponível
-        const description = `Operação Automática USDT por ${user.email}: SAQUE - ID: ${withdrawId}`;
-        
-        console.log('📝 Criando operação de débito:', {
-          clientId: selectedClient,
-          amount: data.amount,
-          withdrawId,
-          description
-        });
-        
-        // Criar operação de débito USD
-        const debitOperation = {
-          otc_client_id: parseInt(selectedClient),
-          operation_type: 'debit' as const,
-          currency: 'USD' as const,
-          amount: parseFloat(data.amount),
-          description: description,
-        };
-        
-        await createOperation(debitOperation);
-        
-        console.log('✅ Operação de débito USD criada automaticamente:', debitOperation);
-        
-        // Recarregar histórico de saques
-        const { startTime, endTime } = getMonthDateRange();
-        await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
-        
-      } catch (error) {
-        console.error('❌ Erro ao criar operação de débito:', error);
-        toastError('Aviso', 'Saque realizado mas não foi possível criar operação de débito USD');
+        // Criar operação de débito USD automaticamente
+        try {
+          // IMPORTANTE: O withdrawId é o ID interno da Binance, NÃO o hash da blockchain
+          // O txId (hash da transação) só será disponível depois que o saque for confirmado
+          // na blockchain. Por isso, por enquanto, vamos usar o withdrawId como referência
+          const withdrawId = response.data.withdrawId || 'N/A';
+          
+          // Construir descrição com email do usuário
+          // O link da blockchain será adicionado depois quando o txId estiver disponível
+          const description = `Operação Automática USDT por ${user.email}: SAQUE - ID: ${withdrawId}`;
+          
+          console.log('📝 Criando operação de débito:', {
+            clientId: selectedClient,
+            amount: data.amount,
+            withdrawId,
+            description
+          });
+          
+          // Criar operação de débito USD
+          const debitOperation = {
+            otc_client_id: parseInt(selectedClient),
+            operation_type: 'debit' as const,
+            currency: 'USD' as const,
+            amount: parseFloat(data.amount),
+            description: description,
+          };
+          
+          await createOperation(debitOperation);
+          
+          console.log('✅ Operação de débito USD criada automaticamente:', debitOperation);
+          
+          // Recarregar histórico de saques
+          const { startTime, endTime } = getMonthDateRange();
+          await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
+          
+        } catch (error) {
+          console.error('❌ Erro ao criar operação de débito:', error);
+          toastError('Aviso', 'Saque realizado mas não foi possível criar operação de débito USD');
+        }
+      } else {
+        // Se não houver resposta válida, ainda limpar os dados pendentes
+        setPendingWithdrawalData(null);
+        setShowPinVerificationModal(false);
+        toastError('Erro', 'Não foi possível realizar o saque. Resposta inválida.');
       }
+    } catch (error) {
+      console.error('❌ Erro ao criar saque:', error);
+      toastError('Erro', 'Não foi possível realizar o saque. Tente novamente.');
+      // Limpar dados pendentes em caso de erro
+      setPendingWithdrawalData(null);
+      setShowPinVerificationModal(false);
     }
   };
 
@@ -1593,7 +1648,7 @@ const OTCNegociar: React.FC = () => {
       <BinanceWithdrawalModal
         isOpen={showWithdrawalModal}
         onClose={() => setShowWithdrawalModal(false)}
-        onConfirm={handleSolicitarSaque}
+        onConfirm={handleSolicitarSaqueRequest}
         loading={withdrawalLoading}
         balances={balances}
         client={(() => {
@@ -1618,6 +1673,18 @@ const OTCNegociar: React.FC = () => {
         })()}
         operationType={operationType}
         binanceFee={binanceConfig?.fee || 0.039} // Taxa da Binance em %
+      />
+
+      {/* Modal de Verificação de PIN */}
+      <PinVerificationModal
+        isOpen={showPinVerificationModal}
+        onClose={() => {
+          setShowPinVerificationModal(false);
+          setPendingWithdrawalData(null);
+        }}
+        onVerified={handleSolicitarSaque}
+        title="Confirmar Saque"
+        description="Digite seu PIN de 6 dígitos para autorizar o saque"
       />
     </div>
   );
