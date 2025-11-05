@@ -18,7 +18,9 @@ import {
     UserSearch,
     TrendingUp,
     Lock,
-    KeyRound
+    KeyRound,
+    Building2,
+    HelpCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -349,6 +351,38 @@ export default function MainLayout() {
                                         to="/corpx"
                                         icon={<CreditCard className="h-4 w-4" />}
                                         label="CORPX TTF"
+                                        isCollapsed={isCollapsed}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* ========== GRUPO CONTAS E ORGANIZAÇÕES ========== */}
+                            <div className="pb-2">
+                                {!isCollapsed && (
+                                    <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                        Contas e Organizações
+                                    </h3>
+                                )}
+                                <div className="space-y-1">
+                                    <SidebarLink
+                                        to="/contas-organizacoes"
+                                        icon={<Building2 className="h-4 w-4" />}
+                                        label="Contas e Organizações"
+                                        badge="NOVO"
+                                        isCollapsed={isCollapsed}
+                                    />
+                                    <SidebarLink
+                                        to="/bitso-api"
+                                        icon={<CreditCard className="h-4 w-4" />}
+                                        label="Bitso <> API"
+                                        badge="NOVO"
+                                        isCollapsed={isCollapsed}
+                                    />
+                                    <SidebarLink
+                                        to="/suporte"
+                                        icon={<HelpCircle className="h-4 w-4" />}
+                                        label="Suporte"
+                                        badge="NOVO"
                                         isCollapsed={isCollapsed}
                                     />
                                 </div>

@@ -228,11 +228,21 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
     }
   };
 
+  // Helper para obter nome formatado do provider
+  const getProviderDisplayName = (): string => {
+    const { provider } = detectProvider();
+    return provider === 'bitso' ? 'BITSO' 
+      : provider === 'corpx' ? 'CORPX'
+      : provider === 'bmp531' ? 'BMP-531'
+      : 'BMP-274';
+  };
+
   // Gerar descrição padrão baseada no registro do extrato
   const generateDefaultDescription = (record: MovimentoExtrato): string => {
     const parts = [];
     
-    const providerName = bankFeatures.provider?.toUpperCase() || 'BMP';
+    // Usar o provider detectado ao invés de bankFeatures.provider
+    const providerName = getProviderDisplayName();
     parts.push(`Crédito via extrato ${providerName}`);
     
     if (record.client) {
@@ -326,9 +336,20 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         
         console.log('🔧 [OTC-MODAL] Dados CorpX para backend:', { provider, dados_extrato });
       } else if (provider === 'bitso') {
-        dados_extrato = extractRecord._original || {
-          endToEndId: extractRecord.code,
-          id: extractRecord.id,
+        // Para Bitso, garantir que endToEndId seja usado corretamente
+        const endToEndId = extractRecord._original?.endToEndId || extractRecord.code;
+        const transactionId = extractRecord._original?.transactionId || extractRecord._original?.id || extractRecord.id;
+        
+        dados_extrato = extractRecord._original ? {
+          ...extractRecord._original,
+          // Garantir que endToEndId está presente e correto
+          endToEndId: extractRecord._original.endToEndId || endToEndId,
+          // Manter transactionId como id para referência secundária
+          id: transactionId,
+          dateTime: extractRecord._original.dateTime || extractRecord.dateTime
+        } : {
+          endToEndId: endToEndId,
+          id: transactionId,
           dateTime: extractRecord.dateTime
         };
       } else if (provider === 'bmp531') {
@@ -357,7 +378,10 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         dados_extrato,    // Objeto completo do provider
         provider,         // Provider identificado
         // 🔄 CAMPOS LEGADOS (FALLBACK)
-        reference_code: extractRecord.code,
+        // Para Bitso, reference_code deve ser sempre o endToEndId, não o transactionId
+        reference_code: provider === 'bitso' 
+          ? (extractRecord._original?.endToEndId || extractRecord.code)
+          : extractRecord.code,
         reference_external_id: extractRecord.id,
         reference_provider: provider,
         reference_date: extractRecord.dateTime
@@ -416,7 +440,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
             Creditar Extrato para Cliente OTC
           </DialogTitle>
           <DialogDescription>
-            Converter registro do extrato {bankFeatures.provider?.toUpperCase() || 'BMP'} em operação de crédito OTC
+            Converter registro do extrato {getProviderDisplayName()} em operação de crédito OTC
           </DialogDescription>
         </DialogHeader>
 
@@ -754,7 +778,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
               <AlertDescription className="text-foreground">
                 <strong>Confirmação Necessária</strong>
                 <br />
-                Você está prestes a creditar um valor do extrato BMP para um cliente OTC.
+                Você está prestes a creditar um valor do extrato {getProviderDisplayName()} para um cliente OTC.
                 Esta ação criará uma operação manual que afetará o saldo do cliente.
               </AlertDescription>
             </Alert>
@@ -805,7 +829,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-muted-foreground">
-                    Origem (Extrato {bankFeatures.provider?.toUpperCase() || 'BMP'})
+                    Origem (Extrato {getProviderDisplayName()})
                   </Label>
                   <p className="text-sm font-mono">{extractRecord.code}</p>
                 </div>

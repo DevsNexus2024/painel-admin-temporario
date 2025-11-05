@@ -124,7 +124,7 @@ export const testBMP = async () => {
 
 export const testBitso = async () => {
   if (process.env.NODE_ENV === 'development') {
-    console.log('🔶 Testando Bitso...');
+    // Testando Bitso
   }
   return await testAccountSwitch('bitso-crypto');
 };

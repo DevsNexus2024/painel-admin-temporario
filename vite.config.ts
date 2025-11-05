@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import path from "path";
+import { excludeFilesPlugin } from "./vite-plugin-exclude-files";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -16,6 +17,18 @@ export default defineConfig(({ mode }) => ({
           vendor: ['react', 'react-dom'],
           ui: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu']
         }
+      },
+      // 🔒 Excluir arquivos de teste e desenvolvimento do build
+      external: (id) => {
+        // Não incluir arquivos de teste no bundle
+        if (id.includes('test-') || id.includes('test/')) {
+          return true;
+        }
+        // Excluir arquivos .md e .json do build
+        if (id.endsWith('.md') || id.endsWith('.json')) {
+          return true;
+        }
+        return false;
       }
     },
     // 🔒 Segurança básica: apenas remover console.logs
@@ -35,6 +48,8 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
   },
   plugins: [
+    // 🔒 Excluir arquivos .md e .json do build
+    excludeFilesPlugin(),
     // 🔒 Plugin temporariamente desabilitado para debug
     // mode === 'production' && removeSensitiveDataPlugin(),
   ].filter(Boolean),

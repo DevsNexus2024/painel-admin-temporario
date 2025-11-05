@@ -146,14 +146,30 @@ const BulkCreditOTCModal: React.FC<BulkCreditOTCModalProps> = ({
       // Preparar payload para o backend
       const payload = {
         otc_client_id: selectedClient.id,
-        transactions: transactions.map(t => ({
-          provider: 'bitso',
-          transaction_id: t.id,
-          amount: t.value || t.amount || 0,
-          reference_code: t.code || t.id,
-          reference_date: t.dateTime || t.date,
-          dados_extrato: t._original || t
-        }))
+        transactions: transactions.map(t => {
+          // Para Bitso, garantir que reference_code seja sempre o endToEndId
+          const endToEndId = t._original?.endToEndId || t.code;
+          const transactionId = t._original?.transactionId || t._original?.id || t.id;
+          
+          return {
+            provider: 'bitso',
+            transaction_id: transactionId,
+            amount: t.value || t.amount || 0,
+            // Para Bitso, reference_code deve ser sempre o endToEndId, não o transactionId
+            reference_code: endToEndId,
+            reference_date: t.dateTime || t.date,
+            // Garantir que dados_extrato tenha endToEndId correto
+            dados_extrato: t._original ? {
+              ...t._original,
+              endToEndId: t._original.endToEndId || endToEndId,
+              id: transactionId
+            } : {
+              endToEndId: endToEndId,
+              id: transactionId,
+              dateTime: t.dateTime || t.date
+            }
+          };
+        })
       };
 
       console.log('🚀 [BULK-OTC] Enviando lote:', payload);

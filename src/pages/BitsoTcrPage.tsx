@@ -9,11 +9,14 @@ import MoneyRainEffect from "@/components/MoneyRainEffect";
 import BitsoPixActions from "@/components/BitsoPixActions";
 
 // WebSocket Hook
-import { useBitsoWebSocket } from "@/hooks/useBitsoWebSocket";
+import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 
 export default function BitsoTcrPage() {
-  // WebSocket para efeitos visuais
-  const { showMoneyEffect, newTransaction, transactionQueue } = useBitsoWebSocket();
+  // WebSocket filtrado para TCR
+  const { showMoneyEffect, newTransaction, transactionQueue } = useFilteredBitsoWebSocket({
+    context: 'tcr',
+    tenantId: 2,
+  });
 
   return (
     <div className="w-full min-h-screen bg-background">

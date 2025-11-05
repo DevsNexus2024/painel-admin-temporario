@@ -298,12 +298,6 @@ const buscarPagina = async ({
       // ✅ Log otimizado sem poluição
 
     } else {
-      console.error('[useExtratoPaginado] Formato de resposta Bitso inválido:', {
-        dataStructure: data,
-        hasSuccesso: data.sucesso,
-        hasDataTransacoes: !!(data.data?.transacoes),
-        hasTransacoes: !!data.transacoes
-      });
       throw new Error('Formato de resposta Bitso inválido - transações não encontradas');
     }
   } else {

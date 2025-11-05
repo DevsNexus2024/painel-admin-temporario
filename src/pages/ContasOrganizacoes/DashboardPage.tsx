@@ -1,0 +1,238 @@
+import { useState, useEffect } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, TrendingUp, DollarSign, CreditCard, ArrowUpCircle, ArrowDownCircle, RefreshCcw } from "lucide-react";
+import { ledgerApi } from "@/services/ledger-api";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+
+interface Tenant {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+interface BalanceSummary {
+  tenantId: string;
+  summary: {
+    totalAccounts: number;
+    totalBalance: string;
+    currency: string;
+    byAccountType: Array<{
+      accountType: string;
+      count: number;
+      totalBalance: string;
+    }>;
+  };
+  transactions: {
+    total: number;
+    byType: Array<{
+      journalType: string;
+      count: number;
+    }>;
+  };
+}
+
+export default function DashboardPage() {
+  const [selectedTenantId, setSelectedTenantId] = useState<number | null>(null);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [summary, setSummary] = useState<BalanceSummary | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadingTenants, setLoadingTenants] = useState(false);
+
+  useEffect(() => {
+    fetchTenants();
+  }, []);
+
+  useEffect(() => {
+    if (selectedTenantId) {
+      fetchSummary();
+    }
+  }, [selectedTenantId]);
+
+  const fetchTenants = async () => {
+    setLoadingTenants(true);
+    try {
+      const response = await ledgerApi.listTenants({ limit: 100 });
+      setTenants(response.data || []);
+      if (response.data && response.data.length > 0) {
+        setSelectedTenantId(response.data[0].id);
+      }
+    } catch (error: any) {
+      // Erro já tratado pelo ledgerApi
+    } finally {
+      setLoadingTenants(false);
+    }
+  };
+
+  const fetchSummary = async () => {
+    if (!selectedTenantId) return;
+    
+    setLoading(true);
+    try {
+      const response = await ledgerApi.getBalanceSummary(selectedTenantId);
+      setSummary(response.data);
+    } catch (error: any) {
+      // Erro já tratado pelo ledgerApi
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatCurrency = (value: string | number) => {
+    const num = typeof value === 'string' ? parseFloat(value) : value;
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(num || 0);
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Seleção de Tenant */}
+      <Card className="p-4 lg:p-6 bg-background border border-[rgba(255,255,255,0.1)]">
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
+              Selecionar Organização
+            </label>
+            <Select
+              value={selectedTenantId?.toString() || ""}
+              onValueChange={(value) => setSelectedTenantId(parseInt(value))}
+              disabled={loadingTenants}
+            >
+              <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(0,105,209,0.6)]">
+                <SelectValue placeholder="Selecione uma organização" />
+              </SelectTrigger>
+              <SelectContent>
+                {tenants.map((tenant) => (
+                  <SelectItem key={tenant.id} value={tenant.id.toString()}>
+                    {tenant.name} ({tenant.slug})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            variant="outline"
+            onClick={fetchSummary}
+            disabled={loading || !selectedTenantId}
+            className="h-10"
+          >
+            <RefreshCcw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
+            Atualizar
+          </Button>
+        </div>
+      </Card>
+
+      {!selectedTenantId ? (
+        <Card className="p-12 text-center">
+          <p className="text-muted-foreground">
+            Selecione uma organização para ver o resumo
+          </p>
+        </Card>
+      ) : loading ? (
+        <div className="flex items-center justify-center p-12">
+          <Loader2 className="h-8 w-8 animate-spin text-[#0069d1]" />
+        </div>
+      ) : summary ? (
+        <>
+          {/* Cards de Resumo */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)]">
+              <div className="flex items-center gap-2 mb-2">
+                <CreditCard className="h-5 w-5 text-[#0069d1]" />
+                <span className="text-sm text-muted-foreground">Total de Contas</span>
+              </div>
+              <div className="text-2xl font-bold text-[#0069d1]">
+                {summary.summary.totalAccounts}
+              </div>
+            </Card>
+
+            <Card className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)]">
+              <div className="flex items-center gap-2 mb-2">
+                <DollarSign className="h-5 w-5 text-yellow-500" />
+                <span className="text-sm text-muted-foreground">Saldo Total</span>
+              </div>
+              <div className="text-2xl font-bold text-yellow-500">
+                {formatCurrency(summary.summary.totalBalance)}
+              </div>
+            </Card>
+
+            <Card className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)]">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="h-5 w-5 text-green-500" />
+                <span className="text-sm text-muted-foreground">Total Transações</span>
+              </div>
+              <div className="text-2xl font-bold text-green-500">
+                {summary.transactions.total}
+              </div>
+            </Card>
+
+            <Card className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)]">
+              <div className="flex items-center gap-2 mb-2">
+                <ArrowUpCircle className="h-5 w-5 text-blue-500" />
+                <span className="text-sm text-muted-foreground">Moeda</span>
+              </div>
+              <div className="text-2xl font-bold text-blue-500">
+                {summary.summary.currency}
+              </div>
+            </Card>
+          </div>
+
+          {/* Saldos por Tipo de Conta */}
+          <Card className="p-4 lg:p-6 bg-background border border-[rgba(255,255,255,0.1)]">
+            <h3 className="text-lg font-semibold mb-4">Saldos por Tipo de Conta</h3>
+            <div className="space-y-3">
+              {summary.summary.byAccountType.map((item) => (
+                <div
+                  key={item.accountType}
+                  className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
+                >
+                  <span className="font-medium">{item.accountType}</span>
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-muted-foreground">
+                      {item.count} conta{item.count !== 1 ? 's' : ''}
+                    </span>
+                    <span className={cn(
+                      "font-bold",
+                      parseFloat(item.totalBalance) >= 0 ? "text-green-500" : "text-red-500"
+                    )}>
+                      {formatCurrency(item.totalBalance)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Transações por Tipo */}
+          <Card className="p-4 lg:p-6 bg-background border border-[rgba(255,255,255,0.1)]">
+            <h3 className="text-lg font-semibold mb-4">Transações por Tipo</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {summary.transactions.byType.map((item) => (
+                <div
+                  key={item.journalType}
+                  className="p-4 rounded-lg bg-muted/30 flex flex-col items-center justify-center"
+                >
+                  <span className="text-sm text-muted-foreground mb-1">{item.journalType}</span>
+                  <span className="text-2xl font-bold text-[#0069d1]">{item.count}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </>
+      ) : (
+        <Card className="p-12 text-center">
+          <p className="text-muted-foreground">
+            Nenhum dado disponível para esta organização
+          </p>
+        </Card>
+      )}
+    </div>
+  );
+}
+

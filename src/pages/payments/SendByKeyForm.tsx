@@ -77,13 +77,10 @@ export default function SendByKeyForm() {
       let resultado: PixKeyConsultResponse;
       
       if (activeAccount?.provider === 'bitso') {
-        console.log('[SEND-PIX] ✅ Usando consultarChavePixBitso()');
         resultado = await consultarChavePixBitso(chave);
       } else if (activeAccount?.provider === 'bmp-531') {
-        console.log('[SEND-PIX] ✅ Usando consultarChavePixBMP531()');
         resultado = await consultarChavePixBMP531(chave);
       } else {
-        console.log('[SEND-PIX] ✅ Usando consultarChavePixBMP()');
         resultado = await consultarChavePixBMP(chave);
       }
       

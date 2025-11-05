@@ -7,27 +7,22 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle } from "lucide-react";
+import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Plus, Check, CheckSquare, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import CompensationModalInteligente from "@/components/CompensationModalInteligente";
+import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
+import BulkCreditOTCModal from "@/components/otc/BulkCreditOTCModal";
 import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 import { BitsoRealtimeService } from "@/services/bitso-realtime";
 import type { BitsoTransactionDB, BitsoTransactionFilters } from "@/services/bitso-realtime";
-import { TCRVerificacaoService } from "@/services/tcrVerificacao";
-import { ledgerApi } from "@/services/ledger-api";
+import type { MovimentoExtrato } from "@/services/extrato";
 
-// Constantes para TCR
-const TCR_TENANT_ID = 2;
-const TCR_ACCOUNT_ID = 26;
-
-export default function ExtractTabBitsoTcr() {
-  // WebSocket filtrado para TCR
+export default function ExtractTabBitsoApi() {
+  // WebSocket para API - mostra tudo (sem filtro)
   const { isConnected, newTransaction, transactionTimestamp } = useFilteredBitsoWebSocket({
-    context: 'tcr',
-    tenantId: TCR_TENANT_ID,
+    context: 'api',
   });
 
   // Estados de transações
@@ -62,160 +57,50 @@ export default function ExtractTabBitsoTcr() {
   const [specificAmount, setSpecificAmount] = useState<string>("");
   const [showReversalsOnly, setShowReversalsOnly] = useState(false);
 
-  // Estados para funcionalidade de Compensação
-  const [compensationModalOpen, setCompensationModalOpen] = useState(false);
-  const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<any>(null);
-  const [compensatedRecords, setCompensatedRecords] = useState<Set<string>>(new Set());
+  // Estados para funcionalidade OTC
+  const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
+  const [selectedExtractRecord, setSelectedExtractRecord] = useState<MovimentoExtrato | null>(null);
+  const [creditedRecords, setCreditedRecords] = useState<Set<string>>(new Set());
+
+  // Estados para crédito em lote
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
+  const [bulkOTCModalOpen, setBulkOTCModalOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   // Estado para controlar linha expandida
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
-  // Função para converter LedgerTransaction para BitsoTransactionDB
-  const mapLedgerToBitsoTransaction = (ledgerTx: any): BitsoTransactionDB => {
-    const metadata = ledgerTx.metadata || {};
-    const posting = ledgerTx.postings?.find((p: any) => p.accountId === TCR_ACCOUNT_ID.toString() && p.side === 'PAY_IN') || ledgerTx.postings?.[0];
-    
-    const isDeposit = ledgerTx.journalType === 'DEPOSIT';
-    let payerName = '';
-    let payeeName = '';
-    
-    if (isDeposit) {
-      payerName = metadata.payer_name || '';
-      payeeName = metadata.payee_name || '';
-    } else {
-      // Para saques, verificar se há payee_name nos metadados
-      payeeName = metadata.payee_name || '';
-      
-      // Se ainda não tiver, tentar extrair da description se houver padrão " - NOME"
-      if (!payeeName) {
-        const description = ledgerTx.description || '';
-        const nameMatch = description.match(/ - (.+)$/);
-        if (nameMatch && nameMatch[1]) {
-          payeeName = nameMatch[1].trim();
-        }
-      }
-    }
-    
-    // Reconciliation ID: para DEPOSIT usar metadata.reconciliation_id, para WITHDRAWAL usar idemKey
-    const reconciliationId = isDeposit 
-      ? (metadata.reconciliation_id || ledgerTx.idemKey || '')
-      : (ledgerTx.idemKey || '');
-    
-    // Determinar status real baseado nos metadados
-    // Para WITHDRAWAL: usar withdrawal_status
-    // Para DEPOSIT: usar deposit_status ou status padrão
-    let status: 'PENDING' | 'COMPLETE' | 'FAILED' | 'CANCELLED' = 'COMPLETE';
-    
-    if (ledgerTx.journalType === 'WITHDRAWAL') {
-      const withdrawalStatus = metadata.withdrawal_status?.toUpperCase();
-      if (withdrawalStatus === 'FAILED') {
-        status = 'FAILED';
-      } else if (withdrawalStatus === 'PENDING' || withdrawalStatus === 'IN_PROGRESS') {
-        status = 'PENDING';
-      } else if (withdrawalStatus === 'CANCELLED') {
-        status = 'CANCELLED';
-      } else if (withdrawalStatus === 'COMPLETE' || withdrawalStatus === 'COMPLETED') {
-        status = 'COMPLETE';
-      }
-      // Se há failed_at mas não há withdrawal_status, considerar como FAILED
-      if (metadata.failed_at && !withdrawalStatus) {
-        status = 'FAILED';
-      }
-    } else if (ledgerTx.journalType === 'DEPOSIT') {
-      const depositStatus = metadata.deposit_status?.toUpperCase();
-      if (depositStatus === 'FAILED') {
-        status = 'FAILED';
-      } else if (depositStatus === 'PENDING' || depositStatus === 'IN_PROGRESS') {
-        status = 'PENDING';
-      } else if (depositStatus === 'CANCELLED') {
-        status = 'CANCELLED';
-      } else if (depositStatus === 'COMPLETE' || depositStatus === 'COMPLETED') {
-        status = 'COMPLETE';
-      }
-    }
-    
-    return {
-      id: parseInt(ledgerTx.id),
-      type: ledgerTx.journalType === 'DEPOSIT' ? 'FUNDING' : 'WITHDRAWAL',
-      transactionId: ledgerTx.providerTxId || ledgerTx.externalId || ledgerTx.id,
-      endToEndId: ledgerTx.endToEndId || '',
-      reconciliationId: reconciliationId,
-      status: status,
-      amount: metadata.net_amount || metadata.gross_amount || metadata.amount || posting?.amount || '0',
-      fee: metadata.fee || '0',
-      currency: ledgerTx.functionalCurrency || 'BRL',
-      method: 'pixstark',
-      methodName: 'Pix',
-      payerName: payerName,
-      payerTaxId: metadata.payer_tax_id || '',
-      payerBankName: '',
-      payeeName: payeeName,
-      createdAt: ledgerTx.createdAt,
-      receivedAt: ledgerTx.createdAt,
-      updatedAt: ledgerTx.updatedAt || ledgerTx.createdAt,
-      isReversal: false,
-      originEndToEndId: null
-    };
-  };
-
-  // Buscar transações do ledger
+  // Buscar transações
   const fetchTransactions = async (resetOffset: boolean = false) => {
     setLoading(true);
     setError(null);
     
     try {
-      const offset = resetOffset ? 0 : pagination.offset;
-      
-      const response = await ledgerApi.listTransactions(TCR_TENANT_ID, {
-        provider: 'BITSO',
-        accountId: TCR_ACCOUNT_ID,
+      const filters: BitsoTransactionFilters = {
         startDate: dateFilter.start,
         endDate: dateFilter.end,
         limit: pagination.limit,
-        offset: offset,
-        includePostings: true,
-      });
+        offset: resetOffset ? 0 : pagination.offset,
+      };
 
-      // Converter dados do ledger para formato BitsoTransactionDB
-      const mappedTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
-      
-      // Aplicar filtros locais que não estão na API
-      let filtered = mappedTransactions;
-      
-      if (typeFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.type === typeFilter);
-      }
-      
-      if (statusFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.status === statusFilter);
-      }
-      
+      if (typeFilter !== 'ALL') filters.type = typeFilter;
+      if (statusFilter !== 'ALL') filters.status = statusFilter;
       if (specificAmount) {
         const amount = parseFloat(specificAmount);
-        filtered = filtered.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
+        filters.minAmount = amount;
+        filters.maxAmount = amount;
       } else {
-        if (minAmount) {
-          const min = parseFloat(minAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
-        }
-        if (maxAmount) {
-          const max = parseFloat(maxAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
-        }
+        if (minAmount) filters.minAmount = parseFloat(minAmount);
+        if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
       }
+      // searchTerm é filtrado localmente no frontend
+      if (showReversalsOnly) filters.isReversal = true;
+
+      const response = await BitsoRealtimeService.getTransactions(filters);
       
-      setTransactions(filtered);
-      
-      // Atualizar paginação baseada na resposta
-      setPagination({
-        total: response.pagination?.total || filtered.length,
-        limit: pagination.limit,
-        offset: offset,
-        has_more: response.pagination?.hasMore || false,
-        current_page: Math.floor(offset / pagination.limit) + 1,
-        total_pages: Math.ceil((response.pagination?.total || filtered.length) / pagination.limit)
-      });
+      setTransactions(response.data);
+      setPagination(response.pagination);
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar transações');
       toast.error('Erro ao carregar extrato', {
@@ -269,10 +154,44 @@ export default function ExtractTabBitsoTcr() {
 
   useEffect(() => {
     if (newTransaction && transactionTimestamp > 0) {
-      // Delay maior para que o toast apareça primeiro (2.5s após evento)
+      // Delay para que o toast apareça primeiro (2s após evento)
       setTimeout(() => {
-        fetchTransactions(true);
-      }, 2500);
+        const convertedTransaction: BitsoTransactionDB = {
+          id: newTransaction.id,
+          type: newTransaction.type === 'funding' ? 'FUNDING' : 'WITHDRAWAL',
+          transactionId: newTransaction.transactionId,
+          endToEndId: newTransaction.endToEndId,
+          reconciliationId: newTransaction.reconciliationId,
+          status: newTransaction.status.toUpperCase() as any,
+          amount: newTransaction.amount,
+          fee: '0.00',
+          currency: newTransaction.currency,
+          method: 'pixstark',
+          methodName: 'Pix',
+          payerName: newTransaction.payerName,
+          payeeName: newTransaction.payeeName,
+          payerTaxId: newTransaction.payerTaxId,
+          payerBankName: newTransaction.payerBankName,
+          createdAt: newTransaction.createdAt,
+          receivedAt: newTransaction.receivedAt,
+          updatedAt: newTransaction.updatedAt,
+          isReversal: newTransaction.isReversal,
+          originEndToEndId: null
+        };
+
+        setTransactions(prev => {
+          // Evitar duplicatas usando endToEndId (idempotência)
+          if (prev.some(tx => tx.endToEndId === convertedTransaction.endToEndId)) {
+            return prev;
+          }
+          return [convertedTransaction, ...prev];
+        });
+        
+        setPagination(prev => ({
+          ...prev,
+          total: prev.total + 1
+        }));
+      }, 2000);
     }
   }, [transactionTimestamp]);
 
@@ -306,74 +225,70 @@ export default function ExtractTabBitsoTcr() {
     }
   };
 
+  // Função customizada para badge de status com tema roxo (apenas para Bitso OTC)
+  const getStatusBadgeForBitsoOTC = (status: string) => {
+    const baseBadge = BitsoRealtimeService.getStatusBadge(status);
+    let customClassName = "";
+    
+    switch (status) {
+      case 'COMPLETE':
+        customClassName = "bg-[#9333ea] text-white border-[#9333ea] hover:bg-[#7c3aed]";
+        break;
+      case 'PENDING':
+        customClassName = "bg-[rgba(147,51,234,0.2)] text-[#9333ea] border-[rgba(147,51,234,0.4)]";
+        break;
+      case 'FAILED':
+        customClassName = "bg-red-500/20 text-red-500 border-red-500/40";
+        break;
+      case 'CANCELLED':
+        customClassName = "bg-gray-500/20 text-gray-400 border-gray-500/40";
+        break;
+      default:
+        customClassName = "";
+    }
+    
+    return {
+      ...baseBadge,
+      className: cn("text-xs", customClassName)
+    };
+  };
+
   const exportToCSV = async () => {
     try {
-      toast.info('Preparando exportação...', { description: 'Buscando todos os registros TCR do ledger' });
+      toast.info('Preparando exportação...', { description: 'Buscando todos os registros filtrados' });
       
-      // ✅ Buscar TODOS os registros do ledger para TCR
-      let allTransactions: BitsoTransactionDB[] = [];
-      let offset = 0;
-      const limit = 500;
-      let hasMore = true;
+      // ✅ Buscar TODOS os registros com os filtros aplicados (sem paginação)
+      const filters: BitsoTransactionFilters = {
+        startDate: dateFilter.start,
+        endDate: dateFilter.end,
+        type: typeFilter !== 'ALL' ? typeFilter : undefined,
+        status: statusFilter !== 'ALL' ? statusFilter : undefined,
+        minAmount: minAmount ? parseFloat(minAmount) : undefined,
+        maxAmount: maxAmount ? parseFloat(maxAmount) : undefined,
+        isReversal: showReversalsOnly ? true : undefined,
+        limit: 999999, // ✅ Buscar todos os registros (sem limite de paginação)
+        offset: 0,
+      };
 
-      while (hasMore) {
-        const response = await ledgerApi.listTransactions(TCR_TENANT_ID, {
-          provider: 'BITSO',
-          accountId: TCR_ACCOUNT_ID,
-          startDate: dateFilter.start,
-          endDate: dateFilter.end,
-          limit: limit,
-          offset: offset,
-          includePostings: true,
-        });
+      const response = await BitsoRealtimeService.getTransactions(filters);
+      const allTransactions = response.data;
 
-        const mappedTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
-        allTransactions = [...allTransactions, ...mappedTransactions];
-
-        hasMore = response.pagination?.hasMore || false;
-        offset += limit;
-      }
-
-      // Aplicar filtros locais
+      // Aplicar filtro de busca local (searchTerm)
       let transactionsToExport = allTransactions;
-      
-      if (typeFilter !== 'ALL') {
-        transactionsToExport = transactionsToExport.filter(tx => tx.type === typeFilter);
-      }
-      
-      if (statusFilter !== 'ALL') {
-        transactionsToExport = transactionsToExport.filter(tx => tx.status === statusFilter);
-      }
-      
-      if (specificAmount) {
-        const amount = parseFloat(specificAmount);
-        transactionsToExport = transactionsToExport.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
-      } else {
-        if (minAmount) {
-          const min = parseFloat(minAmount);
-          transactionsToExport = transactionsToExport.filter(tx => parseFloat(tx.amount) >= min);
-        }
-        if (maxAmount) {
-          const max = parseFloat(maxAmount);
-          transactionsToExport = transactionsToExport.filter(tx => parseFloat(tx.amount) <= max);
-        }
-      }
-      
       if (searchTerm.trim()) {
         const searchLower = searchTerm.toLowerCase();
-        transactionsToExport = transactionsToExport.filter((t: BitsoTransactionDB) => {
+        transactionsToExport = allTransactions.filter((t: BitsoTransactionDB) => {
           return (
             t.payerName?.toLowerCase().includes(searchLower) ||
             t.payeeName?.toLowerCase().includes(searchLower) ||
             t.endToEndId?.toLowerCase().includes(searchLower) ||
             t.transactionId?.toLowerCase().includes(searchLower) ||
-            t.reconciliationId?.toLowerCase().includes(searchLower) ||
             t.amount.toString().includes(searchLower)
           );
         });
       }
 
-      // Gerar CSV com todas as colunas relevantes para TCR
+      // Gerar CSV
       const headers = ['Data', 'Tipo', 'Status', 'Valor', 'Moeda', 'Nome Pagador', 'Nome Beneficiário', 'Banco', 'End-to-End ID', 'Transaction ID', 'Reconciliation ID'];
       const rows = transactionsToExport.map((t: BitsoTransactionDB) => [
         formatDate(t.createdAt),
@@ -397,11 +312,11 @@ export default function ExtractTabBitsoTcr() {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `extrato-bitso-tcr-${new Date().toISOString().split('T')[0]}.csv`;
+      link.download = `extrato-bitso-api-${new Date().toISOString().split('T')[0]}.csv`;
       link.click();
       
-      toast.success(`${transactionsToExport.length} registros TCR exportados com sucesso!`, {
-        description: `Arquivo: extrato-bitso-tcr-${new Date().toISOString().split('T')[0]}.csv`
+      toast.success(`${transactionsToExport.length} registros exportados com sucesso!`, {
+        description: `Arquivo: extrato-bitso-api-${new Date().toISOString().split('T')[0]}.csv`
       });
     } catch (error: any) {
       toast.error('Erro ao exportar extrato', {
@@ -410,109 +325,161 @@ export default function ExtractTabBitsoTcr() {
     }
   };
 
-  const isRecordCompensated = (transaction: BitsoTransactionDB): boolean => {
-    const recordKey = `bitso-tcr-${transaction.id}`;
-    return compensatedRecords.has(recordKey);
+  const isRecordCredited = (transaction: BitsoTransactionDB): boolean => {
+    const recordKey = `bitso-${transaction.id}`;
+    return creditedRecords.has(recordKey);
   };
 
-  const handleCompensation = async (transaction: BitsoTransactionDB, event: React.MouseEvent) => {
+  const handleCreditToOTC = async (transaction: BitsoTransactionDB, event: React.MouseEvent) => {
     event.stopPropagation();
     
-    if (isRecordCompensated(transaction)) {
-      toast.error('Registro já compensado');
+    if (isRecordCredited(transaction)) {
+      toast.error('Registro já creditado');
       return;
     }
     
-    // ✅ Converter para formato MovimentoExtrato esperado pelo modal (IGUAL CorpX TCR)
-    let extractRecord = {
+    // Converter para o formato esperado pelo modal (MovimentoExtrato)
+    setSelectedExtractRecord({
       id: transaction.transactionId,
       dateTime: transaction.createdAt,
       value: parseFloat(transaction.amount),
       type: transaction.type === 'FUNDING' ? 'CRÉDITO' : 'DÉBITO',
+      document: transaction.payerTaxId || '',
       client: transaction.type === 'FUNDING' 
         ? (transaction.payerName || 'N/A')  // Quem enviou (para depósitos)
         : (transaction.payeeName || 'N/A'),  // Quem recebeu (para saques)
-      document: transaction.payerTaxId || '',
-      code: transaction.endToEndId,
-      descCliente: `Bitso TCR - ${transaction.type === 'FUNDING' 
-        ? (transaction.payerName || 'N/A')
-        : (transaction.payeeName || 'N/A')}`,
       identified: true,
-      descricaoOperacao: `Bitso TCR - ${transaction.type === 'FUNDING' 
+      code: transaction.endToEndId,
+      descCliente: `Bitso API - ${transaction.type === 'FUNDING' 
         ? (transaction.payerName || 'N/A')
         : (transaction.payeeName || 'N/A')}`,
       _original: transaction
-    };
-    
-    // ✅ Buscar id_usuario automaticamente via endtoend (IGUAL CorpX TCR)
-    try {
-      toast.info('Buscando usuário...', {
-        description: 'Verificando endtoend da transação via API'
-      });
-      
-      // Criar objeto compatível com TCRVerificacaoService
-      const tcTransaction = {
-        id: transaction.transactionId || transaction.endToEndId,
-        _original: {
-          idEndToEnd: transaction.endToEndId,
-          endToEndId: transaction.endToEndId
-        },
-        code: transaction.endToEndId
-      };
-      
-      const resultado = await TCRVerificacaoService.verificarTransacaoTCR(tcTransaction);
-      
-      if (resultado.encontrou && resultado.id_usuario) {
-        // ✅ ENCONTROU! Modificar descCliente para incluir o ID do usuário
-        extractRecord.descCliente = `Usuario ${resultado.id_usuario}; ${extractRecord.descCliente}`;
-        
-        toast.success(`Usuário encontrado: ID ${resultado.id_usuario}`, {
-          description: 'Abrindo modal com todas as funcionalidades'
-        });
-      } else {
-        // ❌ Não encontrou - mostrar aviso mas abrir modal mesmo assim
-        toast.warning('Usuário não encontrado automaticamente', {
-          description: 'Modal aberto - você pode informar o ID manualmente'
-        });
-      }
-    } catch (error) {
-      toast.error('Erro na verificação automática', {
-        description: 'Modal aberto - você pode informar o ID manualmente'
-      });
-    }
-    
-    // ✅ SEMPRE abrir o modal (com ou sem id_usuario encontrado)
-    setSelectedCompensationRecord(extractRecord);
-    setCompensationModalOpen(true);
+    });
+    setCreditOTCModalOpen(true);
   };
 
-  const handleCloseCompensationModal = (wasSuccessful?: boolean) => {
-    if (wasSuccessful && selectedCompensationRecord) {
-      const recordKey = `bitso-tcr-${selectedCompensationRecord._original.id}`;
-      setCompensatedRecords(prev => new Set(prev).add(recordKey));
-      toast.success('Compensação realizada com sucesso!');
-      fetchTransactions(true); // Recarregar dados
+  const handleCloseCreditOTCModal = (wasSuccessful?: boolean) => {
+    if (wasSuccessful && selectedExtractRecord) {
+      const recordKey = `bitso-${selectedExtractRecord._original.id}`;
+      setCreditedRecords(prev => new Set(prev).add(recordKey));
     }
     
-    setCompensationModalOpen(false);
-    setSelectedCompensationRecord(null);
+    setCreditOTCModalOpen(false);
+    setSelectedExtractRecord(null);
   };
 
   const handleSyncExtrato = async () => {
     setSyncing(true);
     try {
-      // Recarregar dados do ledger (já está sincronizado)
-      await fetchTransactions(true);
-      toast.success('Extrato atualizado com sucesso!', {
-        description: 'Dados atualizados do ledger'
+      const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
+      const response = await fetch(`${API_BASE_URL}/api/bitso/pix/extrato/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem('auth_token') && {
+            Authorization: `Bearer ${localStorage.getItem('auth_token')}`
+          })
+        }
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Erro ao sincronizar extrato');
+      }
+
+      const data = await response.json();
+      toast.success('Extrato sincronizado com sucesso!', {
+        description: data.message || 'Dados atualizados do servidor Bitso'
+      });
+      
+      // Recarregar transações após sincronização
+      await fetchTransactions(true);
     } catch (err: any) {
-      toast.error('Erro ao atualizar extrato', {
-        description: err.message || 'Não foi possível atualizar os dados'
+      toast.error('Erro ao sincronizar extrato', {
+        description: err.message || 'Não foi possível sincronizar os dados'
       });
     } finally {
       setSyncing(false);
     }
+  };
+
+  const toggleTransactionSelection = (transactionId: number) => {
+    setSelectedTransactions(prev => {
+      const newSet = new Set(prev);
+      const key = transactionId.toString();
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllVisibleCredits = () => {
+    const creditTransactions = transactions
+      .filter(t => t.type === 'FUNDING' && !isRecordCredited(t))
+      .map(t => t.id.toString());
+    
+    setSelectedTransactions(new Set(creditTransactions));
+    toast.success(`${creditTransactions.length} transações selecionadas`);
+  };
+
+  const clearSelection = () => {
+    setSelectedTransactions(new Set());
+  };
+
+  const toggleBulkMode = () => {
+    const newBulkMode = !bulkMode;
+    setBulkMode(newBulkMode);
+    
+    if (!newBulkMode) {
+      clearSelection();
+    }
+  };
+
+  const handleBulkCredit = () => {
+    if (selectedTransactions.size === 0) {
+      toast.error('Selecione pelo menos uma transação');
+      return;
+    }
+    
+    setBulkOTCModalOpen(true);
+  };
+
+  const handleCloseBulkOTCModal = (wasSuccessful?: boolean, successfulIds?: string[]) => {
+    if (wasSuccessful && successfulIds && successfulIds.length > 0) {
+      setCreditedRecords(prev => {
+        const newSet = new Set(prev);
+        successfulIds.forEach(id => newSet.add(`bitso-${id}`));
+        return newSet;
+      });
+      
+      clearSelection();
+    }
+    
+    setBulkOTCModalOpen(false);
+  };
+
+  const getSelectedTransactionsData = () => {
+    return transactions
+      .filter(t => selectedTransactions.has(t.id.toString()))
+      .map(t => ({
+        id: t.transactionId,
+        dateTime: t.createdAt,
+        value: parseFloat(t.amount),
+        type: t.type === 'FUNDING' ? 'CRÉDITO' as const : 'DÉBITO' as const,
+        document: t.payerTaxId || '',
+        client: t.type === 'FUNDING' 
+          ? (t.payerName || 'N/A')  // Quem enviou (para depósitos)
+          : (t.payeeName || 'N/A'),  // Quem recebeu (para saques)
+        identified: true,
+        code: t.endToEndId,
+        descCliente: `Bitso OTC - ${t.type === 'FUNDING' 
+          ? (t.payerName || 'N/A')
+          : (t.payeeName || 'N/A')}`,
+        _original: t
+      }));
   };
 
   const handlePreviousPage = () => {
@@ -546,55 +513,29 @@ export default function ExtractTabBitsoTcr() {
     setError(null);
     
     try {
-      const response = await ledgerApi.listTransactions(TCR_TENANT_ID, {
-        provider: 'BITSO',
-        accountId: TCR_ACCOUNT_ID,
+      const filters: BitsoTransactionFilters = {
         startDate: dateFilter.start,
         endDate: dateFilter.end,
         limit: pagination.limit,
         offset: offset,
-        includePostings: true,
-      });
+      };
 
-      // Converter dados do ledger para formato BitsoTransactionDB
-      const mappedTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
-      
-      // Aplicar filtros locais que não estão na API
-      let filtered = mappedTransactions;
-      
-      if (typeFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.type === typeFilter);
-      }
-      
-      if (statusFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.status === statusFilter);
-      }
-      
+      if (typeFilter !== 'ALL') filters.type = typeFilter;
+      if (statusFilter !== 'ALL') filters.status = statusFilter;
       if (specificAmount) {
         const amount = parseFloat(specificAmount);
-        filtered = filtered.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
+        filters.minAmount = amount;
+        filters.maxAmount = amount;
       } else {
-        if (minAmount) {
-          const min = parseFloat(minAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
-        }
-        if (maxAmount) {
-          const max = parseFloat(maxAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
-        }
+        if (minAmount) filters.minAmount = parseFloat(minAmount);
+        if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
       }
+      if (showReversalsOnly) filters.isReversal = true;
+
+      const response = await BitsoRealtimeService.getTransactions(filters);
       
-      setTransactions(filtered);
-      
-      // Atualizar paginação baseada na resposta
-      setPagination({
-        total: response.pagination?.total || filtered.length,
-        limit: pagination.limit,
-        offset: offset,
-        has_more: response.pagination?.hasMore || false,
-        current_page: Math.floor(offset / pagination.limit) + 1,
-        total_pages: Math.ceil((response.pagination?.total || filtered.length) / pagination.limit)
-      });
+      setTransactions(response.data);
+      setPagination(response.pagination);
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar transações');
       toast.error('Erro ao carregar extrato', {
@@ -664,7 +605,7 @@ export default function ExtractTabBitsoTcr() {
                   placeholder="Nome, CPF, ID..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
+                  className="pl-10 h-10 bg-background border-2 focus:border-[rgba(147,51,234,0.6)]"
                 />
               </div>
             </div>
@@ -672,7 +613,7 @@ export default function ExtractTabBitsoTcr() {
             <div className="space-y-2">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tipo</label>
               <Select value={typeFilter} onValueChange={(v: any) => setTypeFilter(v)}>
-                <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]">
+                <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(147,51,234,0.6)]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -686,7 +627,7 @@ export default function ExtractTabBitsoTcr() {
             <div className="space-y-2">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</label>
               <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
-                <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]">
+                <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(147,51,234,0.6)]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -705,7 +646,7 @@ export default function ExtractTabBitsoTcr() {
                 placeholder="0.00"
                 value={specificAmount}
                 onChange={(e) => setSpecificAmount(e.target.value)}
-                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
+                className="h-10 bg-background border-2 focus:border-[rgba(147,51,234,0.6)]"
               />
             </div>
           </div>
@@ -721,7 +662,7 @@ export default function ExtractTabBitsoTcr() {
                     className={cn(
                       "h-10 w-full justify-start text-left font-normal bg-background border-2 transition-all",
                       !dateRange.from && "text-muted-foreground",
-                      dateRange.from && "border-[rgba(255,140,0,0.6)]"
+                      dateRange.from && "border-[rgba(147,51,234,0.6)]"
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
@@ -756,7 +697,7 @@ export default function ExtractTabBitsoTcr() {
                     className={cn(
                       "h-10 w-full justify-start text-left font-normal bg-background border-2 transition-all",
                       !dateRange.to && "text-muted-foreground",
-                      dateRange.to && "border-[rgba(255,140,0,0.6)]"
+                      dateRange.to && "border-[rgba(147,51,234,0.6)]"
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
@@ -789,7 +730,7 @@ export default function ExtractTabBitsoTcr() {
                 placeholder="0.00"
                 value={minAmount}
                 onChange={(e) => setMinAmount(e.target.value)}
-                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
+                className="h-10 bg-background border-2 focus:border-[rgba(147,51,234,0.6)]"
               />
             </div>
 
@@ -800,7 +741,7 @@ export default function ExtractTabBitsoTcr() {
                 placeholder="0.00"
                 value={maxAmount}
                 onChange={(e) => setMaxAmount(e.target.value)}
-                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
+                className="h-10 bg-background border-2 focus:border-[rgba(147,51,234,0.6)]"
               />
             </div>
           </div>
@@ -847,7 +788,7 @@ export default function ExtractTabBitsoTcr() {
                   end: BitsoRealtimeService.getTodayDateString()
                 });
               }}
-              className="h-10 bg-black border border-orange-500 text-white hover:bg-orange-500 hover:text-white transition-all duration-200 rounded-md px-3 lg:px-4"
+              className="h-10 bg-black border border-[#9333ea] text-white hover:bg-[#9333ea] hover:text-white transition-all duration-200 rounded-md px-3 lg:px-4"
               disabled={loading}
             >
               <X className="h-4 w-4 mr-2" />
@@ -859,10 +800,65 @@ export default function ExtractTabBitsoTcr() {
 
       {/* Tabela */}
       <Card className="overflow-hidden">
+      {/* 🆕 Barra de Ações em Lote */}
+        <div className={cn(
+          "px-6 py-4 border-b border-border transition-all",
+          "bg-muted/30"
+      )}>
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant={bulkMode ? "default" : "outline"}
+              onClick={toggleBulkMode}
+                className={bulkMode ? "bg-[#9333ea] hover:bg-[#7c3aed]" : ""}
+            >
+              <CheckSquare className="h-4 w-4 mr-2" />
+              {bulkMode ? "Sair do Modo Lote" : "Modo Seleção em Lote"}
+            </Button>
+            
+            {bulkMode && (
+              <>
+                <Badge variant="secondary" className="text-sm px-3 py-1">
+                  {selectedTransactions.size} selecionada{selectedTransactions.size !== 1 ? 's' : ''}
+                </Badge>
+                
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={selectAllVisibleCredits}
+                    disabled={filteredTransactions.filter(t => t.type === 'FUNDING' && !isRecordCredited(t)).length === 0}
+                >
+                  Selecionar Todas Visíveis
+                </Button>
+                
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearSelection}
+                  disabled={selectedTransactions.size === 0}
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Limpar Seleção
+                </Button>
+              </>
+            )}
+          </div>
+          
+          {bulkMode && selectedTransactions.size > 0 && (
+            <Button
+              onClick={handleBulkCredit}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Creditar {selectedTransactions.size} em Lote
+            </Button>
+          )}
+        </div>
+        </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+            <Loader2 className="h-8 w-8 animate-spin text-[#9333ea]" />
           </div>
         ) : error ? (
           <div className="p-6 text-center">
@@ -884,14 +880,14 @@ export default function ExtractTabBitsoTcr() {
               <table className="w-full">
                 <thead className="bg-muted/50 border-b sticky top-0 z-10">
                   <tr>
+                    {bulkMode && <th className="w-12 p-3"></th>}
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Data/Hora</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Tipo</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Nome</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Valor</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Status</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">End-to-End</th>
-                    <th className="text-left p-3 text-xs font-medium text-muted-foreground">Reconciliation ID</th>
-                    <th className="w-24 p-3"></th>
+                    {!bulkMode && <th className="w-24 p-3"></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -902,24 +898,42 @@ export default function ExtractTabBitsoTcr() {
             className={cn(
                         "border-b hover:bg-muted/30 transition-colors cursor-pointer",
                         index % 2 === 0 ? "bg-[#181818]" : "bg-[#1E1E1E]",
+                        bulkMode && selectedTransactions.has(tx.id.toString()) && "bg-muted/20 dark:bg-muted/10",
                         expandedRow === tx.id && "bg-muted/10 dark:bg-muted/5"
             )}
             onClick={() => {
-                        setExpandedRow(expandedRow === tx.id ? null : tx.id);
+                        if (bulkMode && tx.type === 'FUNDING' && !isRecordCredited(tx)) {
+                          toggleTransactionSelection(tx.id);
+                        } else if (!bulkMode) {
+                          setExpandedRow(expandedRow === tx.id ? null : tx.id);
+                        }
                       }}
                     >
+                      {bulkMode && (
+                        <td className="p-3">
+                          {tx.type === 'FUNDING' && !isRecordCredited(tx) && (
+                <Checkbox
+                              checked={selectedTransactions.has(tx.id.toString())}
+                              onCheckedChange={() => toggleTransactionSelection(tx.id)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
+                        </td>
+                      )}
                       <td className="p-3">
                         <div className="flex items-center gap-2">
-                          {expandedRow === tx.id ? (
-                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          {!bulkMode && (
+                            expandedRow === tx.id ? (
+                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            )
                           )}
-                          <div>
+                  <div>
                             <div className="text-sm">{formatDate(tx.createdAt).split(' ')[0]}</div>
                             <div className="text-xs text-muted-foreground">{formatDate(tx.createdAt).split(' ')[1]}</div>
-                          </div>
-                        </div>
+                  </div>
+                </div>
                       </td>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
@@ -936,8 +950,8 @@ export default function ExtractTabBitsoTcr() {
                       <td className="p-3">
                         <div className="text-sm font-medium">
                           {tx.type === 'FUNDING' 
-                            ? (tx.payerName || 'N/A')
-                            : (tx.payeeName || 'N/A')
+                            ? (tx.payerName || 'N/A')  // Quem enviou (para depósitos)
+                            : (tx.payeeName || 'N/A')  // Quem recebeu (para saques)
                           }
                         </div>
                         {tx.isReversal && (
@@ -953,7 +967,7 @@ export default function ExtractTabBitsoTcr() {
                         </div>
                       </td>
                       <td className="p-3">
-                        <Badge {...BitsoRealtimeService.getStatusBadge(tx.status)} className="text-xs">
+                        <Badge {...getStatusBadgeForBitsoOTC(tx.status)}>
                           {BitsoRealtimeService.getStatusBadge(tx.status).label}
                         </Badge>
                       </td>
@@ -962,49 +976,46 @@ export default function ExtractTabBitsoTcr() {
                           {tx.endToEndId ? `${tx.endToEndId.substring(0, 20)}...` : '-'}
                         </div>
                       </td>
-                      <td className="p-3">
-                        <div className="text-xs font-mono text-muted-foreground">
-                          {tx.reconciliationId || '-'}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        {tx.type === 'FUNDING' && tx.reconciliationId && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => handleCompensation(tx, e)}
-                            disabled={isRecordCompensated(tx)}
-                            className={cn(
-                              "h-7 px-2 text-xs transition-all",
-                              isRecordCompensated(tx)
-                                ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                : "bg-[rgba(255,140,0,0.1)] hover:bg-[rgba(255,140,0,0.2)] text-[#ff8c00] border-[rgba(255,140,0,0.4)] hover:border-[rgba(255,140,0,0.6)]"
-                            )}
-                            title={isRecordCompensated(tx) ? "Já compensado" : "Realizar compensação"}
-                          >
-                            {isRecordCompensated(tx) ? (
-                              <>
-                                <Check className="h-3 w-3 mr-1" />
-                                Compensado
-                              </>
-                            ) : (
-                              <>
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Compensar
-                              </>
-                            )}
-                          </Button>
-                        )}
-                      </td>
+                      {!bulkMode && (
+                        <td className="p-3">
+                          {tx.type === 'FUNDING' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                              onClick={(e) => handleCreditToOTC(tx, e)}
+                              disabled={isRecordCredited(tx)}
+                      className={cn(
+                                "h-7 px-2 text-xs transition-all",
+                                isRecordCredited(tx)
+                          ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                  : "bg-[rgba(147,51,234,0.1)] hover:bg-[rgba(147,51,234,0.2)] text-[#9333ea] border-[rgba(147,51,234,0.4)] hover:border-[rgba(147,51,234,0.6)]"
+                      )}
+                              title={isRecordCredited(tx) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
+                    >
+                              {isRecordCredited(tx) ? (
+                        <>
+                          <Check className="h-3 w-3 mr-1" />
+                          Creditado
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="h-3 w-3 mr-1" />
+                          OTC
+                        </>
+                      )}
+                    </Button>
+                  )}
+                        </td>
+                      )}
                     </tr>
                     
                     {/* Linha expandida com detalhes */}
-                    {expandedRow === tx.id && (
+                    {expandedRow === tx.id && !bulkMode && (
                       <tr className="bg-muted/5 dark:bg-muted/5 border-b border-border/50">
-                        <td colSpan={8} className="p-0">
+                        <td colSpan={7} className="p-0">
                           <div className="p-6 space-y-4">
                             <div className="flex items-center justify-between mb-4">
-                              <h4 className="text-sm font-semibold text-orange-700">Detalhes da Transação</h4>
+                              <h4 className="text-sm font-semibold text-[#9333ea]">Detalhes da Transação</h4>
                               <Badge variant="outline" className="text-xs">ID: {tx.id}</Badge>
                             </div>
                             
@@ -1055,7 +1066,7 @@ export default function ExtractTabBitsoTcr() {
                                   <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">Reconciliation ID</label>
                                     <div className="flex items-center gap-2 mt-1">
-                                      <p className="text-sm font-mono text-orange-600 font-semibold">{tx.reconciliationId}</p>
+                                      <p className="text-sm font-mono">{tx.reconciliationId}</p>
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -1175,11 +1186,17 @@ export default function ExtractTabBitsoTcr() {
         )}
           </Card>
 
-      {/* Modal de Compensação */}
-      <CompensationModalInteligente
-        isOpen={compensationModalOpen}
-        onClose={handleCloseCompensationModal}
-        extractRecord={selectedCompensationRecord}
+      {/* Modais */}
+      <CreditExtractToOTCModal
+        isOpen={creditOTCModalOpen}
+        onClose={handleCloseCreditOTCModal}
+        extractRecord={selectedExtractRecord}
+      />
+
+      <BulkCreditOTCModal
+        isOpen={bulkOTCModalOpen}
+        onClose={handleCloseBulkOTCModal}
+        transactions={getSelectedTransactionsData()}
       />
     </div>
   );

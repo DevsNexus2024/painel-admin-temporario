@@ -100,7 +100,7 @@ class TestExtratoBitso implements TesteExtratoBitso {
       
       // Verificar se respeitou o limite
       if (extrato.transacoes && extrato.transacoes.length > 5) {
-        console.warn('⚠️ Limite não respeitado - retornou mais de 5 transações');
+        // Limite não respeitado - retornou mais de 5 transações
       }
       
     } catch (error) {

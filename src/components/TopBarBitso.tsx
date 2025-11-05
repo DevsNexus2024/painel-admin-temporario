@@ -1,13 +1,23 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SendHorizontal, RefreshCcw, Loader2, DollarSign, Wifi, WifiOff, CheckCircle, AlertCircle, TrendingUp, Lock, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
+import { SendHorizontal, RefreshCcw, Loader2, DollarSign, Wifi, WifiOff, CheckCircle, AlertCircle, FileText, Banknote, Lock, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useBitsoWebSocket } from "@/hooks/useBitsoWebSocket";
+import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 import { BitsoRealtimeService } from "@/services/bitso-realtime";
 import AnimatedBalance from "@/components/AnimatedBalance";
+import { ledgerApi } from "@/services/ledger-api";
+
+// Constantes para OTC
+const OTC_TENANT_ID = 3;
+const OTC_ACCOUNT_ID = 27;
 
 export default function TopBarBitso() {
-  const { isConnected, isReconnecting, newBalance, newTransaction } = useBitsoWebSocket();
+  // WebSocket filtrado para OTC
+  const { isConnected, isReconnecting, newBalance, newTransaction } = useFilteredBitsoWebSocket({
+    context: 'otc',
+    tenantId: OTC_TENANT_ID,
+    accountId: OTC_ACCOUNT_ID,
+  });
   const [balanceData, setBalanceData] = useState({
     currency: 'BRL',
     total: '0',
@@ -20,36 +30,59 @@ export default function TopBarBitso() {
   const [isLoadingSaldo, setIsLoadingSaldo] = useState(false);
   const [errorSaldo, setErrorSaldo] = useState<string | null>(null);
 
-  // Buscar saldo REAL da API
+  // Buscar saldo do último registro da API de extrato (balance do posting accountId=27)
   const fetchSaldo = async () => {
     setIsLoadingSaldo(true);
     setErrorSaldo(null);
     
     try {
-      const response = await BitsoRealtimeService.getBalanceCached();
-      
-      // A API retorna: { success: true, data: { balance: { currency, total, available, locked, pendingDeposit, pendingWithdrawal }, timestamp } }
-      if (response?.data?.balance) {
-        const balance = response.data.balance;
-        setBalanceData({
-          currency: balance.currency?.toUpperCase() || 'BRL',
-          total: String(balance.total || 0),
-          available: String(balance.available || 0),
-          locked: String(balance.locked || 0),
-          pendingDeposit: String(balance.pendingDeposit || 0),
-          pendingWithdrawal: String(balance.pendingWithdrawal || 0)
-        });
-      }
-
-      // Buscar total de transações
-      const transactionsData = await BitsoRealtimeService.getTransactions({
+      // Buscar apenas a primeira transação para obter o saldo mais recente
+      const transactionsResponse = await ledgerApi.listTransactions(OTC_TENANT_ID, {
+        provider: 'BITSO',
+        accountId: OTC_ACCOUNT_ID,
         limit: 1,
-        offset: 0
+        offset: 0,
+        includePostings: true,
       });
-      setTotalTransacoes(transactionsData.pagination.total || 0);
+      
+      if (transactionsResponse?.data && transactionsResponse.data.length > 0) {
+        const firstTransaction = transactionsResponse.data[0];
+        
+        // Buscar o posting com accountId=27 (LIQUIDITY_POOL) e side=PAY_IN
+        const liquidityPoolPosting = firstTransaction.postings?.find(
+          (p: any) => p.accountId === OTC_ACCOUNT_ID.toString() && p.side === 'PAY_IN'
+        );
+        
+        if (liquidityPoolPosting?.account?.balance) {
+          const balance = parseFloat(liquidityPoolPosting.account.balance);
+          const currency = liquidityPoolPosting.account.currency || 'BRL';
+          
+          setBalanceData({
+            currency: currency,
+            total: String(balance),
+            available: String(balance), // Disponível = total (não há bloqueio separado no ledger)
+            locked: '0',
+            pendingDeposit: '0',
+            pendingWithdrawal: '0'
+          });
+        }
+        
+        // Total de transações
+        setTotalTransacoes(transactionsResponse.pagination?.total || 0);
+      } else {
+        // Se não houver transações, inicializar com zero
+        setBalanceData({
+          currency: 'BRL',
+          total: '0',
+          available: '0',
+          locked: '0',
+          pendingDeposit: '0',
+          pendingWithdrawal: '0'
+        });
+        setTotalTransacoes(0);
+      }
     } catch (err: any) {
       setErrorSaldo(err.message || 'Erro ao consultar saldo');
-      console.error('[TopBarBitso] Erro ao buscar saldo:', err);
     } finally {
       setIsLoadingSaldo(false);
     }
@@ -70,20 +103,20 @@ export default function TopBarBitso() {
           total: String(brlBalance.total || 0),
           available: String(brlBalance.available || 0),
           locked: String(brlBalance.locked || 0),
-          pendingDeposit: String(brlBalance.pendingDeposit || 0),
-          pendingWithdrawal: String(brlBalance.pendingWithdrawal || 0)
+          pendingDeposit: '0',
+          pendingWithdrawal: '0'
         });
       }
     }
   }, [newBalance]);
 
-  // Recarregar saldo quando receber nova transação
+  // Recarregar saldo quando receber nova transação (após toast aparecer)
   useEffect(() => {
     if (newTransaction) {
-      console.log('💰 Nova transação detectada, recarregando saldo...');
+      // Delay maior para que o toast apareça primeiro (2s após evento)
       setTimeout(() => {
         fetchSaldo();
-      }, 500);
+      }, 2000);
     }
   }, [newTransaction]);
 
@@ -117,17 +150,18 @@ export default function TopBarBitso() {
   };
 
   return (
-    <div className="sticky top-0 z-30 bg-gradient-to-r from-blue-600/10 to-purple-600/10 backdrop-blur-xl border-b border-border h-auto p-6">
+    <div className="sticky top-0 z-30 bg-background border-b border-border h-auto p-6">
       {/* Header principal */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 shadow-xl">
-            <SendHorizontal className="h-6 w-6 text-white" />
+          <div className="p-3 rounded-2xl bg-[#9333ea] shadow-xl">
+            <Banknote className="h-6 w-6 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-3">
+              <Banknote className="h-5 w-5 text-[#9333ea]" />
               <h1 className="text-2xl font-bold text-foreground">Bitso</h1>
-              <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-medium">
+              <Badge className="bg-[rgba(147,51,234,0.2)] text-[#9333ea] border-[rgba(147,51,234,0.4)] text-xs font-medium">
                 Banking
               </Badge>
               {getStatusIcon()}
@@ -176,14 +210,14 @@ export default function TopBarBitso() {
       </div>
 
       {/* Cards lado a lado - 5 cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
         {/* Card 1: Total */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-purple-500/10 to-indigo-500/10 backdrop-blur-sm border border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 group shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground font-medium">Total</span>
-            <TrendingUp className="h-4 w-4 text-purple-500 group-hover:scale-110 transition-transform" />
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <FileText className="h-[18px] w-[18px] text-[rgb(0,105,209)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Total</span>
           </div>
-          <div className="text-xl font-bold text-purple-600 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(0,105,209)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -192,18 +226,15 @@ export default function TopBarBitso() {
               <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(balanceData.total)} /></div>
             )}
           </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            Saldo total
-          </div>
         </div>
 
         {/* Card 2: Available */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-green-500/10 to-emerald-500/10 backdrop-blur-sm border border-green-500/20 hover:border-green-500/40 transition-all duration-300 group shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground font-medium">Disponível</span>
-            <DollarSign className="h-4 w-4 text-green-500 group-hover:scale-110 transition-transform" />
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <CheckCircle className="h-[18px] w-[18px] text-[rgb(56,209,0)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Disponível</span>
           </div>
-          <div className="text-xl font-bold text-green-600 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(56,209,0)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -212,23 +243,15 @@ export default function TopBarBitso() {
               <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(balanceData.available)} /></div>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-2">
-            <div className="text-xs text-muted-foreground">
-              Uso imediato
-            </div>
-            {isConnected && (
-              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-            )}
-          </div>
         </div>
 
         {/* Card 3: Locked */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-sm border border-amber-500/20 hover:border-amber-500/40 transition-all duration-300 group shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground font-medium">Bloqueado</span>
-            <Lock className="h-4 w-4 text-amber-500 group-hover:scale-110 transition-transform" />
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <Lock className="h-[18px] w-[18px] text-[rgb(184,0,0)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Bloqueado</span>
           </div>
-          <div className="text-xl font-bold text-amber-600 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(184,0,0)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -237,18 +260,15 @@ export default function TopBarBitso() {
               <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(balanceData.locked)} /></div>
             )}
           </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            Em processamento
-          </div>
         </div>
 
         {/* Card 4: Pending Deposit */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 backdrop-blur-sm border border-blue-500/20 hover:border-blue-500/40 transition-all duration-300 group shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground font-medium">Depósito Pendente</span>
-            <ArrowDownCircle className="h-4 w-4 text-blue-500 group-hover:scale-110 transition-transform" />
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowDownCircle className="h-[18px] w-[18px] text-[#9333ea] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Depósito Pendente</span>
           </div>
-          <div className="text-xl font-bold text-blue-600 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[#9333ea] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -257,18 +277,15 @@ export default function TopBarBitso() {
               <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(balanceData.pendingDeposit)} /></div>
             )}
           </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            A receber
-          </div>
         </div>
 
         {/* Card 5: Pending Withdrawal */}
-        <div className="p-5 rounded-2xl bg-gradient-to-br from-red-500/10 to-pink-500/10 backdrop-blur-sm border border-red-500/20 hover:border-red-500/40 transition-all duration-300 group shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground font-medium">Saque Pendente</span>
-            <ArrowUpCircle className="h-4 w-4 text-red-500 group-hover:scale-110 transition-transform" />
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowUpCircle className="h-[18px] w-[18px] text-[#9333ea] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saque Pendente</span>
           </div>
-          <div className="text-xl font-bold text-red-600 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[#9333ea] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -276,9 +293,6 @@ export default function TopBarBitso() {
             ) : (
               <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(balanceData.pendingWithdrawal)} /></div>
             )}
-          </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            A enviar
           </div>
         </div>
       </div>

@@ -1,22 +1,21 @@
 import React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, SendHorizontal } from "lucide-react";
+import { FileText, SendHorizontal, ArrowRightLeft } from "lucide-react";
 
-// Componentes Bitso
-import TopBarBitso from "@/components/TopBarBitso";
-import ExtractTabBitso from "@/components/ExtractTabBitso";
+// Componentes Bitso API
+import TopBarBitsoApi from "@/components/TopBarBitsoApi";
+import ExtractTabBitsoApi from "@/components/ExtractTabBitsoApi";
 import MoneyRainEffect from "@/components/MoneyRainEffect";
 import BitsoPixActions from "@/components/BitsoPixActions";
+import BitsoReconciliationTab from "@/components/BitsoReconciliationTab";
 
 // WebSocket Hook
 import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 
-export default function BitsoPage() {
-  // WebSocket filtrado para OTC
+export default function BitsoApiPage() {
+  // WebSocket para efeitos visuais - contexto API mostra tudo
   const { showMoneyEffect, newTransaction, transactionQueue } = useFilteredBitsoWebSocket({
-    context: 'otc',
-    tenantId: 3,
-    accountId: 27,
+    context: 'api',
   });
 
   return (
@@ -32,12 +31,12 @@ export default function BitsoPage() {
       )}
       
       {/* Top Bar com Saldos */}
-      <TopBarBitso />
+      <TopBarBitsoApi />
 
       {/* Conteúdo Principal */}
       <div className="container mx-auto px-4 py-6">
         <Tabs defaultValue="extract" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
+          <TabsList className="grid w-full grid-cols-3 mb-6">
             <TabsTrigger value="extract" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               Extrato
@@ -46,19 +45,29 @@ export default function BitsoPage() {
               <SendHorizontal className="h-4 w-4" />
               Ações PIX
             </TabsTrigger>
+            <TabsTrigger value="reconciliation" className="flex items-center gap-2">
+              <ArrowRightLeft className="h-4 w-4" />
+              Reconciliação
+            </TabsTrigger>
           </TabsList>
 
           {/* ABA: Extrato */}
           <TabsContent value="extract">
-            <ExtractTabBitso />
+            <ExtractTabBitsoApi />
           </TabsContent>
 
           {/* ABA: Ações PIX (Enviar, QR Dinâmico, QR Estático) */}
           <TabsContent value="pix">
             <BitsoPixActions />
           </TabsContent>
+
+          {/* ABA: Reconciliação Manual */}
+          <TabsContent value="reconciliation">
+            <BitsoReconciliationTab />
+          </TabsContent>
         </Tabs>
       </div>
     </div>
   );
 }
+
