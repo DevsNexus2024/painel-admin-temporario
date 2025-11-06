@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Search, Edit, Loader2, Wallet, Zap, ArrowUpDown, RefreshCw, Save, ExternalLink } from 'lucide-react';
+import { TrendingUp, Search, Edit, Loader2, Wallet, Zap, ArrowUpDown, RefreshCw, Save, ExternalLink, Info, DollarSign, Hash, FileText, Calendar, User, ChevronDown, ChevronUp, Copy, TrendingDown, Percent, Receipt, Calculator } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,6 +54,7 @@ import type { OTCClient } from '@/types/otc';
 import type { BinanceTransaction as SavedBinanceTransaction } from '@/services/otc-binance';
 import { useAuth } from '@/hooks/useAuth';
 import { formatUSDTInput, formatMonetaryInput, convertBrazilianUSDTToUS, convertBrazilianToUS, getNumericUSDTValue, getNumericValue } from '@/utils/monetaryInput';
+import { toast } from 'sonner';
 
 const OTCNegociar: React.FC = () => {
   // ==================== TRADING HOOKS ====================
@@ -105,7 +106,7 @@ const OTCNegociar: React.FC = () => {
   );
 
   // Hook para operações OTC
-  const { createOperation } = useOTCOperations();
+  const { createOperation, operations } = useOTCOperations();
 
   // Hook para autenticação (pegar email do usuário logado)
   const { user } = useAuth();
@@ -116,6 +117,7 @@ const OTCNegociar: React.FC = () => {
   const [countdown, setCountdown] = useState(0);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
   
   // Transações salvas no banco
   const [savedTransactions, setSavedTransactions] = useState<Record<string, SavedBinanceTransaction>>({});
@@ -137,7 +139,8 @@ const OTCNegociar: React.FC = () => {
   const [showPinVerificationModal, setShowPinVerificationModal] = useState(false);
   const [pendingWithdrawalData, setPendingWithdrawalData] = useState<{
     coin: string;
-    amount: string;
+    amount: string; // Valor total (valor informado + taxa)
+    originalAmount: string; // Valor que o cliente deve receber (sem taxa)
     address: string;
     network?: string;
     addressTag?: string;
@@ -762,7 +765,7 @@ const OTCNegociar: React.FC = () => {
         id: `O${item.orderId}`,
         type: (item.side === 'BUY' ? 'Compra' : 'Venda') as 'Compra' | 'Venda',
         currency: item.symbol.replace('BRL', '').replace('USDT', 'USDT'),
-        quote: price,
+        quote: savedTx?.binance_price_average_with_fees || price, // Usar preço médio com taxas quando disponível
         clientFinalPrice: savedTx?.client_final_price || null, // Preço final vendido para o cliente
         quantity: qty,
         total: tot,
@@ -781,6 +784,13 @@ const OTCNegociar: React.FC = () => {
       const timestampB = new Date(b.timestamp || 0).getTime();
       return timestampB - timestampA; // Decrescente
     });
+  };
+
+  /**
+   * Handler para clicar na linha da tabela
+   */
+  const handleRowClick = (transactionId: string) => {
+    setExpandedTransactionId(expandedTransactionId === transactionId ? null : transactionId);
   };
 
   /**
@@ -824,6 +834,325 @@ const OTCNegociar: React.FC = () => {
   };
 
   /**
+   * Componente de detalhes da transação Binance
+   */
+  const BinanceTransactionDetails: React.FC<{ transaction: BinanceTransaction }> = ({ transaction }) => {
+    // Buscar transação salva no banco
+    const savedTx = transaction.savedTransactionId 
+      ? Object.values(savedTransactions).find(tx => tx.id === transaction.savedTransactionId)
+      : transaction.orderId 
+        ? savedTransactions[transaction.orderId.toString()]
+        : null;
+
+    // Buscar cliente se houver transação salva
+    const clientData = savedTx?.otc_client_id 
+      ? clients.find(c => c.id === savedTx.otc_client_id)
+      : null;
+
+    const formatCurrency = (value: number | null | undefined, currency: string = 'BRL') => {
+      if (value === null || value === undefined) return '-';
+      return currency === 'USD' 
+        ? `$${value.toFixed(2)}`
+        : `R$${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    const formatNumber = (value: number | null | undefined, decimals: number = 4) => {
+      if (value === null || value === undefined) return '-';
+      return value.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    };
+
+    const formatDate = (dateString: string | null | undefined) => {
+      if (!dateString) return '-';
+      try {
+        const date = new Date(dateString);
+        return date.toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+      } catch {
+        return dateString;
+      }
+    };
+
+    const copyToClipboard = (text: string, label: string) => {
+      navigator.clipboard.writeText(text);
+      toast.success(`${label} copiado!`);
+    };
+
+    // Determinar moedas de entrada/saída baseado no tipo de transação
+    // Para COMPRA de USDT: Entrada = BRL, Saída = USDT
+    // Para VENDA de USDT: Entrada = USDT, Saída = BRL
+    const transactionType = savedTx?.transaction_type || (transaction.type === 'Compra' ? 'BUY' : 'SELL');
+    const isBuy = transactionType === 'BUY' || transaction.type === 'Compra';
+    const moedaEntrada = isBuy ? 'BRL' : 'USDT';
+    const moedaSaida = isBuy ? 'USDT' : 'BRL';
+
+    // Formatar taxa percentual (multiplicar por 100 se for decimal)
+    const formatFeePercentage = (fee: number | undefined) => {
+      if (fee === undefined) return null;
+      // Se a taxa for menor que 1, assume que está em decimal (0.0004 = 0.04%)
+      // Se for maior que 1, assume que já está em percentual
+      const percentage = fee < 1 ? fee * 100 : fee;
+      return formatNumber(percentage, 2);
+    };
+
+    // Calcular valor total custo = preço médio com taxas x quantidade
+    const precoMedioComTaxas = savedTx?.binance_price_average_with_fees;
+    const quantidade = transaction.quantity;
+    const valorTotalCusto = precoMedioComTaxas && quantidade 
+      ? precoMedioComTaxas * quantidade 
+      : transaction.total || null;
+
+    // Calcular valor total cobrado = preço repassado x quantidade
+    const precoRepassado = savedTx?.client_final_price || transaction.clientFinalPrice;
+    const valorTotalCobrado = precoRepassado && quantidade 
+      ? precoRepassado * quantidade 
+      : null;
+
+    // Cálculos financeiros
+    const lucroBruto = valorTotalCobrado && valorTotalCusto 
+      ? valorTotalCobrado - valorTotalCusto 
+      : null;
+    
+    // Taxa de saque (apenas para operações de saque/WITHDRAW)
+    // Para trades, a taxa de saque seria 0. Se houver saque relacionado, seria calculado aqui
+    const taxaSaque = transactionType === 'WITHDRAW' ? 0 : 0; // TODO: Implementar cálculo de taxa de saque quando disponível
+    
+    // Imposto = 16% do lucro bruto
+    const imposto = lucroBruto ? lucroBruto * 0.16 : null;
+    
+    // Lucro Real = Lucro Bruto - Imposto - Taxa de Saque
+    const lucroReal = lucroBruto !== null && imposto !== null 
+      ? lucroBruto - imposto - taxaSaque 
+      : null;
+    
+    // Percentual de lucro = (Lucro Real / Valor Total Cobrado) * 100
+    const percentualLucro = lucroReal !== null && valorTotalCobrado && valorTotalCobrado > 0
+      ? (lucroReal / valorTotalCobrado) * 100
+      : null;
+
+    const isPositive = lucroReal !== null && lucroReal > 0;
+
+    return (
+      <div className="bg-background/30 p-4 rounded-lg space-y-4 mx-2 my-2 border border-border/20">
+        {/* Cards de Métricas Principais */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Lucro Real */}
+          <div className={`p-3 rounded-lg border-2 ${isPositive ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                Lucro Real
+              </span>
+            </div>
+            <div className={`text-lg font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+              {lucroReal !== null 
+                ? `R$${lucroReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : '-'}
+            </div>
+          </div>
+
+          {/* Percentual de Lucro */}
+          <div className={`p-3 rounded-lg border-2 ${isPositive ? 'bg-blue-500/10 border-blue-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Percent className="h-3 w-3" />
+                Percentual de Lucro
+              </span>
+            </div>
+            <div className={`text-lg font-bold ${isPositive ? 'text-blue-600' : 'text-red-600'}`}>
+              {percentualLucro !== null 
+                ? `${percentualLucro.toFixed(2).replace('.', ',')}%`
+                : '-'}
+            </div>
+          </div>
+
+          {/* Valor Total Cobrado */}
+          <div className="p-3 rounded-lg border-2 bg-purple-500/10 border-purple-500/30">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <DollarSign className="h-3 w-3" />
+                Valor Total Cobrado
+              </span>
+            </div>
+            <div className="text-lg font-bold text-purple-600">
+              {valorTotalCobrado 
+                ? `R$${valorTotalCobrado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : '-'}
+            </div>
+          </div>
+        </div>
+
+        {/* Informações Gerais - Compacta */}
+        <div className="bg-background/50 p-2.5 rounded-md border border-border/30">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            <div className="flex items-center">
+              <span className="text-muted-foreground mr-1.5">Data:</span>
+              <span className="font-medium">{formatDate(savedTx?.binance_transaction_date) || transaction.date}</span>
+            </div>
+            <div className="flex items-center">
+              <span className="text-muted-foreground mr-1.5">Tipo:</span>
+              <span className="font-medium">{savedTx?.transaction_type || transaction.type || '-'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-muted-foreground mr-1.5">ID Binance:</span>
+              <span className="font-mono text-xs truncate max-w-[100px]" title={savedTx?.binance_transaction_id || transaction.orderId?.toString()}>
+                {savedTx?.binance_transaction_id || transaction.orderId?.toString() || '-'}
+              </span>
+              {(savedTx?.binance_transaction_id || transaction.orderId) && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-3.5 w-3.5"
+                  onClick={() => copyToClipboard(savedTx?.binance_transaction_id || transaction.orderId?.toString() || '', 'ID da transação')}
+                >
+                  <Copy className="h-2.5 w-2.5" />
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center">
+              <span className="text-muted-foreground mr-1.5">Status:</span>
+              <span className="font-medium">{savedTx?.transaction_status || transaction.status || '-'}</span>
+            </div>
+            <div className="flex items-center">
+              <span className="text-muted-foreground mr-1.5">Moeda Entrada:</span>
+              <span className="font-medium">{moedaEntrada}</span>
+            </div>
+            <div className="flex items-center">
+              <span className="text-muted-foreground mr-1.5">Moeda Saída:</span>
+              <span className="font-medium">{moedaSaida}</span>
+            </div>
+            {clientData && (
+              <div className="flex items-center">
+                <span className="text-muted-foreground mr-1.5">Cliente:</span>
+                <span className="font-medium">{clientData.name} (ID: {clientData.id})</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Grid: Custos | Receitas | Resultado Financeiro */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Custo da Operação */}
+          <div className="bg-background/50 p-3 rounded-md border border-border/30">
+            <h4 className="font-semibold text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
+              <Calculator className="h-3.5 w-3.5" />
+              Custos da Operação
+            </h4>
+            <div className="space-y-2 text-xs">
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Preço Médio (sem taxas):</span>
+                <span className="font-medium">
+                  {savedTx?.binance_price_average_no_fees !== undefined 
+                    ? `R$${formatNumber(savedTx.binance_price_average_no_fees)}`
+                    : '-'}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Preço Médio (com taxas):</span>
+                <span className="font-medium">
+                  {savedTx?.binance_price_average_with_fees !== undefined
+                    ? `R$${formatNumber(savedTx.binance_price_average_with_fees)}`
+                    : '-'}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Taxa Binance:</span>
+                <span className="font-medium">
+                  {savedTx?.binance_fee_percentage !== undefined && savedTx?.binance_fee_amount !== undefined
+                    ? `${formatFeePercentage(savedTx.binance_fee_percentage) || '-'}% (R$${formatNumber(savedTx.binance_fee_amount)})`
+                    : '-'}
+                </span>
+              </div>
+              <div className="pt-1 border-t border-border/20">
+                <span className="text-muted-foreground block mb-0.5">Valor Total Custo:</span>
+                <span className="font-semibold text-orange-600 text-sm">
+                  {valorTotalCusto ? `R$${valorTotalCusto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Receitas */}
+          <div className="bg-background/50 p-3 rounded-md border border-border/30">
+            <h4 className="font-semibold text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
+              <DollarSign className="h-3.5 w-3.5" />
+              Receitas
+            </h4>
+            <div className="space-y-2 text-xs">
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Preço Repassado:</span>
+                <span className="font-medium">
+                  {precoRepassado ? `R$${formatNumber(precoRepassado)}` : '-'}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Taxa Aplicada:</span>
+                <span className="font-medium">
+                  {savedTx?.client_fee_percentage_applied !== undefined && savedTx?.client_fee_amount_applied !== undefined
+                    ? `${formatFeePercentage(savedTx.client_fee_percentage_applied) || '-'}% (R$${formatNumber(savedTx.client_fee_amount_applied)})`
+                    : '-'}
+                </span>
+              </div>
+              <div className="pt-1 border-t border-border/20">
+                <span className="text-muted-foreground block mb-0.5">Valor Total Cobrado:</span>
+                <span className="font-semibold text-green-600 text-sm">
+                  {valorTotalCobrado ? `R$${valorTotalCobrado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Resultado Financeiro */}
+          <div className="bg-background/50 p-3 rounded-md border border-border/30">
+            <h4 className="font-semibold text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
+              <Receipt className="h-3.5 w-3.5" />
+              Resultado Financeiro
+            </h4>
+            <div className="space-y-2 text-xs">
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Lucro Bruto:</span>
+                <span className={`font-semibold ${lucroBruto !== null && lucroBruto > 0 ? 'text-green-600' : lucroBruto !== null ? 'text-red-600' : ''} text-sm`}>
+                  {lucroBruto !== null 
+                    ? `R$${lucroBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : '-'}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Taxa de Saque:</span>
+                <span className="font-medium">
+                  {taxaSaque > 0 
+                    ? `R$${taxaSaque.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : 'R$ 0,00'}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Imposto (16%):</span>
+                <span className="font-medium">
+                  {imposto !== null 
+                    ? `R$${imposto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : '-'}
+                </span>
+              </div>
+              <div className="pt-1 border-t-2 border-border/30">
+                <span className="text-muted-foreground block mb-0.5">Lucro Real:</span>
+                <span className={`font-bold text-base ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {lucroReal !== null 
+                    ? `R$${lucroReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : '-'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  /**
    * Obter link da blockchain baseado na rede
    */
   const getBlockchainLink = (network: string, txId?: string | null): string | null => {
@@ -850,14 +1179,42 @@ const OTCNegociar: React.FC = () => {
   };
 
   /**
+   * Buscar nome do cliente relacionado a um saque através das operações OTC
+   */
+  const getClientNameFromWithdrawal = (withdrawId: string | undefined, operationsList: any[]): string | null => {
+    if (!withdrawId || withdrawId === 'N/A') return null;
+    
+    // Garantir que operationsList é um array válido
+    if (!Array.isArray(operationsList) || operationsList.length === 0) return null;
+    
+    // Buscar operação OTC que tenha descrição contendo o ID do saque
+    const relatedOperation = operationsList.find((op) => {
+      // A descrição é criada como: "Operação Automática USDT por {email}: SAQUE - ID: {withdrawId}"
+      return op.description && op.description.includes(`SAQUE - ID: ${withdrawId}`);
+    });
+    
+    // Se encontrou a operação, buscar o cliente na lista de clientes usando otc_client_id
+    if (relatedOperation?.otc_client_id) {
+      const client = clients.find(c => c.id === relatedOperation.otc_client_id);
+      return client?.name || null;
+    }
+    
+    return null;
+  };
+
+  /**
    * Converter saques para exibição
    */
-  const converterSaques = (): Array<BinanceWithdrawalHistoryItem & { displayId: string; displayDate: string }> => {
-    return historicoSaques.map((saque) => ({
-      ...saque,
-      displayId: saque.withdrawId || saque.id || 'N/A',
-      displayDate: formatDate(saque.applyTime || saque.timestamp || ''),
-    }));
+  const converterSaques = (operationsList: any[]): Array<BinanceWithdrawalHistoryItem & { displayId: string; displayDate: string; clientName: string | null }> => {
+    return historicoSaques.map((saque) => {
+      const withdrawId = saque.withdrawId || saque.id || 'N/A';
+      return {
+        ...saque,
+        displayId: withdrawId,
+        displayDate: formatDate(saque.applyTime || saque.timestamp || ''),
+        clientName: getClientNameFromWithdrawal(withdrawId, operationsList),
+      };
+    });
   };
 
   // ==================== RENDER ====================
@@ -874,10 +1231,15 @@ const OTCNegociar: React.FC = () => {
   const endIndex = startIndex + itemsPerPage;
   const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
 
+  // Converter saques com informações de cliente (garantir que operations seja array)
+  const operationsArray = Array.isArray(operations) ? operations : [];
+  const saquesConvertidos = converterSaques(operationsArray);
+  
   // Paginação Saques
-  const filteredWithdrawals = historicoSaques.filter((s) => 
+  const filteredWithdrawals = saquesConvertidos.filter((s) => 
     s.coin.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.address.toLowerCase().includes(searchQuery.toLowerCase())
+    s.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.clientName && s.clientName.toLowerCase().includes(searchQuery.toLowerCase()))
   );
   const totalPagesWithdrawals = Math.ceil(filteredWithdrawals.length / itemsPerPageWithdrawals);
   const startIndexWithdrawals = (currentPageWithdrawals - 1) * itemsPerPageWithdrawals;
@@ -1348,100 +1710,133 @@ const OTCNegociar: React.FC = () => {
                     </TableHeader>
                     <TableBody>
                       {paginatedTransactions.map((transaction) => (
-                        <TableRow key={transaction.id} className="hover:bg-muted/50 h-12">
-                          <TableCell className="font-medium text-primary text-xs px-4">
-                            #{transaction.id}
-                          </TableCell>
-                          <TableCell className="px-4">
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] ${
-                                transaction.type === 'Compra'
-                                  ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
-                                  : 'bg-orange-500/10 text-orange-500 border-orange-500/20'
-                              }`}
-                            >
-                              {transaction.type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-medium text-xs px-4">{transaction.currency}</TableCell>
-                          <TableCell className="text-right font-mono text-xs px-4">
-                            <div className="flex flex-col items-end">
-                              <span>R${transaction.quote.toFixed(4)}</span>
-                              {transaction.clientFinalPrice && (
-                                <span className="text-[10px] text-orange-500 font-medium">
-                                  R${transaction.clientFinalPrice.toFixed(4)}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-[10px] px-4">
-                            {transaction.quantity.toLocaleString('pt-BR', {
-                              minimumFractionDigits: 8,
-                              maximumFractionDigits: 8,
-                            })}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold text-xs px-4">
-                            R${transaction.total.toLocaleString('pt-BR', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap px-4">
-                            {transaction.date}
-                          </TableCell>
-                          <TableCell className="text-xs px-4">{getStatusBadge(transaction.status)}</TableCell>
-                        <TableCell className="text-center w-48">
-                          {editingNoteId === transaction.id ? (
-                            <div className="flex items-center justify-center gap-1">
-                              <Input
-                                type="text"
-                                defaultValue={transaction.note}
-                                className="h-7 text-xs w-full"
-                                autoFocus
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    handleSaveNote(transaction.id, e.currentTarget.value);
-                                  } else if (e.key === 'Escape') {
-                                    setEditingNoteId(null);
-                                  }
-                                }}
-                              />
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 w-7 p-0 flex-shrink-0"
-                                onClick={(e) => {
-                                  const input = e.currentTarget.parentElement?.querySelector('input') as HTMLInputElement;
-                                  if (input) {
-                                    handleSaveNote(transaction.id, input.value);
-                                  }
-                                }}
+                        <React.Fragment key={transaction.id}>
+                          <TableRow 
+                            className={`hover:bg-muted/50 h-12 cursor-pointer transition-colors ${
+                              expandedTransactionId === transaction.id ? 'bg-muted/30' : ''
+                            }`}
+                            onClick={(e) => {
+                              // Prevenir clique quando clicar no botão de editar ou no input
+                              const target = e.target as HTMLElement;
+                              if (target.closest('button') || target.closest('input')) {
+                                return;
+                              }
+                              handleRowClick(transaction.id);
+                            }}
+                          >
+                            <TableCell className="font-medium text-primary text-xs px-4">
+                              <div className="flex items-center gap-2">
+                                {expandedTransactionId === transaction.id ? (
+                                  <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                                )}
+                                #{transaction.id}
+                              </div>
+                            </TableCell>
+                            <TableCell className="px-4">
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] ${
+                                  transaction.type === 'Compra'
+                                    ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                                    : 'bg-orange-500/10 text-orange-500 border-orange-500/20'
+                                }`}
                               >
-                                <Save className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-center gap-1">
-                              {transaction.note ? (
-                                <span className="text-xs font-medium truncate max-w-[180px]">{transaction.note}</span>
+                                {transaction.type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-medium text-xs px-4">{transaction.currency}</TableCell>
+                            <TableCell className="text-right font-mono text-xs px-4">
+                              <div className="flex flex-col items-end">
+                                <span>R${transaction.quote.toFixed(4)}</span>
+                                {transaction.clientFinalPrice && (
+                                  <span className="text-[10px] text-orange-500 font-medium">
+                                    R${transaction.clientFinalPrice.toFixed(4)}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-[10px] px-4">
+                              {transaction.quantity.toLocaleString('pt-BR', {
+                                minimumFractionDigits: 8,
+                                maximumFractionDigits: 8,
+                              })}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold text-xs px-4">
+                              R${transaction.total.toLocaleString('pt-BR', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap px-4">
+                              {transaction.date}
+                            </TableCell>
+                            <TableCell className="text-xs px-4">{getStatusBadge(transaction.status)}</TableCell>
+                            <TableCell className="text-center w-48" onClick={(e) => e.stopPropagation()}>
+                              {editingNoteId === transaction.id ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <Input
+                                    type="text"
+                                    defaultValue={transaction.note}
+                                    className="h-7 text-xs w-full"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleSaveNote(transaction.id, e.currentTarget.value);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingNoteId(null);
+                                      }
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 w-7 p-0 flex-shrink-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const input = e.currentTarget.parentElement?.querySelector('input') as HTMLInputElement;
+                                      if (input) {
+                                        handleSaveNote(transaction.id, input.value);
+                                      }
+                                    }}
+                                  >
+                                    <Save className="h-3 w-3" />
+                                  </Button>
+                                </div>
                               ) : (
-                                <span className="text-muted-foreground text-xs">-</span>
+                                <div className="flex items-center justify-center gap-1">
+                                  {transaction.note ? (
+                                    <span className="text-xs font-medium truncate max-w-[180px]">{transaction.note}</span>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">-</span>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0 flex-shrink-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingNoteId(transaction.id);
+                                    }}
+                                  >
+                                    <Edit className="h-2.5 w-2.5" />
+                                  </Button>
+                                </div>
                               )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 flex-shrink-0"
-                                onClick={() => setEditingNoteId(transaction.id)}
-                              >
-                                <Edit className="h-2.5 w-2.5" />
-                              </Button>
-                            </div>
+                            </TableCell>
+                          </TableRow>
+                          {expandedTransactionId === transaction.id && (
+                            <TableRow className="bg-muted/50 hover:bg-muted/60">
+                              <TableCell colSpan={9} className="p-0">
+                                <BinanceTransactionDetails transaction={transaction} />
+                              </TableCell>
+                            </TableRow>
                           )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
+                        </React.Fragment>
+                      ))}
+                    </TableBody>
                 </Table>
               </div>
               
@@ -1531,7 +1926,7 @@ const OTCNegociar: React.FC = () => {
                           <TableHead className="text-right text-xs px-4">Taxa</TableHead>
                           <TableHead className="text-xs px-4">Endereço</TableHead>
                           <TableHead className="text-xs px-4">Rede</TableHead>
-                          <TableHead className="text-xs px-4">Status</TableHead>
+                          <TableHead className="text-xs px-4">Cliente</TableHead>
                           <TableHead className="text-xs px-4">Data</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1577,11 +1972,11 @@ const OTCNegociar: React.FC = () => {
                                 {saque.network}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-xs px-4">
-                              {getWithdrawalStatusBadge(saque.status)}
+                            <TableCell className="text-xs px-4 font-medium">
+                              {saque.clientName || '-'}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground whitespace-nowrap px-4">
-                              {formatDate(saque.applyTime || saque.timestamp || '')}
+                              {saque.displayDate}
                             </TableCell>
                           </TableRow>
                           );
