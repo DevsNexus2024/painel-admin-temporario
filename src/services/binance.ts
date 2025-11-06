@@ -23,6 +23,7 @@ import type {
   BinanceDepositAddressesResponse,
   BinanceDepositHistoryResponse,
   BinanceSpotBalancesResponse,
+  BinanceNetworkFeeResponse,
 } from '@/types/binance';
 
 // ==================== CONFIGURAÇÕES ====================
@@ -45,6 +46,7 @@ const BINANCE_CONFIG = {
     enderecosSaque: '/api/binance/withdrawal/enderecos',
     enderecosDeposito: '/api/binance/withdrawal/enderecos-deposito',
     historicoDepositos: '/api/binance/withdrawal/historico-depositos',
+    networkFee: '/api/binance/withdrawal/network-fee',
   }
 } as const;
 
@@ -854,6 +856,141 @@ export async function listarEnderecosDepositoBinance(coin?: string, network?: st
       type: error?.name
     });
     return null;
+  }
+}
+
+/**
+ * 💰 Consultar Taxa de Rede para Saque
+ * Endpoint: GET /api/binance/withdrawal/network-fee
+ * 
+ * Busca a taxa de rede para uma combinação específica de moeda e rede.
+ * Se a API falhar, retorna valores fixos como fallback.
+ */
+export async function consultarTaxaRedeBinance(
+  coin: string,
+  network: string
+): Promise<BinanceNetworkFeeResponse | null> {
+  // Valores fixos como fallback
+  const FALLBACK_FEES: Record<string, string> = {
+    'TRX': '1.0',
+    'MATIC': '0.013',
+    'ETH': '1.5',
+    'BTC': '0.0005',
+  };
+
+  try {
+    logger.debug('[BINANCE-NETWORK-FEE] Consultando taxa de rede...', { coin, network });
+
+    // Validar configuração da API
+    const configValidation = validateApiConfiguration();
+    if (!configValidation.isValid) {
+      throw new Error(configValidation.error);
+    }
+
+    // Verificar status do token
+    const tokenStatus = await checkTokenStatus();
+    
+    if (!tokenStatus.isValid) {
+      throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
+    }
+    
+    // Obter token JWT
+    const userToken = TOKEN_STORAGE.get();
+    
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+    
+    const params = new URLSearchParams();
+    params.append('coin', coin);
+    params.append('network', network);
+    
+    const requestUrl = `${API_CONFIG.BASE_URL}${BINANCE_CONFIG.endpoints.networkFee}?${params.toString()}`;
+    const requestHeaders = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${userToken}`
+    };
+    
+    logger.debug('[BINANCE-NETWORK-FEE] Request URL:', requestUrl);
+    
+    const response = await fetch(requestUrl, {
+      method: 'GET',
+      headers: requestHeaders
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.warn('[BINANCE-NETWORK-FEE] Erro HTTP, usando fallback:', { status: response.status, error: errorText });
+      
+      // Se não for erro 400/404, tentar fallback
+      if (response.status !== 400 && response.status !== 404) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      // Para 400/404, usar fallback direto
+      const fallbackFee = FALLBACK_FEES[network.toUpperCase()];
+      if (!fallbackFee) {
+        logger.error('[BINANCE-NETWORK-FEE] Taxa de fallback não disponível para rede:', network);
+        return null;
+      }
+      
+      logger.info('[BINANCE-NETWORK-FEE] Usando taxa de fallback:', { coin, network, fee: fallbackFee });
+      
+      return {
+        success: true,
+        message: 'Taxa de rede recuperada (fallback)',
+        data: {
+          coin: coin.toUpperCase(),
+          network: network.toUpperCase(),
+          networkName: `${network.toUpperCase()} (Fallback)`,
+          withdrawFee: fallbackFee,
+          withdrawMin: '1.0',
+          withdrawMax: '1000000.0',
+          withdrawEnable: true,
+          depositEnable: true,
+        },
+        timestamp: new Date().toISOString(),
+      } as BinanceNetworkFeeResponse;
+    }
+    
+    const responseData = await response.json();
+    logger.debug('[BINANCE-NETWORK-FEE] Resposta recebida:', responseData);
+    
+    return responseData as BinanceNetworkFeeResponse;
+    
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    logger.warn('[BINANCE-NETWORK-FEE] Erro ao consultar taxa, usando fallback:', {
+      message: errorMessage,
+      isNetworkError: error instanceof TypeError,
+      type: error?.name
+    });
+    
+    // Usar fallback em caso de erro
+    const fallbackFee = FALLBACK_FEES[network.toUpperCase()];
+    if (!fallbackFee) {
+      logger.error('[BINANCE-NETWORK-FEE] Taxa de fallback não disponível para rede:', network);
+      return null;
+    }
+    
+    logger.info('[BINANCE-NETWORK-FEE] Usando taxa de fallback devido a erro:', { coin, network, fee: fallbackFee });
+    
+    return {
+      success: true,
+      message: 'Taxa de rede recuperada (fallback)',
+      data: {
+        coin: coin.toUpperCase(),
+        network: network.toUpperCase(),
+        networkName: `${network.toUpperCase()} (Fallback)`,
+        withdrawFee: fallbackFee,
+        withdrawMin: '1.0',
+        withdrawMax: '1000000.0',
+        withdrawEnable: true,
+        depositEnable: true,
+      },
+      timestamp: new Date().toISOString(),
+    } as BinanceNetworkFeeResponse;
   }
 }
 

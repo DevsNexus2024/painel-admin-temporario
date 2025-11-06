@@ -289,7 +289,7 @@ export const WithdrawalPinModal: React.FC<WithdrawalPinModalProps> = ({
                   <Input
                     key={index}
                     ref={(el) => (inputRefs.current[index] = el)}
-                    type="text"
+                    type="password"
                     inputMode="numeric"
                     maxLength={1}
                     value={digit}
@@ -348,7 +348,7 @@ export const WithdrawalPinModal: React.FC<WithdrawalPinModalProps> = ({
                   <div key={index} className="relative">
                     <Input
                       ref={(el) => (oldPinRefs.current[index] = el)}
-                      type="text"
+                      type="password"
                       inputMode="numeric"
                       maxLength={1}
                       value={digit}
@@ -423,7 +423,7 @@ export const WithdrawalPinModal: React.FC<WithdrawalPinModalProps> = ({
                   <div key={index} className="relative">
                     <Input
                       ref={(el) => (newPinRefs.current[index] = el)}
-                      type="text"
+                      type="password"
                       inputMode="numeric"
                       maxLength={1}
                       value={digit}
@@ -484,7 +484,7 @@ export const WithdrawalPinModal: React.FC<WithdrawalPinModalProps> = ({
                   <div key={index} className="relative">
                     <Input
                       ref={(el) => (confirmPinRefs.current[index] = el)}
-                      type="text"
+                      type="password"
                       inputMode="numeric"
                       maxLength={1}
                       value={digit}

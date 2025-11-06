@@ -24,15 +24,17 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { formatMonetaryInput, convertBrazilianToUS, getNumericValue } from '@/utils/monetaryInput';
+import { consultarTaxaRedeBinance } from '@/services/binance';
 import type { OTCClient } from '@/types/otc';
-import type { BinanceQuoteData } from '@/types/binance';
+import type { BinanceQuoteData, BinanceNetworkFeeData } from '@/types/binance';
 
 interface BinanceWithdrawalModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (data: {
     coin: string;
-    amount: string;
+    amount: string; // Valor total (valor informado + taxa)
+    originalAmount: string; // Valor que o cliente deve receber (sem taxa)
     address: string;
     network?: string;
     addressTag?: string;
@@ -74,6 +76,8 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   const [network, setNetwork] = useState('TRX');
   const [addressTag, setAddressTag] = useState('');
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [networkFee, setNetworkFee] = useState<BinanceNetworkFeeData | null>(null);
+  const [networkFeeLoading, setNetworkFeeLoading] = useState(false);
 
   const networks = NETWORKS[coin as keyof typeof NETWORKS] || [{ value: 'TRX', label: 'TRX' }];
 
@@ -113,14 +117,43 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
     }
   }, [isOpen, quote, onRequestQuote]);
 
+  // Buscar taxa de rede quando coin ou network mudarem
+  useEffect(() => {
+    const buscarTaxaRede = async () => {
+      if (!isOpen || !coin || !network) return;
+      
+      setNetworkFeeLoading(true);
+      try {
+        const response = await consultarTaxaRedeBinance(coin, network);
+        if (response && response.success && response.data) {
+          setNetworkFee(response.data);
+        } else {
+          setNetworkFee(null);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar taxa de rede:', error);
+        setNetworkFee(null);
+      } finally {
+        setNetworkFeeLoading(false);
+      }
+    };
+
+    buscarTaxaRede();
+  }, [isOpen, coin, network]);
+
+  // Calcular valores
+  const valorInformado = getNumericValue(amount);
+  const taxaRede = networkFee ? parseFloat(networkFee.withdrawFee) : 0;
+  const valorTotal = valorInformado + taxaRede; // Valor a solicitar na Binance
+  const clienteReceberá = valorInformado; // Valor que o cliente deve receber (sem taxa)
+
   // Calcular BRL aproximado baseado na cotação
   const calculateBrlApproximate = () => {
-    if (!quote || !amount || getNumericValue(amount) <= 0) return 0;
+    if (!quote || valorInformado <= 0) return 0;
     
-    const usdtAmount = getNumericValue(amount) - 0.0001; // Valor que receberá
     const brlPrice = quote.averagePrice; // Cotação USDT/BRL
     
-    return usdtAmount * brlPrice;
+    return clienteReceberá * brlPrice;
   };
 
   const handleContinue = () => {
@@ -135,12 +168,14 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
       return;
     }
 
-    // Converte valor brasileiro para formato americano antes de enviar
-    const convertedAmount = convertBrazilianToUS(amount);
+    // Converte valores para formato americano antes de enviar
+    const convertedOriginalAmount = convertBrazilianToUS(amount); // Valor que o cliente deve receber
+    const convertedTotalAmount = (valorTotal).toFixed(8); // Valor total (valor + taxa)
 
     onConfirm({
       coin,
-      amount: convertedAmount,
+      amount: convertedTotalAmount, // Valor total a solicitar na Binance
+      originalAmount: convertedOriginalAmount, // Valor original (sem taxa) para registrar no débito
       address,
       network,
       addressTag: addressTag || undefined,
@@ -156,8 +191,9 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
     const coinBalance = balances.find((b) => b.coin === coin);
     
     if (coinBalance && parseFloat(coinBalance.free) > 0) {
-      // Definir valor máximo descontando a taxa de rede (0.0001)
-      const maxAmount = parseFloat(coinBalance.free) - 0.0001;
+      // Definir valor máximo descontando a taxa de rede
+      const taxa = networkFee ? parseFloat(networkFee.withdrawFee) : 1.0; // Fallback para 1.0 se não houver taxa
+      const maxAmount = parseFloat(coinBalance.free) - taxa;
       if (maxAmount > 0) {
         // Converte para string e formata como monetário
         const brazilianFormat = formatMonetaryInput(maxAmount.toFixed(2).replace('.', ''));
@@ -194,8 +230,8 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
           {/* Informações do Cliente */}
           {client && (
             <Card className="bg-muted/30 border-border/50">
-              <CardContent className="pt-3">
-                <div className="flex justify-between text-sm">
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Cliente:</span>
                   <span className="font-semibold">{client.name}</span>
                 </div>
@@ -300,16 +336,30 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
           <Card className="bg-muted/30 border-border/50">
             <CardContent className="pt-3">
               <div className="flex justify-between text-xs mb-1">
-                <span className="text-muted-foreground">Taxa de rede</span>
-                <span className="font-medium">0,0001 {coin}</span>
+                <span className="text-muted-foreground">Valor informado</span>
+                <span className="font-semibold text-foreground">
+                  {valorInformado > 0 ? valorInformado.toFixed(2).replace('.', ',') : '0,00'} {coin}
+                </span>
               </div>
               <div className="flex justify-between text-xs mb-1">
-                <span className="text-muted-foreground">Você receberá</span>
-                <span className="font-semibold text-foreground">
-                  {amount && getNumericValue(amount) > 0
-                    ? (getNumericValue(amount) - 0.0001).toFixed(8).replace('.', ',')
-                    : '0,0000'}{' '}
-                  {coin}
+                <span className="text-muted-foreground">
+                  Taxa de rede
+                  {networkFeeLoading && <span className="ml-1 text-xs">(carregando...)</span>}
+                </span>
+                <span className="font-medium">
+                  {networkFee ? `${taxaRede.toFixed(4).replace('.', ',')} ${coin}` : '-'}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-muted-foreground">Total a sacar</span>
+                <span className="font-semibold text-orange-600">
+                  {valorTotal > 0 ? valorTotal.toFixed(4).replace('.', ',') : '0,0000'} {coin}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-muted-foreground">Cliente receberá</span>
+                <span className="font-semibold text-green-600">
+                  {clienteReceberá > 0 ? clienteReceberá.toFixed(2).replace('.', ',') : '0,00'} {coin}
                 </span>
               </div>
               <div className="flex justify-between text-xs pt-1 border-t border-border/50">
@@ -323,16 +373,6 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
             </CardContent>
           </Card>
 
-          {/* Warning */}
-          <div className="flex items-start gap-2 p-2 bg-red-500/10 border border-red-500/20 rounded-lg">
-            <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-            <div className="text-xs text-red-700 dark:text-red-400">
-              <p className="font-medium mb-0.5">Atenção</p>
-              <p>
-                Saques são operações irreversíveis. Verifique cuidadosamente o endereço de destino antes de confirmar.
-              </p>
-            </div>
-          </div>
         </div>
         </>
         ) : (
@@ -361,16 +401,25 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
                     <span className="font-semibold">{coin}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Valor:</span>
-                    <span className="font-semibold">{amount} {coin}</span>
+                    <span className="text-muted-foreground">Valor informado:</span>
+                    <span className="font-semibold">{valorInformado > 0 ? valorInformado.toFixed(2).replace('.', ',') : '0,00'} {coin}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Você receberá:</span>
+                    <span className="text-muted-foreground">Taxa de rede:</span>
+                    <span className="font-semibold">
+                      {networkFee ? `${taxaRede.toFixed(4).replace('.', ',')} ${coin}` : '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total a sacar:</span>
+                    <span className="font-semibold text-orange-600">
+                      {valorTotal > 0 ? valorTotal.toFixed(4).replace('.', ',') : '0,0000'} {coin}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Cliente receberá:</span>
                     <span className="font-semibold text-green-600">
-                      {amount && getNumericValue(amount) > 0
-                        ? (getNumericValue(amount) - 0.0001).toFixed(8).replace('.', ',')
-                        : '0,0000'}{' '}
-                      {coin}
+                      {clienteReceberá > 0 ? clienteReceberá.toFixed(2).replace('.', ',') : '0,00'} {coin}
                     </span>
                   </div>
                   {brlApproximate > 0 && (

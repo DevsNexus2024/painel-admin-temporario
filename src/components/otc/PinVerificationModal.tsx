@@ -181,7 +181,7 @@ export const PinVerificationModal: React.FC<PinVerificationModalProps> = ({
                 <Input
                   key={index}
                   ref={(el) => (inputRefs.current[index] = el)}
-                  type="text"
+                  type="password"
                   inputMode="numeric"
                   maxLength={1}
                   value={digit}

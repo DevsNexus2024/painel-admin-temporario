@@ -62,6 +62,19 @@ export interface BinanceNetworkInfo {
   withdrawMax: string;
 }
 
+export interface BinanceNetworkFeeData {
+  coin: string;
+  network: string;
+  networkName: string;
+  withdrawFee: string;
+  withdrawMin: string;
+  withdrawMax: string;
+  withdrawEnable: boolean;
+  depositEnable: boolean;
+}
+
+export interface BinanceNetworkFeeResponse extends BinanceBackendResponse<BinanceNetworkFeeData> {}
+
 export interface BinanceBalance {
   coin: string;
   free: string;
@@ -252,6 +265,7 @@ export interface BinanceTransaction {
   type: 'Compra' | 'Venda';
   currency: string;
   quote: number;
+  clientFinalPrice?: number | null; // Preço final vendido para o cliente
   quantity: number;
   total: number;
   date: string;

@@ -485,7 +485,8 @@ const OTCNegociar: React.FC = () => {
    */
   const handleSolicitarSaqueRequest = (data: {
     coin: string;
-    amount: string;
+    amount: string; // Valor total (valor informado + taxa)
+    originalAmount: string; // Valor que o cliente deve receber (sem taxa)
     address: string;
     network?: string;
     addressTag?: string;
@@ -548,12 +549,15 @@ const OTCNegociar: React.FC = () => {
         setShowPinVerificationModal(false);
         setPendingWithdrawalData(null);
         
-        // Criar operação de débito USD automaticamente
+          // Criar operação de débito USD automaticamente
         try {
           // IMPORTANTE: O withdrawId é o ID interno da Binance, NÃO o hash da blockchain
           // O txId (hash da transação) só será disponível depois que o saque for confirmado
           // na blockchain. Por isso, por enquanto, vamos usar o withdrawId como referência
           const withdrawId = response.data.withdrawId || 'N/A';
+          
+          // Usar originalAmount (valor sem taxa) para o débito
+          const valorDebito = parseFloat(data.originalAmount || data.amount);
           
           // Construir descrição com email do usuário
           // O link da blockchain será adicionado depois quando o txId estiver disponível
@@ -561,17 +565,18 @@ const OTCNegociar: React.FC = () => {
           
           console.log('📝 Criando operação de débito:', {
             clientId: selectedClient,
-            amount: data.amount,
+            valorSolicitadoBinance: data.amount, // Valor total (com taxa)
+            valorDebito: valorDebito, // Valor original (sem taxa)
             withdrawId,
             description
           });
           
-          // Criar operação de débito USD
+          // Criar operação de débito USD (usar apenas valor original, sem taxa)
           const debitOperation = {
             otc_client_id: parseInt(selectedClient),
             operation_type: 'debit' as const,
             currency: 'USD' as const,
-            amount: parseFloat(data.amount),
+            amount: valorDebito, // Apenas o valor que o cliente deve receber (sem taxa)
             description: description,
           };
           
@@ -758,6 +763,7 @@ const OTCNegociar: React.FC = () => {
         type: (item.side === 'BUY' ? 'Compra' : 'Venda') as 'Compra' | 'Venda',
         currency: item.symbol.replace('BRL', '').replace('USDT', 'USDT'),
         quote: price,
+        clientFinalPrice: savedTx?.client_final_price || null, // Preço final vendido para o cliente
         quantity: qty,
         total: tot,
         date: formatDate(timestamp),
@@ -1328,7 +1334,7 @@ const OTCNegociar: React.FC = () => {
                   <div className="overflow-x-auto">
                     <Table>
                     <TableHeader>
-                      <TableRow className="h-8">
+                      <TableRow className="h-10">
                         <TableHead className="w-16 text-xs px-4">ID</TableHead>
                         <TableHead className="text-xs px-4">Tipo</TableHead>
                         <TableHead className="text-xs px-4">Moeda</TableHead>
@@ -1342,7 +1348,7 @@ const OTCNegociar: React.FC = () => {
                     </TableHeader>
                     <TableBody>
                       {paginatedTransactions.map((transaction) => (
-                        <TableRow key={transaction.id} className="hover:bg-muted/50 h-8">
+                        <TableRow key={transaction.id} className="hover:bg-muted/50 h-12">
                           <TableCell className="font-medium text-primary text-xs px-4">
                             #{transaction.id}
                           </TableCell>
@@ -1360,7 +1366,14 @@ const OTCNegociar: React.FC = () => {
                           </TableCell>
                           <TableCell className="font-medium text-xs px-4">{transaction.currency}</TableCell>
                           <TableCell className="text-right font-mono text-xs px-4">
-                            R${transaction.quote.toFixed(4)}
+                            <div className="flex flex-col items-end">
+                              <span>R${transaction.quote.toFixed(4)}</span>
+                              {transaction.clientFinalPrice && (
+                                <span className="text-[10px] text-orange-500 font-medium">
+                                  R${transaction.clientFinalPrice.toFixed(4)}
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right font-mono text-[10px] px-4">
                             {transaction.quantity.toLocaleString('pt-BR', {
