@@ -348,6 +348,13 @@ export default function MainLayout() {
                                         isCollapsed={isCollapsed}
                                     />
                                     <SidebarLink
+                                        to="/ip-revy-otc"
+                                        icon={<CreditCard className="h-4 w-4" />}
+                                        label="IP Revy <> OTC"
+                                        badge="NOVO"
+                                        isCollapsed={isCollapsed}
+                                    />
+                                    <SidebarLink
                                         to="/corpx"
                                         icon={<CreditCard className="h-4 w-4" />}
                                         label="CORPX TTF"

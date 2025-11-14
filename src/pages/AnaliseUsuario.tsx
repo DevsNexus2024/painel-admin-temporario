@@ -12,6 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuCheckboxItem
+} from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -58,6 +67,25 @@ interface AnaliseUsuarioParams extends Record<string, string> {
   id: string;
 }
 
+type DatasetKey =
+  | "cryptoDeposits"
+  | "cryptoWithdraws"
+  | "trades"
+  | "fiatDeposits"
+  | "fiatWithdraws"
+  | "internalDeposits"
+  | "internalWithdraws";
+
+type ExportOption = DatasetKey | "all" | "chronological";
+type ExportSelectionOption = ExportOption | "selected";
+
+interface DatasetBuilderResult {
+  title: string;
+  headers: string[];
+  rows: string[][];
+  fileSuffix: string;
+}
+
 // ============================== UTILITÁRIOS ==============================
 
 /**
@@ -66,13 +94,7 @@ interface AnaliseUsuarioParams extends Record<string, string> {
 const formatarData = (timestamp: number | undefined | null): string => {
   // ✅ CORREÇÃO: Verificar se timestamp existe e é válido
   if (!timestamp || isNaN(timestamp)) {
-    return new Date().toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit', 
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return 'N/A';
   }
   
   return new Date(timestamp * 1000).toLocaleString('pt-BR', {
@@ -167,13 +189,7 @@ const formatarValorCSV = (valor: string | number | undefined | null): string => 
  */
 const formatarDataCSV = (timestamp: number | undefined | null): string => {
   if (!timestamp || isNaN(timestamp)) {
-    return new Date().toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return 'N/A';
   }
   
   return new Date(timestamp * 1000).toLocaleString('pt-BR', {
@@ -256,6 +272,16 @@ export default function AnaliseUsuario() {
     startDate: '',
     endDate: ''
   });
+  const [exportSelection, setExportSelection] = useState<DatasetKey[]>([]);
+  const exportDatasetsOrder: DatasetKey[] = [
+    "cryptoDeposits",
+    "cryptoWithdraws",
+    "trades",
+    "fiatDeposits",
+    "fiatWithdraws",
+    "internalDeposits",
+    "internalWithdraws"
+  ];
   
   // Estados para dados brutos (sem filtro) e filtrados
   const [dadosBrutos, setDadosBrutos] = useState<any>(null);
@@ -554,8 +580,270 @@ export default function AnaliseUsuario() {
   // Calcular totais sempre que os dados mudarem
   const totaisFinanceiros = calcularTotaisFinanceiros();
 
+  const toggleExportSelection = (key: DatasetKey, checked: boolean) => {
+    setExportSelection(prev => {
+      if (checked) {
+        if (prev.includes(key)) {
+          return prev;
+        }
+        return [...prev, key];
+      }
+      return prev.filter(item => item !== key);
+    });
+  };
+
+  const limparSelecaoExportacao = () => setExportSelection([]);
+
+const obterDataHora = (timestamp: number | undefined | null) => {
+  if (!timestamp || isNaN(timestamp)) {
+    return { data: 'N/A', hora: '' };
+  }
+  const data = new Date(timestamp * 1000);
+  return {
+    data: data.toLocaleDateString('pt-BR'),
+    hora: data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  };
+};
+
+const normalizarCSVValor = (valor: unknown): string => {
+  if (valor === null || valor === undefined) return '';
+  if (typeof valor === 'number') return valor.toString();
+  return String(valor);
+};
+
+const construirCSV = (headers: string[], rows: string[][]) => {
+  const linhas = rows.map(row => row.map(coluna => escaparTextoCSV(normalizarCSVValor(coluna))).join(';'));
+  return [headers.join(';'), ...linhas].join('\n');
+};
+
+const construirBlocoUsuario = (dadosUsuario: typeof dadosUsuario, fallbackId: number, filtros: typeof filtros) => {
+  const info = obterUsuarioInfo(dadosUsuario, fallbackId);
+  const linhas = [
+    `Usuário ID;${info.id}`,
+    `Nome;${info.nome}`,
+    `Email;${info.email}`,
+    `Documento;${info.documento}`,
+    `Período;${filtros.startDate || 'Início'} até ${filtros.endDate || 'Hoje'}`,
+    `Máximo de Registros (API);${filtros.max_records}`
+  ];
+  return linhas.join('\n');
+};
+
+const datasetBuilders: Record<DatasetKey, () => DatasetBuilderResult | null> = {
+  cryptoDeposits: () => {
+    const depositos = dadosUsuario?.cryptoDeposits?.dados?.depositos || [];
+    if (depositos.length === 0) return null;
+
+    const headers = ['Data', 'Hora', 'Moeda', 'Quantidade', 'Taxa', 'Rede', 'Endereço', 'Hash', 'Status', 'Documento'];
+    const rows = depositos.map(deposito => {
+      const { data, hora } = obterDataHora(deposito.timestamp);
+      return [
+        data,
+        hora,
+        deposito.coin?.toUpperCase() ?? '',
+        deposito.amount ?? '',
+        deposito.fee ?? '',
+        deposito.networkName ?? deposito.network ?? '',
+        deposito.address ?? '',
+        deposito.hash ?? '',
+        deposito.status ?? '',
+        deposito.userDocument ?? ''
+      ];
+    });
+
+    return {
+      title: 'Depósitos Crypto',
+      headers,
+      rows,
+      fileSuffix: 'depositos_crypto'
+    };
+  },
+  cryptoWithdraws: () => {
+    const saques = dadosUsuario?.cryptoWithdraws?.dados?.saques || [];
+    if (saques.length === 0) return null;
+
+    const headers = ['Data', 'Hora', 'Moeda', 'Quantidade', 'Taxa', 'Rede', 'Endereço', 'Hash', 'Status', 'Documento'];
+    const rows = saques.map(saque => {
+      const { data, hora } = obterDataHora(saque.timestamp);
+      return [
+        data,
+        hora,
+        saque.coin?.toUpperCase() ?? '',
+        saque.amount ?? '',
+        saque.fee ?? '',
+        saque.networkName ?? saque.network ?? '',
+        saque.address ?? '',
+        saque.hash ?? '',
+        saque.status ?? '',
+        saque.userDocument ?? ''
+      ];
+    });
+
+    return {
+      title: 'Saques Crypto',
+      headers,
+      rows,
+      fileSuffix: 'saques_crypto'
+    };
+  },
+  trades: () => {
+    const trades = dadosUsuario?.trades?.dados?.trades || [];
+    if (trades.length === 0) return null;
+
+    const headers = ['Data', 'Hora', 'Par', 'Tipo', 'Quantidade', 'Preço (sem markup)', 'Total (BRL)', 'Markup (%)', 'Status'];
+    const rows = trades.map(trade => {
+      const { data, hora } = obterDataHora(trade.timestamp);
+      return [
+        data,
+        hora,
+        trade.pair ?? '',
+        trade.side === 'buy' ? 'Compra' : trade.side === 'sell' ? 'Venda' : trade.side ?? '',
+        trade.amount ?? '',
+        trade.priceWithoutMarkup ?? '',
+        formatarValorCSV(trade.total),
+        trade.markup ?? '',
+        trade.status ?? ''
+      ];
+    });
+
+    return {
+      title: 'Negociações (Trades)',
+      headers,
+      rows,
+      fileSuffix: 'trades'
+    };
+  },
+  fiatDeposits: () => {
+    const depositos = dadosUsuario?.fiatDeposits?.dados?.depositos || [];
+    if (depositos.length === 0) return null;
+
+    const headers = ['Data', 'Hora', 'Valor (BRL)', 'Banco', 'Status', 'Documento'];
+    const rows = depositos.map(deposito => {
+      const { data, hora } = obterDataHora(deposito.timestamp);
+      return [
+        data,
+        hora,
+        formatarValorCSV(deposito.value),
+        deposito.bank ?? '',
+        deposito.status ?? '',
+        deposito.userDocument ?? ''
+      ];
+    });
+
+    return {
+      title: 'Depósitos Fiat',
+      headers,
+      rows,
+      fileSuffix: 'depositos_fiat'
+    };
+  },
+  fiatWithdraws: () => {
+    const saques = dadosUsuario?.fiatWithdraws?.dados?.saques || [];
+    if (saques.length === 0) return null;
+
+    const headers = ['Data', 'Hora', 'Valor (BRL)', 'Banco', 'Taxa Saque (BRL)', 'Chave Pix', 'Tipo Chave', 'Status', 'Documento'];
+    const rows = saques.map(saque => {
+      const { data, hora } = obterDataHora(saque.timestamp);
+      return [
+        data,
+        hora,
+        formatarValorCSV(saque.value),
+        saque.bank ?? '',
+        formatarValorCSV(saque.withdrawFee),
+        saque.pixKey ?? '',
+        saque.pixKeyType ?? '',
+        saque.status ?? '',
+        saque.userDocument ?? ''
+      ];
+    });
+
+    return {
+      title: 'Saques Fiat',
+      headers,
+      rows,
+      fileSuffix: 'saques_fiat'
+    };
+  },
+  internalDeposits: () => {
+    const depositos = dadosUsuario?.internalDeposits?.dados?.depositos || [];
+    if (depositos.length === 0) return null;
+
+    const headers = ['Data', 'Hora', 'Moeda', 'Valor', 'Documento Origem', 'Documento Destino'];
+    const rows = depositos.map(trans => {
+      const { data, hora } = obterDataHora(trans.timestamp);
+      return [
+        data,
+        hora,
+        trans.coin?.toUpperCase() ?? '',
+        trans.amount ?? '',
+        trans.fromUserDocument ?? '',
+        trans.toUserDocument ?? ''
+      ];
+    });
+
+    return {
+      title: 'Transferências Recebidas',
+      headers,
+      rows,
+      fileSuffix: 'transferencias_recebidas'
+    };
+  },
+  internalWithdraws: () => {
+    const saques = dadosUsuario?.internalWithdraws?.dados?.saques || [];
+    if (saques.length === 0) return null;
+
+    const headers = ['Data', 'Hora', 'Moeda', 'Valor', 'Documento Origem', 'Documento Destino'];
+    const rows = saques.map(trans => {
+      const { data, hora } = obterDataHora(trans.timestamp);
+      return [
+        data,
+        hora,
+        trans.coin?.toUpperCase() ?? '',
+        trans.amount ?? '',
+        trans.fromUserDocument ?? '',
+        trans.toUserDocument ?? ''
+      ];
+    });
+
+    return {
+      title: 'Transferências Enviadas',
+      headers,
+      rows,
+      fileSuffix: 'transferencias_enviadas'
+    };
+  }
+};
+
+const datasetLabels: Record<DatasetKey, string> = {
+  cryptoDeposits: 'Depósitos Crypto',
+  cryptoWithdraws: 'Saques Crypto',
+  trades: 'Trades',
+  fiatDeposits: 'Depósitos Fiat',
+  fiatWithdraws: 'Saques Fiat',
+  internalDeposits: 'Transferências Recebidas',
+  internalWithdraws: 'Transferências Enviadas'
+};
+
+const obterUsuarioInfo = (dadosUsuario: typeof dadosUsuario, fallbackId: number) => {
+  const usuario =
+    dadosUsuario?.cryptoDeposits?.dados?.usuario ||
+    dadosUsuario?.cryptoWithdraws?.dados?.usuario ||
+    dadosUsuario?.trades?.dados?.usuario ||
+    dadosUsuario?.fiatDeposits?.dados?.usuario ||
+    dadosUsuario?.fiatWithdraws?.dados?.usuario ||
+    dadosUsuario?.internalDeposits?.dados?.usuario ||
+    dadosUsuario?.internalWithdraws?.dados?.usuario;
+
+  return {
+    id: usuario?.id ?? fallbackId ?? 'N/A',
+    nome: usuario?.nome ?? 'N/A',
+    email: usuario?.email ?? 'N/A',
+    documento: usuario?.id_brasil_bitcoin ?? 'N/A'
+  };
+};
+
   // 🚀 FUNÇÃO REVOLUCIONÁRIA: Extrato Cronológico Completo com Saldo Anterior/Posterior
-  const handleExportar = () => {
+  const exportarExtratoCronologico = () => {
     if (!dadosUsuario) {
       toast.error('Nenhum dado para exportar', {
         description: 'Carregue os dados do usuário primeiro'
@@ -832,6 +1120,85 @@ export default function AnaliseUsuario() {
         description: `Falha ao gerar extrato cronológico: ${errorMessage}`
       });
     }
+  };
+
+  const handleExportar = (option: ExportSelectionOption) => {
+    if (!dadosUsuario) {
+      toast.error('Nenhum dado para exportar', {
+        description: 'Carregue os dados do usuário primeiro'
+      });
+      return;
+    }
+
+    if (option === 'chronological') {
+      exportarExtratoCronologico();
+      return;
+    }
+
+    const nomeBaseArquivo = `usuario_${idUsuarioAtual}_${new Date().toISOString().split('T')[0]}`;
+    const cabecalhoUsuario = construirBlocoUsuario(dadosUsuario, idUsuarioAtual, filtros);
+
+    if (option === 'all') {
+      const secoes = (Object.keys(datasetBuilders) as DatasetKey[])
+        .map(key => datasetBuilders[key]?.())
+        .filter((secao): secao is DatasetBuilderResult => Boolean(secao));
+
+      if (secoes.length === 0) {
+        toast.info('Nenhum dado disponível para exportar com os filtros atuais');
+        return;
+      }
+
+      const csv = `${cabecalhoUsuario}\n\n` + secoes
+        .map(secao => {
+          const conteudo = construirCSV(secao.headers, secao.rows);
+          return `# ${secao.title}\n${conteudo}`;
+        })
+        .join('\n\n');
+
+      baixarCSV(csv, `todas_abas_${nomeBaseArquivo}.csv`);
+      toast.success('Exportação de todas as abas concluída!');
+      return;
+    }
+
+    if (option === 'selected') {
+      if (exportSelection.length === 0) {
+        toast.info('Selecione pelo menos uma aba para exportar');
+        return;
+      }
+
+      const secoesSelecionadas = exportSelection
+        .map(key => datasetBuilders[key]?.())
+        .filter((secao): secao is DatasetBuilderResult => Boolean(secao));
+
+      if (secoesSelecionadas.length === 0) {
+        toast.info('Nenhum dado disponível nas abas selecionadas com os filtros atuais');
+        return;
+      }
+
+      const csv = `${cabecalhoUsuario}\n\n` + secoesSelecionadas
+        .map(secao => {
+          const conteudo = construirCSV(secao.headers, secao.rows);
+          return `# ${secao.title}\n${conteudo}`;
+        })
+        .join('\n\n');
+
+      baixarCSV(csv, `abas_selecionadas_${nomeBaseArquivo}.csv`);
+      toast.success('Exportação das abas selecionadas concluída!');
+      limparSelecaoExportacao();
+      return;
+    }
+
+    const builder = datasetBuilders[option as DatasetKey];
+    const dataset = builder ? builder() : null;
+
+    if (!dataset) {
+      toast.info('Nenhum dado disponível para exportar com os filtros atuais');
+      return;
+    }
+
+    const csv = `${cabecalhoUsuario}\n\n${construirCSV(dataset.headers, dataset.rows)}`;
+    baixarCSV(csv, `${dataset.fileSuffix}_${nomeBaseArquivo}.csv`);
+    toast.success(`${dataset.title} exportado com sucesso!`);
   };
 
   // ✨ NOVA FUNÇÃO: Alternar ID do usuário
@@ -1144,15 +1511,81 @@ export default function AnaliseUsuario() {
             Atualizar
           </Button>
           
-          <Button 
-            onClick={handleExportar}
-            variant="outline" 
-            size="sm"
-            disabled={!dadosUsuario}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Exportar
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm"
+                disabled={!dadosUsuario}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Exportar CSV
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72">
+              <DropdownMenuLabel>Exportação consolidada</DropdownMenuLabel>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  handleExportar('all');
+                }}
+              >
+                Todas as abas (consolidado)
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Exportação rápida</DropdownMenuLabel>
+              {exportDatasetsOrder.map((key) => (
+                <DropdownMenuItem
+                  key={`quick-${key}`}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    handleExportar(key);
+                  }}
+                >
+                  {datasetLabels[key]}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Selecionar várias abas</DropdownMenuLabel>
+              {exportDatasetsOrder.map((key) => (
+                <DropdownMenuCheckboxItem
+                  key={`checkbox-${key}`}
+                  checked={exportSelection.includes(key)}
+                  onCheckedChange={(checked) => toggleExportSelection(key, Boolean(checked))}
+                >
+                  {datasetLabels[key]}
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuItem
+                disabled={exportSelection.length === 0}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  handleExportar('selected');
+                }}
+              >
+                Exportar abas selecionadas
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={exportSelection.length === 0}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  limparSelecaoExportacao();
+                }}
+              >
+                Limpar seleção
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Outras exportações</DropdownMenuLabel>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  handleExportar('chronological');
+                }}
+              >
+                Extrato cronológico detalhado
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

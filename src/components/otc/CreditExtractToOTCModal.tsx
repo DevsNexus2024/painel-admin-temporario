@@ -89,28 +89,35 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
   const detectProvider = (): { provider: string; codigo: string } => {
     if (!extractRecord) return { provider: 'bmp274', codigo: '' };
 
-    console.log('🔍 [DETECT-PROVIDER] extractRecord._original:', extractRecord._original);
+    const path = typeof window !== 'undefined' ? window.location.pathname : '';
 
-    // 🔵 Detectar CorpX: tem idEndToEnd no _original
-    if (extractRecord._original?.idEndToEnd) {
-      console.log('✅ [DETECT-PROVIDER] CorpX detectado por idEndToEnd:', extractRecord._original.idEndToEnd);
-      return {
-        provider: 'corpx',
-        codigo: extractRecord._original.idEndToEnd
-      };
-    }
+    const resolveCorpXCode = () => {
+      const candidates = [
+        extractRecord._original?.idEndToEnd,
+        extractRecord._original?.endToEnd,
+        extractRecord._original?.end_to_end,
+        extractRecord._original?.endToEndId,
+        extractRecord._original?.EndToEndId,
+        extractRecord._original?.rawExtrato?.idEndToEnd,
+        extractRecord._original?.rawExtrato?.endToEnd,
+        extractRecord._original?.rawExtrato?.end_to_end,
+        extractRecord.code,
+      ];
 
-    // 🔵 FALLBACK CorpX: verificar se está na rota /corpx
-    if (window.location.pathname.includes('/corpx') && extractRecord._original) {
-      // Se está na rota CorpX mas não tem idEndToEnd direto, procurar em originalItem
-      const idEndToEnd = extractRecord._original.originalItem?.idEndToEnd || extractRecord._original.idEndToEnd;
-      if (idEndToEnd) {
-        console.log('✅ [DETECT-PROVIDER] CorpX detectado por rota + originalItem:', idEndToEnd);
-        return {
-          provider: 'corpx',
-          codigo: idEndToEnd
-        };
-      }
+      return candidates.find((value) => typeof value === 'string' && value.trim().length > 0) || extractRecord.code;
+    };
+
+    const isCorpX = Boolean(
+      extractRecord._original?.corpxAccount ||
+      extractRecord._original?.rawExtrato ||
+      extractRecord._original?.source === 'CORPX' ||
+      path.includes('/corpx')
+    );
+
+    if (isCorpX) {
+      const codigo = resolveCorpXCode();
+      console.log('✅ [DETECT-PROVIDER] CorpX detectado:', codigo);
+      return { provider: 'corpx', codigo };
     }
 
     // 🟪 Detectar Bitso: tem bitsoData ou endToEndId no _original

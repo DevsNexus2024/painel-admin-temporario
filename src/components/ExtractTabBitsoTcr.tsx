@@ -25,7 +25,7 @@ const TCR_ACCOUNT_ID = 26;
 
 export default function ExtractTabBitsoTcr() {
   // WebSocket filtrado para TCR
-  const { isConnected, newTransaction, transactionTimestamp } = useFilteredBitsoWebSocket({
+  const { isConnected } = useFilteredBitsoWebSocket({
     context: 'tcr',
     tenantId: TCR_TENANT_ID,
   });
@@ -34,6 +34,7 @@ export default function ExtractTabBitsoTcr() {
   const [transactions, setTransactions] = useState<BitsoTransactionDB[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recordsPerPage, setRecordsPerPage] = useState(500);
   const [pagination, setPagination] = useState({
     total: 0,
     limit: 500,
@@ -70,6 +71,15 @@ export default function ExtractTabBitsoTcr() {
 
   // Estado para controlar linha expandida
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+
+  // Estado para métricas
+  const [metrics, setMetrics] = useState({
+    totalDeposits: 0,
+    totalWithdrawals: 0,
+    depositAmount: 0,
+    withdrawalAmount: 0,
+    loading: false
+  });
 
   // Função para converter LedgerTransaction para BitsoTransactionDB
   const mapLedgerToBitsoTransaction = (ledgerTx: any): BitsoTransactionDB => {
@@ -160,11 +170,12 @@ export default function ExtractTabBitsoTcr() {
   };
 
   // Buscar transações do ledger
-  const fetchTransactions = async (resetOffset: boolean = false) => {
+  const fetchTransactions = async (resetOffset: boolean = false, overrideLimit?: number) => {
     setLoading(true);
     setError(null);
     
     try {
+      const limit = overrideLimit ?? recordsPerPage;
       const offset = resetOffset ? 0 : pagination.offset;
       
       const response = await ledgerApi.listTransactions(TCR_TENANT_ID, {
@@ -172,8 +183,8 @@ export default function ExtractTabBitsoTcr() {
         accountId: TCR_ACCOUNT_ID,
         startDate: dateFilter.start,
         endDate: dateFilter.end,
-        limit: pagination.limit,
-        offset: offset,
+        limit,
+        offset,
         includePostings: true,
       });
 
@@ -208,13 +219,17 @@ export default function ExtractTabBitsoTcr() {
       setTransactions(filtered);
       
       // Atualizar paginação baseada na resposta
+      const total = response.pagination?.total ?? filtered.length;
+      const hasMore = response.pagination?.hasMore ?? response.pagination?.has_more ?? false;
+      const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
+
       setPagination({
-        total: response.pagination?.total || filtered.length,
-        limit: pagination.limit,
-        offset: offset,
-        has_more: response.pagination?.hasMore || false,
-        current_page: Math.floor(offset / pagination.limit) + 1,
-        total_pages: Math.ceil((response.pagination?.total || filtered.length) / pagination.limit)
+        total,
+        limit,
+        offset,
+        has_more: hasMore,
+        current_page: Math.floor(offset / limit) + 1,
+        total_pages: totalPages
       });
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar transações');
@@ -226,18 +241,96 @@ export default function ExtractTabBitsoTcr() {
     }
   };
 
+  // Buscar métricas de todas as transações
+  const fetchMetrics = async () => {
+    setMetrics(prev => ({ ...prev, loading: true }));
+    
+    try {
+      // Buscar TODAS as transações com os filtros aplicados
+      const response = await ledgerApi.listTransactions(TCR_TENANT_ID, {
+        provider: 'BITSO',
+        accountId: TCR_ACCOUNT_ID,
+        startDate: dateFilter.start,
+        endDate: dateFilter.end,
+        limit: 999999,
+        offset: 0,
+        includePostings: true,
+      });
+
+      const allTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
+      
+      // Aplicar os mesmos filtros locais
+      let filtered = allTransactions;
+      
+      if (typeFilter !== 'ALL') {
+        filtered = filtered.filter(tx => tx.type === typeFilter);
+      }
+      
+      if (statusFilter !== 'ALL') {
+        filtered = filtered.filter(tx => tx.status === statusFilter);
+      }
+      
+      if (specificAmount) {
+        const amount = parseFloat(specificAmount);
+        filtered = filtered.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
+      } else {
+        if (minAmount) {
+          const min = parseFloat(minAmount);
+          filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
+        }
+        if (maxAmount) {
+          const max = parseFloat(maxAmount);
+          filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
+        }
+      }
+      
+      if (searchTerm.trim()) {
+        const searchLower = searchTerm.toLowerCase();
+        filtered = filtered.filter(tx => 
+          tx.payerName?.toLowerCase().includes(searchLower) ||
+          tx.payeeName?.toLowerCase().includes(searchLower) ||
+          tx.payerTaxId?.toLowerCase().includes(searchLower) ||
+          tx.transactionId?.toLowerCase().includes(searchLower) ||
+          tx.endToEndId?.toLowerCase().includes(searchLower) ||
+          tx.reconciliationId?.toLowerCase().includes(searchLower) ||
+          tx.amount?.toString().includes(searchLower)
+        );
+      }
+      
+      // Calcular métricas
+      const deposits = filtered.filter(tx => tx.type === 'FUNDING');
+      const withdrawals = filtered.filter(tx => tx.type === 'WITHDRAWAL');
+      
+      const depositAmount = deposits.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+      const withdrawalAmount = withdrawals.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+      
+      setMetrics({
+        totalDeposits: deposits.length,
+        totalWithdrawals: withdrawals.length,
+        depositAmount: depositAmount,
+        withdrawalAmount: withdrawalAmount,
+        loading: false
+      });
+    } catch (err: any) {
+      console.error('Erro ao buscar métricas:', err);
+      setMetrics(prev => ({ ...prev, loading: false }));
+    }
+  };
+
   useEffect(() => {
     fetchTransactions(true);
+    fetchMetrics();
   }, []);
 
   // Aplicar filtros automaticamente quando mudarem (exceto data e busca)
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchTransactions(true);
+      fetchMetrics();
     }, 500); // Debounce de 500ms
 
     return () => clearTimeout(timer);
-  }, [typeFilter, statusFilter, minAmount, maxAmount, specificAmount, showReversalsOnly]);
+  }, [typeFilter, statusFilter, minAmount, maxAmount, specificAmount, showReversalsOnly, searchTerm]);
 
   // Sincronizar dateRange com dateFilter
   useEffect(() => {
@@ -261,20 +354,12 @@ export default function ExtractTabBitsoTcr() {
     if (dateFilter.start && dateFilter.end) {
       const timer = setTimeout(() => {
         fetchTransactions(true);
+        fetchMetrics();
       }, 500);
 
       return () => clearTimeout(timer);
     }
   }, [dateFilter.start, dateFilter.end]); // Dependências específicas para evitar disparo individual
-
-  useEffect(() => {
-    if (newTransaction && transactionTimestamp > 0) {
-      // Delay maior para que o toast apareça primeiro (2.5s após evento)
-      setTimeout(() => {
-        fetchTransactions(true);
-      }, 2500);
-    }
-  }, [transactionTimestamp]);
 
   // Filtro de busca local (frontend)
   const filteredTransactions = useMemo(() => {
@@ -501,14 +586,25 @@ export default function ExtractTabBitsoTcr() {
   const handleSyncExtrato = async () => {
     setSyncing(true);
     try {
-      // Recarregar dados do ledger (já está sincronizado)
-      await fetchTransactions(true);
-      toast.success('Extrato atualizado com sucesso!', {
-        description: 'Dados atualizados do ledger'
-      });
+      // Importar o serviço dinamicamente
+      const { syncBitsoExtract } = await import('@/services/bitso-sync');
+      
+      // Chamar API de sincronização
+      const result = await syncBitsoExtract();
+      
+      if (result.success) {
+        toast.success('Extrato sincronizado!', {
+          description: result.message || 'Dados sincronizados com sucesso'
+        });
+        
+        // Recarregar dados após sync
+        await fetchTransactions(true);
+      } else {
+        throw new Error(result.error || 'Erro ao sincronizar');
+      }
     } catch (err: any) {
-      toast.error('Erro ao atualizar extrato', {
-        description: err.message || 'Não foi possível atualizar os dados'
+      toast.error('Erro ao sincronizar extrato', {
+        description: err.message || 'Não foi possível sincronizar os dados'
       });
     } finally {
       setSyncing(false);
@@ -517,42 +613,47 @@ export default function ExtractTabBitsoTcr() {
 
   const handlePreviousPage = () => {
     if (pagination.offset > 0) {
-      const newOffset = Math.max(0, pagination.offset - pagination.limit);
-      setPagination(prev => ({
-        ...prev,
-        offset: newOffset,
-        current_page: prev.current_page - 1
-      }));
-      // Usar o novo offset diretamente
+      const newOffset = Math.max(0, pagination.offset - recordsPerPage);
       fetchTransactionsWithOffset(newOffset);
     }
   };
 
   const handleNextPage = () => {
     if (pagination.has_more) {
-      const newOffset = pagination.offset + pagination.limit;
-      setPagination(prev => ({
-        ...prev,
-        offset: newOffset,
-        current_page: prev.current_page + 1
-      }));
-      // Usar o novo offset diretamente
+      const newOffset = pagination.offset + recordsPerPage;
       fetchTransactionsWithOffset(newOffset);
     }
   };
 
-  const fetchTransactionsWithOffset = async (offset: number) => {
+  const handleRecordsPerPageChange = (value: string) => {
+    const limit = parseInt(value, 10);
+    if (Number.isNaN(limit)) {
+      return;
+    }
+
+    setRecordsPerPage(limit);
+    setPagination(prev => ({
+      ...prev,
+      limit,
+      offset: 0,
+      current_page: 1
+    }));
+    fetchTransactions(true, limit);
+  };
+
+  const fetchTransactionsWithOffset = async (offset: number, overrideLimit?: number) => {
     setLoading(true);
     setError(null);
     
     try {
+      const limit = overrideLimit ?? recordsPerPage;
       const response = await ledgerApi.listTransactions(TCR_TENANT_ID, {
         provider: 'BITSO',
         accountId: TCR_ACCOUNT_ID,
         startDate: dateFilter.start,
         endDate: dateFilter.end,
-        limit: pagination.limit,
-        offset: offset,
+        limit,
+        offset,
         includePostings: true,
       });
 
@@ -586,14 +687,17 @@ export default function ExtractTabBitsoTcr() {
       
       setTransactions(filtered);
       
-      // Atualizar paginação baseada na resposta
+      const total = response.pagination?.total ?? filtered.length;
+      const hasMore = response.pagination?.hasMore ?? response.pagination?.has_more ?? false;
+      const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
+
       setPagination({
-        total: response.pagination?.total || filtered.length,
-        limit: pagination.limit,
-        offset: offset,
-        has_more: response.pagination?.hasMore || false,
-        current_page: Math.floor(offset / pagination.limit) + 1,
-        total_pages: Math.ceil((response.pagination?.total || filtered.length) / pagination.limit)
+        total,
+        limit,
+        offset,
+        has_more: hasMore,
+        current_page: Math.floor(offset / limit) + 1,
+        total_pages: totalPages
       });
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar transações');
@@ -622,33 +726,108 @@ export default function ExtractTabBitsoTcr() {
           </div>
           
           <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchTransactions(true)}
-            disabled={loading}
-          >
-            <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={exportToCSV}
-            disabled={filteredTransactions.length === 0}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Exportar
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSyncExtrato}
-            disabled={syncing}
-          >
-            <RotateCcw className={cn("h-4 w-4 mr-2", syncing && "animate-spin")} />
-            Sync Extrato
-          </Button>
+            <Select
+              value={recordsPerPage.toString()}
+              onValueChange={handleRecordsPerPageChange}
+              disabled={loading}
+            >
+              <SelectTrigger className="h-10 w-[180px]">
+                <SelectValue placeholder="Registros" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="500">500 registros</SelectItem>
+                <SelectItem value="1000">1000 registros</SelectItem>
+                <SelectItem value="2000">2000 registros</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchTransactions(true)}
+              disabled={loading}
+            >
+              <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportToCSV}
+              disabled={filteredTransactions.length === 0}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Exportar
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncExtrato}
+              disabled={syncing}
+            >
+              <RotateCcw className={cn("h-4 w-4 mr-2", syncing && "animate-spin")} />
+              Sync Extrato
+            </Button>
+          </div>
         </div>
+
+      {/* Métricas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <Card className="p-4 bg-background border border-[rgba(255,140,0,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Depósitos</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-[#FF8C00]" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-[#FF8C00]">{metrics.totalDeposits}</p>
+                <p className="text-sm text-muted-foreground">
+                  {formatCurrency(metrics.depositAmount)}
+                </p>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-background border border-[rgba(255,140,0,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Saques</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-[#FF8C00]" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-[#FF8C00]">{metrics.totalWithdrawals}</p>
+                <p className="text-sm text-muted-foreground">
+                  {formatCurrency(metrics.withdrawalAmount)}
+                </p>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-background border border-[rgba(255,140,0,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Valor em Depósitos</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-green-500" />
+            ) : (
+              <p className="text-2xl font-bold text-green-500">
+                {formatCurrency(metrics.depositAmount)}
+              </p>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-background border border-[rgba(255,140,0,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Valor em Saques</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-[#FF8C00]" />
+            ) : (
+              <p className="text-2xl font-bold text-[#FF8C00]">
+                {formatCurrency(metrics.withdrawalAmount)}
+              </p>
+            )}
+          </div>
+        </Card>
       </div>
 
       {/* Filtros (sempre visíveis) */}

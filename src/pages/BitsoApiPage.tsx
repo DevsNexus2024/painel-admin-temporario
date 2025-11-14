@@ -1,13 +1,12 @@
 import React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, SendHorizontal, ArrowRightLeft } from "lucide-react";
+import { FileText, SendHorizontal } from "lucide-react";
 
 // Componentes Bitso API
 import TopBarBitsoApi from "@/components/TopBarBitsoApi";
 import ExtractTabBitsoApi from "@/components/ExtractTabBitsoApi";
 import MoneyRainEffect from "@/components/MoneyRainEffect";
 import BitsoPixActions from "@/components/BitsoPixActions";
-import BitsoReconciliationTab from "@/components/BitsoReconciliationTab";
 
 // WebSocket Hook
 import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
@@ -36,7 +35,7 @@ export default function BitsoApiPage() {
       {/* Conteúdo Principal */}
       <div className="container mx-auto px-4 py-6">
         <Tabs defaultValue="extract" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
+          <TabsList className="grid w-full grid-cols-2 mb-6">
             <TabsTrigger value="extract" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               Extrato
@@ -44,10 +43,6 @@ export default function BitsoApiPage() {
             <TabsTrigger value="pix" className="flex items-center gap-2">
               <SendHorizontal className="h-4 w-4" />
               Ações PIX
-            </TabsTrigger>
-            <TabsTrigger value="reconciliation" className="flex items-center gap-2">
-              <ArrowRightLeft className="h-4 w-4" />
-              Reconciliação
             </TabsTrigger>
           </TabsList>
 
@@ -59,11 +54,6 @@ export default function BitsoApiPage() {
           {/* ABA: Ações PIX (Enviar, QR Dinâmico, QR Estático) */}
           <TabsContent value="pix">
             <BitsoPixActions />
-          </TabsContent>
-
-          {/* ABA: Reconciliação Manual */}
-          <TabsContent value="reconciliation">
-            <BitsoReconciliationTab />
           </TabsContent>
         </Tabs>
       </div>

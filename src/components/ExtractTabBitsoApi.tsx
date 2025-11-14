@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ import type { MovimentoExtrato } from "@/services/extrato";
 
 export default function ExtractTabBitsoApi() {
   // WebSocket para API - mostra tudo (sem filtro)
-  const { isConnected, newTransaction, transactionTimestamp } = useFilteredBitsoWebSocket({
+  const { isConnected } = useFilteredBitsoWebSocket({
     context: 'api',
   });
 
@@ -29,6 +29,7 @@ export default function ExtractTabBitsoApi() {
   const [transactions, setTransactions] = useState<BitsoTransactionDB[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recordsPerPage, setRecordsPerPage] = useState(500);
   const [pagination, setPagination] = useState({
     total: 0,
     limit: 500,
@@ -36,6 +37,13 @@ export default function ExtractTabBitsoApi() {
     has_more: false,
     current_page: 1,
     total_pages: 1
+  });
+  const [metrics, setMetrics] = useState({
+    totalDeposits: 0,
+    totalWithdrawals: 0,
+    depositAmount: 0,
+    withdrawalAmount: 0,
+    loading: false,
   });
 
   // Estados de filtros
@@ -72,16 +80,19 @@ export default function ExtractTabBitsoApi() {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
   // Buscar transações
-  const fetchTransactions = async (resetOffset: boolean = false) => {
+  const fetchTransactions = async (resetOffset: boolean = false, overrideLimit?: number) => {
     setLoading(true);
     setError(null);
     
     try {
+      const limit = overrideLimit ?? recordsPerPage;
+      const offset = resetOffset ? 0 : pagination.offset;
+
       const filters: BitsoTransactionFilters = {
         startDate: dateFilter.start,
         endDate: dateFilter.end,
-        limit: pagination.limit,
-        offset: resetOffset ? 0 : pagination.offset,
+        limit,
+        offset,
       };
 
       if (typeFilter !== 'ALL') filters.type = typeFilter;
@@ -100,7 +111,20 @@ export default function ExtractTabBitsoApi() {
       const response = await BitsoRealtimeService.getTransactions(filters);
       
       setTransactions(response.data);
-      setPagination(response.pagination);
+
+      const paginationInfo = response.pagination;
+      const total = paginationInfo?.total ?? response.data.length;
+      const hasMore = Boolean(paginationInfo?.has_more ?? (paginationInfo as any)?.hasMore ?? false);
+      const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
+
+      setPagination({
+        total,
+        limit,
+        offset,
+        has_more: hasMore,
+        current_page: Math.floor(offset / limit) + 1,
+        total_pages: totalPages
+      });
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar transações');
       toast.error('Erro ao carregar extrato', {
@@ -111,18 +135,137 @@ export default function ExtractTabBitsoApi() {
     }
   };
 
+  const fetchAllTransactions = useCallback(async (): Promise<BitsoTransactionDB[]> => {
+    const baseFilters: BitsoTransactionFilters = {
+      startDate: dateFilter.start,
+      endDate: dateFilter.end,
+      type: typeFilter !== 'ALL' ? typeFilter : undefined,
+      status: statusFilter !== 'ALL' ? statusFilter : undefined,
+      isReversal: showReversalsOnly ? true : undefined,
+    };
+
+    if (specificAmount) {
+      const amount = parseFloat(specificAmount);
+      if (!Number.isNaN(amount)) {
+        baseFilters.minAmount = amount;
+        baseFilters.maxAmount = amount;
+      }
+    } else {
+      if (minAmount) {
+        const min = parseFloat(minAmount);
+        if (!Number.isNaN(min)) {
+          baseFilters.minAmount = min;
+        }
+      }
+      if (maxAmount) {
+        const max = parseFloat(maxAmount);
+        if (!Number.isNaN(max)) {
+          baseFilters.maxAmount = max;
+        }
+      }
+    }
+
+    const aggregated: BitsoTransactionDB[] = [];
+    const pageSize = 1000;
+    let offset = 0;
+    let hasMore = true;
+    let iterations = 0;
+    const maxIterations = 1000;
+
+    while (hasMore && iterations < maxIterations) {
+      iterations += 1;
+      const response = await BitsoRealtimeService.getTransactions({
+        ...baseFilters,
+        limit: pageSize,
+        offset,
+      });
+
+      const batch = response?.data ?? [];
+      if (batch.length === 0) {
+        break;
+      }
+
+      aggregated.push(...batch);
+
+      const paginationInfo = response.pagination;
+      if (paginationInfo) {
+        const limitUsed = paginationInfo.limit ?? pageSize;
+        const offsetUsed = paginationInfo.offset ?? offset;
+        const hasMoreFlag = paginationInfo.has_more ?? (paginationInfo as any)?.hasMore;
+        if (hasMoreFlag !== undefined) {
+          hasMore = Boolean(hasMoreFlag);
+        } else {
+          hasMore = batch.length === pageSize;
+        }
+        offset = offsetUsed + limitUsed;
+      } else {
+        hasMore = batch.length === pageSize;
+        offset += pageSize;
+      }
+    }
+
+    let filtered = aggregated;
+    const trimmedSearch = searchTerm.trim().toLowerCase();
+    if (trimmedSearch) {
+      filtered = filtered.filter((t: BitsoTransactionDB) =>
+        t.payerName?.toLowerCase().includes(trimmedSearch) ||
+        t.payeeName?.toLowerCase().includes(trimmedSearch) ||
+        t.payerTaxId?.toLowerCase().includes(trimmedSearch) ||
+        t.transactionId?.toLowerCase().includes(trimmedSearch) ||
+        t.endToEndId?.toLowerCase().includes(trimmedSearch) ||
+        t.reconciliationId?.toLowerCase().includes(trimmedSearch) ||
+        t.amount?.toString().toLowerCase().includes(trimmedSearch)
+      );
+    }
+
+    return filtered;
+  }, [dateFilter.start, dateFilter.end, typeFilter, statusFilter, minAmount, maxAmount, specificAmount, showReversalsOnly, searchTerm]);
+
+  const fetchMetrics = useCallback(async () => {
+    setMetrics(prev => ({ ...prev, loading: true }));
+
+    try {
+      const transactions = await fetchAllTransactions();
+      const deposits = transactions.filter((tx) => tx.type === 'FUNDING');
+      const withdrawals = transactions.filter((tx) => tx.type === 'WITHDRAWAL');
+
+      const depositAmount = deposits.reduce((sum, tx) => {
+        const value = typeof tx.amount === 'string' ? parseFloat(tx.amount) : Number(tx.amount) || 0;
+        return sum + (Number.isNaN(value) ? 0 : value);
+      }, 0);
+      const withdrawalAmount = withdrawals.reduce((sum, tx) => {
+        const value = typeof tx.amount === 'string' ? parseFloat(tx.amount) : Number(tx.amount) || 0;
+        return sum + (Number.isNaN(value) ? 0 : value);
+      }, 0);
+
+      setMetrics({
+        totalDeposits: deposits.length,
+        totalWithdrawals: withdrawals.length,
+        depositAmount,
+        withdrawalAmount,
+        loading: false,
+      });
+    } catch (error) {
+      console.error('Erro ao buscar métricas Bitso API:', error);
+      setMetrics(prev => ({ ...prev, loading: false }));
+    }
+  }, [fetchAllTransactions]);
+
   useEffect(() => {
     fetchTransactions(true);
+    fetchMetrics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Aplicar filtros automaticamente quando mudarem (exceto data e busca)
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchTransactions(true);
+      fetchMetrics();
     }, 500); // Debounce de 500ms
 
     return () => clearTimeout(timer);
-  }, [typeFilter, statusFilter, minAmount, maxAmount, specificAmount, showReversalsOnly]);
+  }, [typeFilter, statusFilter, minAmount, maxAmount, specificAmount, showReversalsOnly, searchTerm, fetchMetrics]);
 
   // Sincronizar dateRange com dateFilter
   useEffect(() => {
@@ -146,54 +289,12 @@ export default function ExtractTabBitsoApi() {
     if (dateFilter.start && dateFilter.end) {
       const timer = setTimeout(() => {
         fetchTransactions(true);
+        fetchMetrics();
       }, 500);
 
       return () => clearTimeout(timer);
     }
-  }, [dateFilter.start, dateFilter.end]); // Dependências específicas para evitar disparo individual
-
-  useEffect(() => {
-    if (newTransaction && transactionTimestamp > 0) {
-      // Delay para que o toast apareça primeiro (2s após evento)
-      setTimeout(() => {
-        const convertedTransaction: BitsoTransactionDB = {
-          id: newTransaction.id,
-          type: newTransaction.type === 'funding' ? 'FUNDING' : 'WITHDRAWAL',
-          transactionId: newTransaction.transactionId,
-          endToEndId: newTransaction.endToEndId,
-          reconciliationId: newTransaction.reconciliationId,
-          status: newTransaction.status.toUpperCase() as any,
-          amount: newTransaction.amount,
-          fee: '0.00',
-          currency: newTransaction.currency,
-          method: 'pixstark',
-          methodName: 'Pix',
-          payerName: newTransaction.payerName,
-          payeeName: newTransaction.payeeName,
-          payerTaxId: newTransaction.payerTaxId,
-          payerBankName: newTransaction.payerBankName,
-          createdAt: newTransaction.createdAt,
-          receivedAt: newTransaction.receivedAt,
-          updatedAt: newTransaction.updatedAt,
-          isReversal: newTransaction.isReversal,
-          originEndToEndId: null
-        };
-
-        setTransactions(prev => {
-          // Evitar duplicatas usando endToEndId (idempotência)
-          if (prev.some(tx => tx.endToEndId === convertedTransaction.endToEndId)) {
-            return prev;
-          }
-          return [convertedTransaction, ...prev];
-        });
-        
-        setPagination(prev => ({
-          ...prev,
-          total: prev.total + 1
-        }));
-      }, 2000);
-    }
-  }, [transactionTimestamp]);
+  }, [dateFilter.start, dateFilter.end, fetchMetrics]); // Dependências específicas para evitar disparo individual
 
   // Filtro de busca local (frontend)
   const filteredTransactions = useMemo(() => {
@@ -256,39 +357,26 @@ export default function ExtractTabBitsoApi() {
   const exportToCSV = async () => {
     try {
       toast.info('Preparando exportação...', { description: 'Buscando todos os registros filtrados' });
-      
-      // ✅ Buscar TODOS os registros com os filtros aplicados (sem paginação)
-      const filters: BitsoTransactionFilters = {
-        startDate: dateFilter.start,
-        endDate: dateFilter.end,
-        type: typeFilter !== 'ALL' ? typeFilter : undefined,
-        status: statusFilter !== 'ALL' ? statusFilter : undefined,
-        minAmount: minAmount ? parseFloat(minAmount) : undefined,
-        maxAmount: maxAmount ? parseFloat(maxAmount) : undefined,
-        isReversal: showReversalsOnly ? true : undefined,
-        limit: 999999, // ✅ Buscar todos os registros (sem limite de paginação)
-        offset: 0,
-      };
 
-      const response = await BitsoRealtimeService.getTransactions(filters);
-      const allTransactions = response.data;
+      const transactionsToExport = await fetchAllTransactions();
 
-      // Aplicar filtro de busca local (searchTerm)
-      let transactionsToExport = allTransactions;
-      if (searchTerm.trim()) {
-        const searchLower = searchTerm.toLowerCase();
-        transactionsToExport = allTransactions.filter((t: BitsoTransactionDB) => {
-          return (
-            t.payerName?.toLowerCase().includes(searchLower) ||
-            t.payeeName?.toLowerCase().includes(searchLower) ||
-            t.endToEndId?.toLowerCase().includes(searchLower) ||
-            t.transactionId?.toLowerCase().includes(searchLower) ||
-            t.amount.toString().includes(searchLower)
-          );
-        });
+      if (transactionsToExport.length === 0) {
+        toast.info('Nenhum registro corresponde aos filtros atuais.');
+        return;
       }
 
-      // Gerar CSV
+      const deposits = transactionsToExport.filter((t: BitsoTransactionDB) => t.type === 'FUNDING');
+      const withdrawals = transactionsToExport.filter((t: BitsoTransactionDB) => t.type === 'WITHDRAWAL');
+
+      const depositAmount = deposits.reduce((sum, tx) => {
+        const value = typeof tx.amount === 'string' ? parseFloat(tx.amount) : Number(tx.amount) || 0;
+        return sum + (Number.isNaN(value) ? 0 : value);
+      }, 0);
+      const withdrawalAmount = withdrawals.reduce((sum, tx) => {
+        const value = typeof tx.amount === 'string' ? parseFloat(tx.amount) : Number(tx.amount) || 0;
+        return sum + (Number.isNaN(value) ? 0 : value);
+      }, 0);
+
       const headers = ['Data', 'Tipo', 'Status', 'Valor', 'Moeda', 'Nome Pagador', 'Nome Beneficiário', 'Banco', 'End-to-End ID', 'Transaction ID', 'Reconciliation ID'];
       const rows = transactionsToExport.map((t: BitsoTransactionDB) => [
         formatDate(t.createdAt),
@@ -304,7 +392,16 @@ export default function ExtractTabBitsoApi() {
         t.reconciliationId || ''
       ]);
 
+      const summaryRows = [
+        ['Resumo', 'Quantidade', 'Valor', '', '', '', '', '', '', '', ''],
+        ['Total Depósitos', deposits.length.toString(), BitsoRealtimeService.formatCurrency(depositAmount), '', '', '', '', '', '', '', ''],
+        ['Total Saques', withdrawals.length.toString(), BitsoRealtimeService.formatCurrency(withdrawalAmount), '', '', '', '', '', '', '', ''],
+        ['Saldo Líquido', '', BitsoRealtimeService.formatCurrency(depositAmount - withdrawalAmount), '', '', '', '', '', '', '', ''],
+        ['', '', '', '', '', '', '', '', '', '', ''],
+      ];
+
       const csvContent = [
+        ...summaryRows.map(row => row.map(cell => `"${cell}"`).join(',')),
         headers.join(','),
         ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
       ].join('\n');
@@ -314,7 +411,6 @@ export default function ExtractTabBitsoApi() {
       link.href = URL.createObjectURL(blob);
       link.download = `extrato-bitso-api-${new Date().toISOString().split('T')[0]}.csv`;
       link.click();
-      
       toast.success(`${transactionsToExport.length} registros exportados com sucesso!`, {
         description: `Arquivo: extrato-bitso-api-${new Date().toISOString().split('T')[0]}.csv`
       });
@@ -371,29 +467,22 @@ export default function ExtractTabBitsoApi() {
   const handleSyncExtrato = async () => {
     setSyncing(true);
     try {
-      const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
-      const response = await fetch(`${API_BASE_URL}/api/bitso/pix/extrato/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(localStorage.getItem('auth_token') && {
-            Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-          })
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Erro ao sincronizar extrato');
-      }
-
-      const data = await response.json();
-      toast.success('Extrato sincronizado com sucesso!', {
-        description: data.message || 'Dados atualizados do servidor Bitso'
-      });
+      // Importar o serviço dinamicamente
+      const { syncBitsoExtract } = await import('@/services/bitso-sync');
       
-      // Recarregar transações após sincronização
-      await fetchTransactions(true);
+      // Chamar API de sincronização
+      const result = await syncBitsoExtract();
+      
+      if (result.success) {
+        toast.success('Extrato sincronizado!', {
+          description: result.message || 'Dados sincronizados com sucesso'
+        });
+        
+        // Recarregar dados após sync
+        await fetchTransactions(true);
+      } else {
+        throw new Error(result.error || 'Erro ao sincronizar');
+      }
     } catch (err: any) {
       toast.error('Erro ao sincronizar extrato', {
         description: err.message || 'Não foi possível sincronizar os dados'
@@ -484,40 +573,46 @@ export default function ExtractTabBitsoApi() {
 
   const handlePreviousPage = () => {
     if (pagination.offset > 0) {
-      const newOffset = Math.max(0, pagination.offset - pagination.limit);
-      setPagination(prev => ({
-        ...prev,
-        offset: newOffset,
-        current_page: prev.current_page - 1
-      }));
-      // Usar o novo offset diretamente
+      const newOffset = Math.max(0, pagination.offset - recordsPerPage);
       fetchTransactionsWithOffset(newOffset);
     }
   };
 
   const handleNextPage = () => {
     if (pagination.has_more) {
-      const newOffset = pagination.offset + pagination.limit;
-      setPagination(prev => ({
-        ...prev,
-        offset: newOffset,
-        current_page: prev.current_page + 1
-      }));
-      // Usar o novo offset diretamente
+      const newOffset = pagination.offset + recordsPerPage;
       fetchTransactionsWithOffset(newOffset);
     }
   };
 
-  const fetchTransactionsWithOffset = async (offset: number) => {
+  const handleRecordsPerPageChange = (value: string) => {
+    const limit = parseInt(value, 10);
+    if (Number.isNaN(limit)) {
+      return;
+    }
+
+    setRecordsPerPage(limit);
+    setPagination(prev => ({
+      ...prev,
+      limit,
+      offset: 0,
+      current_page: 1
+    }));
+    fetchTransactions(true, limit);
+    fetchMetrics();
+  };
+
+  const fetchTransactionsWithOffset = async (offset: number, overrideLimit?: number) => {
     setLoading(true);
     setError(null);
     
     try {
+      const limit = overrideLimit ?? recordsPerPage;
       const filters: BitsoTransactionFilters = {
         startDate: dateFilter.start,
         endDate: dateFilter.end,
-        limit: pagination.limit,
-        offset: offset,
+        limit,
+        offset,
       };
 
       if (typeFilter !== 'ALL') filters.type = typeFilter;
@@ -535,7 +630,20 @@ export default function ExtractTabBitsoApi() {
       const response = await BitsoRealtimeService.getTransactions(filters);
       
       setTransactions(response.data);
-      setPagination(response.pagination);
+
+      const paginationInfo = response.pagination;
+      const total = paginationInfo?.total ?? response.data.length;
+      const hasMore = Boolean(paginationInfo?.has_more ?? (paginationInfo as any)?.hasMore ?? false);
+      const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
+
+      setPagination({
+        total,
+        limit,
+        offset,
+        has_more: hasMore,
+        current_page: Math.floor(offset / limit) + 1,
+        total_pages: totalPages
+      });
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar transações');
       toast.error('Erro ao carregar extrato', {
@@ -563,10 +671,27 @@ export default function ExtractTabBitsoApi() {
           </div>
           
           <div className="flex gap-2">
+          <Select
+            value={recordsPerPage.toString()}
+            onValueChange={handleRecordsPerPageChange}
+            disabled={loading}
+          >
+            <SelectTrigger className="h-10 w-[180px]">
+              <SelectValue placeholder="Registros" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="500">500 registros</SelectItem>
+              <SelectItem value="1000">1000 registros</SelectItem>
+              <SelectItem value="2000">2000 registros</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => fetchTransactions(true)}
+            onClick={() => {
+              fetchTransactions(true);
+              fetchMetrics();
+            }}
             disabled={loading}
           >
             <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
@@ -590,6 +715,67 @@ export default function ExtractTabBitsoApi() {
             Sync Extrato
           </Button>
         </div>
+      </div>
+
+      {/* Métricas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Depósitos</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-[#9333ea]" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-[#9333ea]">{metrics.totalDeposits}</p>
+                <p className="text-sm text-muted-foreground">
+                  {formatCurrency(metrics.depositAmount)}
+                </p>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Saques</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-[#9333ea]" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-[#9333ea]">{metrics.totalWithdrawals}</p>
+                <p className="text-sm text-muted-foreground">
+                  {formatCurrency(metrics.withdrawalAmount)}
+                </p>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Valor em Depósitos</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-green-500" />
+            ) : (
+              <p className="text-2xl font-bold text-green-500">
+                {formatCurrency(metrics.depositAmount)}
+              </p>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Valor em Saques</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+            ) : (
+              <p className="text-2xl font-bold text-orange-500">
+                {formatCurrency(metrics.withdrawalAmount)}
+              </p>
+            )}
+          </div>
+        </Card>
       </div>
 
       {/* Filtros (sempre visíveis) */}

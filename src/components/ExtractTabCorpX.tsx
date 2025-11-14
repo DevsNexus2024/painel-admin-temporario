@@ -3,7 +3,7 @@ import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loa
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -14,11 +14,57 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
-import { useCorpX } from "@/contexts/CorpXContext";
+import MoneyRainEffect from "@/components/MoneyRainEffect";
+import { useCorpX, CORPX_ACCOUNTS } from "@/contexts/CorpXContext";
+import CorpXService from "@/services/corpx";
+import { useCorpxRealtime, CorpXTransactionPayload } from "@/hooks/useCorpxRealtime";
 
 // Componente completo para o Extrato CorpX (baseado no BMP 531)
 export default function ExtractTabCorpX() {
-  const { selectedAccount, taxDocument } = useCorpX();
+  const { selectedAccount } = useCorpX();
+
+  const accountNameByDocument = useMemo(() => {
+    const map: Record<string, string> = {};
+    CORPX_ACCOUNTS.forEach((account) => {
+      if (account.id === 'ALL') return;
+      const sanitized = account.cnpj.replace(/\D/g, '');
+      map[sanitized] = account.razaoSocial;
+    });
+    return map;
+  }, []);
+
+  const formatDocument = (document: string | undefined | null) => {
+    if (!document) return '';
+    const digits = document.replace(/\D/g, '');
+
+    if (digits.length === 14) {
+      return digits.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    }
+
+    if (digits.length === 11) {
+      return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    }
+
+    return document;
+  };
+
+  const shouldHideTransaction = (transaction: any) => {
+    if (!transaction) return false;
+
+    const isDebit = transaction.type === 'DÉBITO' || transaction._original?.transactionType === 'D';
+    if (!isDebit) {
+      return false;
+    }
+
+    const amount = typeof transaction.value === 'number' ? transaction.value : Number(transaction.value) || 0;
+    const beneficiaryDoc = (transaction.beneficiaryDocument || transaction.document || '').replace(/\D/g, '');
+
+    if (beneficiaryDoc === '36741675000139' && Math.abs(amount) === 0.5) {
+      return true;
+    }
+
+    return false;
+  };
   
   // Estados para controle de dados
   const [isLoading, setIsLoading] = useState(false);
@@ -37,22 +83,31 @@ export default function ExtractTabCorpX() {
     };
   };
 
-  // Estados para filtros - iniciando com período padrão de 3 dias
-  const defaultDates = getDefaultDates();
-  const [dateFrom, setDateFrom] = useState<Date>(defaultDates.dateFrom);
-  const [dateTo, setDateTo] = useState<Date>(defaultDates.dateTo);
+  const [dateFrom, setDateFrom] = useState<Date | null>(null);
+  const [dateTo, setDateTo] = useState<Date | null>(null);
+  const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStartDate, setSyncStartDate] = useState<Date | null>(null);
+  const [syncEndDate, setSyncEndDate] = useState<Date | null>(null);
   const [searchName, setSearchName] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [searchDescCliente, setSearchDescCliente] = useState("");
   const [transactionTypeFilter, setTransactionTypeFilter] = useState<"todos" | "debito" | "credito">("todos");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("desc");
   const [sortBy, setSortBy] = useState<"value" | "date" | "none">("date");
+  const [isExporting, setIsExporting] = useState(false);
   
-  // Estados para paginação server-side
+  // Estados para paginação da nova API
+  const [recordsPerPage, setRecordsPerPage] = useState(500);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [hasMorePages, setHasMorePages] = useState(true);
-  const ITEMS_PER_PAGE = 100; // 🚀 API CorpX retorna 100 registros por página
+  const [pagination, setPagination] = useState({
+    total: 0,
+    limit: 500,
+    offset: 0,
+    has_more: false,
+    current_page: 1,
+    total_pages: 1,
+  });
   
   // Estados para modal
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -65,41 +120,91 @@ export default function ExtractTabCorpX() {
 
   // ✅ Conversão de dados já processados do serviço CorpX
   const convertCorpXToStandardFormat = (transaction: any) => {
-    
-    // Agora os dados já vêm processados do backend com estrutura:
-    // { id, date, description, amount, type: "credit"|"debit", balance }
+    if (!transaction) {
+      return null;
+    }
 
-    // Extrair cliente da descrição (ex: "TRANSF ENVIADA PIX - Felipe Bernardo Costa")
-    const descricao = transaction.description || '';
-    const cliente = descricao.includes(' - ') 
-      ? descricao.split(' - ')[1] || 'Cliente não identificado'
-      : 'Cliente não identificado';
+    const amountRaw = transaction.amount ?? transaction.valor ?? 0;
+    const amount = typeof amountRaw === 'string' ? parseFloat(amountRaw) : Number(amountRaw) || 0;
+    const transactionType = transaction.transactionType || transaction.type;
+    const type = transactionType === 'C' || transactionType === 'credit' ? 'CRÉDITO' : 'DÉBITO';
+    const description = transaction.description || transaction.transactionDescription || transaction.pixDescription || transaction.label || transaction.descricao || '';
 
-    const resultado = {
-      id: transaction.id || Date.now().toString(),
-      dateTime: transaction.date || new Date().toISOString(),
-      value: transaction.amount || 0,
-      type: transaction.type === 'credit' ? 'CRÉDITO' : 'DÉBITO',
-      client: cliente,
-      document: '', // CorpX não retorna documento separado
-      code: transaction.id || '',
-      descCliente: descricao,
-      identified: true, // CorpX sempre identifica transações
-      descricaoOperacao: descricao,
-      // Campos originais para debug
-      _original: transaction
+    const payerName = transaction.payerName || transaction.debtorName || '';
+    const beneficiaryName = transaction.beneficiaryName || transaction.creditorName || transaction.destinatario || '';
+    const counterpartyName = type === 'CRÉDITO' ? payerName : beneficiaryName;
+    const fallbackClient = counterpartyName || beneficiaryName || payerName || transaction.client || 'Cliente não identificado';
+
+    const payerDocument = transaction.payerDocument || transaction.debtorDocument || '';
+    const beneficiaryDocument = transaction.beneficiaryDocument || transaction.creditorDocument || transaction.documentoBeneficiario || '';
+    const document = beneficiaryDocument || payerDocument || '';
+
+    const transactionDateTime =
+      transaction.transactionDatetime ||
+      transaction.transactionDatetimeUtc ||
+      transaction.transactionDate ||
+      transaction.date ||
+      new Date().toISOString();
+
+    const endToEnd =
+      transaction.endToEnd ||
+      transaction.end_to_end ||
+      transaction.endToEndId ||
+      transaction.idEndToEnd ||
+      transaction.nrMovimento ||
+      transaction.id ||
+      '';
+
+    const rawExtrato = transaction.rawExtrato
+      || transaction.rawextrato
+      || transaction.raw_statement
+      || transaction.rawWebhook?.rawExtrato
+      || null;
+
+    return {
+      id: (transaction.id ?? transaction.nrMovimento ?? transaction.idEndToEnd ?? Date.now()).toString(),
+      dateTime: transactionDateTime,
+      value: amount,
+      type,
+      client: fallbackClient,
+      document,
+      beneficiaryDocument,
+      payerDocument,
+      code: endToEnd || '',
+      descCliente: description,
+      identified: Boolean(fallbackClient),
+      descricaoOperacao: description,
+      rawExtrato,
+      _original: transaction,
     };
-    
-    return resultado;
   };
 
-  // ✅ Aplicar filtros (igual ao BMP 531)
-  const filteredAndSortedTransactions = useMemo(() => {
-    
-    let filtered = allTransactions.map(convertCorpXToStandardFormat);
-      
+  const normalizeTransactions = React.useCallback(
+    (transactions: any[], isAllAccountsParam: boolean, sanitizedCnpjParam: string) =>
+      transactions
+        .map(convertCorpXToStandardFormat)
+        .filter((tx): tx is NonNullable<ReturnType<typeof convertCorpXToStandardFormat>> => Boolean(tx) && !shouldHideTransaction(tx))
+        .filter((tx) => {
+          if (isAllAccountsParam || !sanitizedCnpjParam) {
+            return true;
+          }
 
-    // Filtros de busca
+          const matchesAccount = (doc?: string | null) => {
+            if (!doc) return false;
+            return doc.replace(/\D/g, '') === sanitizedCnpjParam;
+          };
+
+          return matchesAccount(tx.document)
+            || matchesAccount(tx.beneficiaryDocument)
+            || matchesAccount(tx.payerDocument);
+        }),
+    [convertCorpXToStandardFormat, shouldHideTransaction]
+  );
+
+  const applyFiltersAndSorting = React.useCallback(
+    (transactions: any[]) => {
+      let filtered = [...transactions];
+
     filtered = filtered.filter((transaction) => {
       const matchesName = !searchName || 
         transaction.client?.toLowerCase().includes(searchName.toLowerCase()) ||
@@ -116,11 +221,9 @@ export default function ExtractTabCorpX() {
         (transactionTypeFilter === "debito" && transaction.type === "DÉBITO") ||
         (transactionTypeFilter === "credito" && transaction.type === "CRÉDITO");
 
-      // ✅ Filtro de data no frontend (refino adicional após filtro da API)
       let matchesDate = true;
       if (dateFrom && dateTo) {
         try {
-          // Agora data vem processada do backend
           const transactionDate = new Date(transaction.dateTime);
           const fromDate = new Date(dateFrom);
           const toDate = new Date(dateTo);
@@ -130,29 +233,32 @@ export default function ExtractTabCorpX() {
           
           matchesDate = transactionDate >= fromDate && transactionDate <= toDate;
         } catch (error) {
-          //console.warn('[CORPX-FILTROS] Erro ao filtrar data:', transaction.dateTime, error);
-          matchesDate = true; // Em caso de erro, incluir a transação
+            matchesDate = true;
         }
       }
 
       return matchesName && matchesValue && matchesDescCliente && matchesType && matchesDate;
     });
     
-
-    // ✅ Aplicar ordenação
     if (sortBy === "date" && sortOrder !== "none") {
       filtered.sort((a, b) => {
-        const dateA = new Date(a.dateTime);
-        const dateB = new Date(b.dateTime);
-        return sortOrder === "asc" ? dateA.getTime() - dateB.getTime() : dateB.getTime() - dateA.getTime();
+          const dateA = new Date(a.dateTime).getTime();
+          const dateB = new Date(b.dateTime).getTime();
+          return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
       });
     } else if (sortBy === "value" && sortOrder !== "none") {
-      filtered.sort((a, b) => sortOrder === "asc" ? a.value - b.value : b.value - a.value);
+        filtered.sort((a, b) => (sortOrder === "asc" ? a.value - b.value : b.value - a.value));
     }
-    
 
     return filtered;
-  }, [allTransactions, searchName, searchValue, searchDescCliente, transactionTypeFilter, dateFrom, dateTo, sortBy, sortOrder]);
+    },
+    [searchName, searchValue, searchDescCliente, transactionTypeFilter, dateFrom, dateTo, sortBy, sortOrder]
+  );
+
+  const filteredAndSortedTransactions = useMemo(
+    () => applyFiltersAndSorting(allTransactions),
+    [allTransactions, applyFiltersAndSorting]
+  );
 
   // ✅ Paginação server-side (sem slice local)
   const displayTransactions = filteredAndSortedTransactions; // Exibir todos os dados da página atual
@@ -164,98 +270,310 @@ export default function ExtractTabCorpX() {
   const totalDebito = filteredAndSortedTransactions.filter(t => t.type === 'DÉBITO').reduce((sum, t) => sum + t.value, 0);
   const totalCredito = filteredAndSortedTransactions.filter(t => t.type === 'CRÉDITO').reduce((sum, t) => sum + t.value, 0);
   
+const totalPagesAvailable = pagination.total_pages || 1;
+const showingFrom = pagination.total === 0 ? 0 : pagination.offset + 1;
+const showingTo = pagination.offset + filteredAndSortedTransactions.length;
+const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
 
   // ✅ Carregar transações (com filtros de período)
-  const loadCorpXTransactions = async (customDateFrom?: Date, customDateTo?: Date, page: number = 1) => {
+  const loadCorpXTransactions = async (
+    customDateFrom?: Date,
+    customDateTo?: Date,
+    page: number = 1,
+    limitOverride?: number
+  ) => {
     try {
       setIsLoading(true);
       setError("");
       
-      // Remove formatação do CNPJ para usar apenas números na API
-      const cnpj = taxDocument.replace(/\D/g, '');
+      const accountIdParam = selectedAccount.id || 'ALL';
+      const isAllAccounts = accountIdParam === 'ALL';
+      const sanitizedCnpj = !isAllAccounts && selectedAccount.cnpj ? selectedAccount.cnpj.replace(/\D/g, '') : '';
       
-      // ✅ Usar datas customizadas (dos filtros) ou datas selecionadas ou período padrão de 3 dias
-      let dataInicio, dataFim;
+      let dataInicio: string | undefined;
+      let dataFim: string | undefined;
       
       if (customDateFrom && customDateTo) {
-        // Usar datas customizadas
         dataInicio = customDateFrom.toISOString().split('T')[0];
         dataFim = customDateTo.toISOString().split('T')[0];
       } else if (dateFrom && dateTo) {
-        // Usar datas selecionadas
         dataInicio = dateFrom.toISOString().split('T')[0];
         dataFim = dateTo.toISOString().split('T')[0];
-      } else {
-        // Usar período padrão de 3 dias
-        const hoje = new Date();
-        const doisDiasAtras = new Date();
-        doisDiasAtras.setDate(hoje.getDate() - 2);
-        
-        dataInicio = doisDiasAtras.toISOString().split('T')[0];
-        dataFim = hoje.toISOString().split('T')[0];
       }
-      
-      const params = {
-        cnpj,
-        dataInicio,
-        dataFim,
-        page: page // 🚀 Paginação server-side
+
+      const limit = limitOverride ?? recordsPerPage;
+      const offset = (page - 1) * limit;
+
+      const baseFilters = buildQueryFilters();
+
+      const baseQueryParams: Record<string, any> = {
+        accountId: accountIdParam,
+        limit,
+        offset,
+        ...baseFilters,
       };
-      
-      
-      const { consultarExtratoCorpX } = await import('@/services/corpx');
-      const resultado = await consultarExtratoCorpX(params);
-      
-      
-      // ✅ PAGINAÇÃO SERVER-SIDE: Substituir ou acumular dados
-      if (resultado && !resultado.erro && resultado.transactions) {
-        // ✅ Filtrar registro "Saldo Atual" que vem da API
-        const transacoesReais = resultado.transactions.filter((t: any) => {
-          const original = t.originalItem || t._original || t;
-          return original.data !== "Saldo Atual" && original.descricao !== "Saldo Atual";
+
+      if (dataInicio) {
+        baseQueryParams.startDate = dataInicio;
+      }
+      if (dataFim) {
+        baseQueryParams.endDate = dataFim;
+      }
+
+      const response = await CorpXService.listarTransacoes(baseQueryParams);
+
+      if (response?.success) {
+        const transactions = Array.isArray(response.data) ? response.data : [];
+
+        const paginationData = response.pagination ?? {};
+        const limitFromApi = paginationData.limit && paginationData.limit > 0 ? paginationData.limit : limit;
+
+        let normalizedTransactions = normalizeTransactions(transactions, isAllAccounts, sanitizedCnpj);
+
+        let hasMoreFromApi = paginationData.has_more ?? paginationData.hasMore ?? false;
+        let nextOffset = offset + limitFromApi;
+        let guard = 0;
+        const maxExtraRequests = 50;
+        let previousLength = normalizedTransactions.length;
+
+        while (normalizedTransactions.length < limit && hasMoreFromApi && guard < maxExtraRequests) {
+          const extraResponse = await CorpXService.listarTransacoes({
+            ...baseQueryParams,
+            offset: nextOffset,
+          });
+
+          if (!extraResponse?.success || !Array.isArray(extraResponse.data) || extraResponse.data.length === 0) {
+            hasMoreFromApi = false;
+            break;
+          }
+
+          const extraNormalized = normalizeTransactions(extraResponse.data, isAllAccounts, sanitizedCnpj);
+
+          if (extraNormalized.length === 0) {
+            hasMoreFromApi = false;
+            break;
+          }
+
+          normalizedTransactions = [...normalizedTransactions, ...extraNormalized];
+
+          const extraPagination = extraResponse.pagination ?? {};
+          hasMoreFromApi = extraPagination.has_more ?? extraPagination.hasMore ?? false;
+          const extraLimit = extraPagination.limit && extraPagination.limit > 0 ? extraPagination.limit : limit;
+          nextOffset = (extraPagination.offset ?? nextOffset) + extraLimit;
+          if (normalizedTransactions.length === previousLength) {
+            hasMoreFromApi = false;
+            break;
+          }
+          previousLength = normalizedTransactions.length;
+          guard += 1;
+        }
+
+        const finalTransactions = normalizedTransactions.slice(0, limit);
+
+        setAllTransactions(finalTransactions);
+
+        const total = paginationData.total ?? (hasMoreFromApi || normalizedTransactions.length > finalTransactions.length ? offset + normalizedTransactions.length : finalTransactions.length);
+        const limitUsed = limitFromApi && limitFromApi > 0 ? limitFromApi : limit;
+        const offsetUsed = paginationData.offset ?? offset;
+        const totalPagesCalculated =
+          paginationData.total_pages ?? (limitUsed > 0 ? Math.max(1, Math.ceil(total / limitUsed)) : 1);
+        const currentPageValue =
+          paginationData.current_page ?? (limitUsed > 0 ? Math.floor(offsetUsed / limitUsed) + 1 : 1);
+        const hasMore = (paginationData.has_more ?? paginationData.hasMore ?? offsetUsed + limitUsed < total) || (normalizedTransactions.length > finalTransactions.length);
+
+        setPagination({
+          total,
+          limit: limitUsed,
+          offset: offsetUsed,
+          has_more: hasMore,
+          current_page: currentPageValue,
+          total_pages: totalPagesCalculated,
         });
-        
-        // 🚀 SUBSTITUIR dados para cada página (não acumular)
-        setAllTransactions(transacoesReais);
-        
-        // 🚀 Calcular próximas páginas baseado no retorno ORIGINAL (antes de remover Saldo Atual)
-        const hasFullPage = resultado.transactions.length >= ITEMS_PER_PAGE;
-        setHasMorePages(hasFullPage);
-        setTotalPages(page + (hasFullPage ? 1 : 0)); // Estimar páginas
-        
-        
-        toast.success(`Página ${page}: ${transacoesReais.length} transações`, {
-          description: "Extrato CORPX carregado",
-          duration: 1500
+        setCurrentPage(currentPageValue);
+
+        toast.success(`Página ${currentPageValue}: ${finalTransactions.length} transações`, {
+          description: isAllAccounts
+            ? "Extrato consolidado CORPX carregado"
+            : "Extrato CORPX carregado",
+          duration: 1500,
         });
       } else {
         setAllTransactions([]);
+        setPagination({
+          total: 0,
+          limit,
+          offset: 0,
+          has_more: false,
+          current_page: 1,
+          total_pages: 1,
+        });
         toast.info("Nenhuma transação encontrada", {
-          description: "Tente ajustar os filtros de data",
-          duration: 3000
+          description: "Tente ajustar os filtros",
+          duration: 3000,
         });
       }
-      
     } catch (err: any) {
       console.error('[CORPX-EXTRATO-UI] ❌ Erro:', err);
       setError(err.message || 'Erro ao carregar extrato');
       setAllTransactions([]);
       toast.error("Erro ao carregar extrato", {
         description: err.message || "Tente novamente em alguns instantes",
-        duration: 4000
+        duration: 4000,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleSyncDialogChange = (open: boolean) => {
+    setIsSyncDialogOpen(open);
+    if (open) {
+      const fallback = getDefaultDates();
+      setSyncStartDate(dateFrom ?? fallback.dateFrom);
+      setSyncEndDate(dateTo ?? fallback.dateTo);
+    }
+  };
+
+  const buildQueryFilters = React.useCallback(() => {
+    const filters: Record<string, any> = {};
+
+    if (transactionTypeFilter === 'debito') {
+      filters.transactionType = 'D';
+    } else if (transactionTypeFilter === 'credito') {
+      filters.transactionType = 'C';
+    }
+
+    if (sortBy === 'date') {
+      filters.order = sortOrder === 'asc' ? 'asc' : 'desc';
+    } else if (!filters.order) {
+      filters.order = 'desc';
+    }
+
+    return filters;
+  }, [transactionTypeFilter, sortBy, sortOrder]);
+
+  const fetchAllTransactionsMatchingFilters = React.useCallback(async () => {
+    const accountIdParam = selectedAccount.id || 'ALL';
+    const isAllAccounts = accountIdParam === 'ALL';
+    const sanitizedCnpj = !isAllAccounts && selectedAccount.cnpj ? selectedAccount.cnpj.replace(/\D/g, '') : '';
+
+    let dataInicio: string | undefined;
+    let dataFim: string | undefined;
+
+    if (dateFrom && dateTo) {
+      dataInicio = dateFrom.toISOString().split('T')[0];
+      dataFim = dateTo.toISOString().split('T')[0];
+    }
+
+    const baseFilters = buildQueryFilters();
+    const limitPerRequest = 1000;
+    let offset = 0;
+    let guard = 0;
+    const maxIterations = 200;
+    let hasMore = true;
+    let aggregated: any[] = [];
+
+    while (hasMore && guard < maxIterations) {
+      const params: Record<string, any> = {
+        accountId: accountIdParam,
+        limit: limitPerRequest,
+        offset,
+        ...baseFilters,
+      };
+
+      if (dataInicio) {
+        params.startDate = dataInicio;
+      }
+      if (dataFim) {
+        params.endDate = dataFim;
+      }
+
+      const response = await CorpXService.listarTransacoes(params);
+
+      if (!response?.success || !Array.isArray(response.data) || response.data.length === 0) {
+        break;
+      }
+
+      const normalized = normalizeTransactions(response.data, isAllAccounts, sanitizedCnpj);
+      aggregated = [...aggregated, ...normalized];
+
+      const paginationData = response.pagination ?? {};
+      const limitUsed = paginationData.limit && paginationData.limit > 0 ? paginationData.limit : limitPerRequest;
+      const nextOffset = (paginationData.offset ?? offset) + limitUsed;
+      offset = nextOffset;
+      hasMore = paginationData.has_more ?? paginationData.hasMore ?? false;
+      guard += 1;
+    }
+
+    return applyFiltersAndSorting(aggregated);
+  }, [selectedAccount.id, selectedAccount.cnpj, dateFrom, dateTo, buildQueryFilters, normalizeTransactions, applyFiltersAndSorting]);
+
+  const handleSyncExtrato = async () => {
+    if (selectedAccount.id === 'ALL') {
+      toast.error('Selecione uma conta específica para sincronizar.');
+      return;
+    }
+
+    if (!selectedAccount.available) {
+      toast.error('Conta indisponível para sincronização no momento.');
+      return;
+    }
+
+    if (!syncStartDate || !syncEndDate) {
+      toast.error('Informe o período que deseja sincronizar.');
+      return;
+    }
+
+    if (syncStartDate > syncEndDate) {
+      toast.error('Data inicial não pode ser posterior à data final.');
+      return;
+    }
+
+    try {
+      setIsSyncing(true);
+
+      const taxDocument = selectedAccount.cnpj.replace(/\D/g, '');
+      const startDate = syncStartDate.toISOString().split('T')[0];
+      const endDate = syncEndDate.toISOString().split('T')[0];
+
+      const response = await CorpXService.sincronizarExtrato({
+        taxDocument,
+        startDate,
+        endDate,
+        dryRun: false,
+      });
+
+      toast.success('Sincronização iniciada com sucesso!', {
+        description: response?.message || `Período ${startDate} a ${endDate}`,
+      });
+
+      setIsSyncDialogOpen(false);
+      if (syncStartDate) {
+        setDateFrom(syncStartDate);
+      }
+      if (syncEndDate) {
+        setDateTo(syncEndDate);
+      }
+      setCurrentPage(1);
+      await loadCorpXTransactions(syncStartDate || undefined, syncEndDate || undefined, 1);
+    } catch (error: any) {
+      const description = error?.message || 'Tente novamente em alguns instantes.';
+      toast.error('Erro ao sincronizar extrato', { description });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // 🚀 Navegação de página server-side
   const handlePageChange = async (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setCurrentPage(newPage);
-      await loadCorpXTransactions(dateFrom, dateTo, newPage);
+    const totalPagesAvailable = pagination.total_pages || 1;
+    if (newPage < 1 || newPage > totalPagesAvailable) {
+      return;
     }
+
+    setCurrentPage(newPage);
+    await loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, newPage);
   };
 
   // ✅ Aplicar filtros (com período específico para API)
@@ -288,9 +606,8 @@ export default function ExtractTabCorpX() {
 
   // ✅ Limpar filtros - voltar ao período padrão de 3 dias
   const handleLimparFiltros = () => {
-    const defaultDates = getDefaultDates();
-    setDateFrom(defaultDates.dateFrom);
-    setDateTo(defaultDates.dateTo);
+    setDateFrom(null);
+    setDateTo(null);
     setSearchName("");
     setSearchValue("");
     setSearchDescCliente("");
@@ -298,9 +615,9 @@ export default function ExtractTabCorpX() {
     setSortBy("date");
     setSortOrder("desc");
     setCurrentPage(1);
-    loadCorpXTransactions(undefined, undefined, 1);
+    loadCorpXTransactions(undefined, undefined, 1, recordsPerPage);
     toast.success("Filtros limpos!", {
-      description: "Retornado ao período padrão de 3 dias",
+      description: "Exibindo as últimas transações disponíveis",
       duration: 2000
     });
   };
@@ -339,9 +656,20 @@ export default function ExtractTabCorpX() {
   };
 
   // ✅ Função para exportar CSV
-  const exportToCSV = () => {
+  const exportToCSV = async () => {
     try {
-      // Cabeçalho do CSV
+      setIsExporting(true);
+
+      const allTransactionsForExport = await fetchAllTransactionsMatchingFilters();
+
+      if (!allTransactionsForExport.length) {
+        toast.info('Nenhuma transação para exportar', {
+          description: 'Aplique filtros diferentes e tente novamente.',
+          duration: 2500,
+        });
+        return;
+      }
+
       const headers = [
         'Data/Hora',
         'Valor',
@@ -353,8 +681,7 @@ export default function ExtractTabCorpX() {
         'Provedor'
       ];
 
-      // Converter dados para CSV
-      const csvData = filteredAndSortedTransactions.map(transaction => [
+      const csvData = allTransactionsForExport.map(transaction => [
         formatDate(transaction.dateTime),
         `${transaction.type === 'DÉBITO' ? '-' : '+'}${formatCurrency(transaction.value)}`,
         transaction.type,
@@ -365,12 +692,10 @@ export default function ExtractTabCorpX() {
         'CORPX'
       ]);
 
-      // Criar conteúdo CSV
       const csvContent = [
         headers.join(','),
         ...csvData.map(row => 
           row.map(field => 
-            // Escapar campos que contêm vírgula, aspas ou quebra de linha
             typeof field === 'string' && (field.includes(',') || field.includes('"') || field.includes('\n'))
               ? `"${field.replace(/"/g, '""')}"` 
               : field
@@ -378,11 +703,8 @@ export default function ExtractTabCorpX() {
         )
       ].join('\n');
 
-      // Criar arquivo e fazer download
       const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
-      
-      // Gerar nome do arquivo com data atual
       const dataAtual = new Date().toISOString().split('T')[0];
       const nomeArquivo = `extrato_corpx_${dataAtual}.csv`;
       
@@ -397,17 +719,18 @@ export default function ExtractTabCorpX() {
         URL.revokeObjectURL(url);
       }
 
-      toast.success(`CSV exportado com sucesso!`, {
-        description: `${filteredAndSortedTransactions.length} registros exportados para ${nomeArquivo}`,
-        duration: 3000
+      toast.success('CSV exportado com sucesso!', {
+        description: `${allTransactionsForExport.length} registros exportados para ${nomeArquivo}`,
+        duration: 3000,
       });
-
     } catch (error) {
       console.error('[CORPX-CSV] Erro ao exportar CSV:', error);
-      toast.error("Erro ao exportar CSV", {
-        description: "Não foi possível gerar o arquivo de exportação",
-        duration: 4000
+      toast.error('Erro ao exportar CSV', {
+        description: 'Não foi possível gerar o arquivo de exportação',
+        duration: 4000,
       });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -443,25 +766,56 @@ export default function ExtractTabCorpX() {
     setSelectedExtractRecord(null);
   };
 
-  // ✅ Carregar dados ao montar o componente com período padrão de 3 dias
-  useEffect(() => {
-    // Usar as datas padrão já definidas no estado
-    loadCorpXTransactions(dateFrom, dateTo, 1);
-  }, []); // Manter [] para executar apenas na montagem
+  const matchesSelectedAccount = React.useCallback((data: CorpXTransactionPayload['data']) => {
+    const selectedDocDigits = selectedAccount.id === 'ALL' ? null : selectedAccount.cnpj.replace(/\D/g, '');
+    const payloadDocDigits = data.taxDocument?.replace(/\D/g, '') || null;
 
-  // 🔄 Recarregar extrato automaticamente quando tax_document mudar
+    return (
+      selectedAccount.id === 'ALL' ||
+      (!!selectedDocDigits && payloadDocDigits === selectedDocDigits) ||
+      (!!data.corpxAccountId && data.corpxAccountId === selectedAccount.id)
+    );
+  }, [selectedAccount]);
+
+  const {
+    isConnected: isRealtimeConnected,
+    isReconnecting: isRealtimeReconnecting,
+    lastError: realtimeError,
+    latestTransaction: realtimeTransaction,
+    showMoneyEffect: realtimeMoneyEffect,
+    transactionQueue: realtimeQueue,
+  } = useCorpxRealtime({
+    enabled: true,
+    filterTransaction: matchesSelectedAccount,
+  });
+
+  // 🔄 Recarregar quando a conta selecionada mudar
   useEffect(() => {
-    const cnpjNumerico = taxDocument.replace(/\D/g, '');
-    if (cnpjNumerico && cnpjNumerico.length === 14) {
-      // Reset pagination and load first page with current date filters
+    loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1, recordsPerPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
       setCurrentPage(1);
-      loadCorpXTransactions(dateFrom, dateTo, 1);
-      toast.info("Atualizando extrato para nova conta...");
-    }
-  }, [taxDocument, dateFrom, dateTo]); // Recarrega quando taxDocument ou datas mudarem
+    loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1, recordsPerPage);
+    toast.info(
+      selectedAccount.id === 'ALL'
+        ? 'Atualizando extrato consolidado de todas as contas...'
+        : 'Atualizando extrato para nova conta...'
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAccount.id]);
 
   return (
     <div className="space-y-6">
+      {realtimeTransaction && (
+        <MoneyRainEffect
+          trigger={realtimeMoneyEffect}
+          amount={realtimeTransaction.amount}
+          type={realtimeTransaction.transactionType === 'C' ? 'funding' : 'withdrawal'}
+          queueCount={realtimeQueue.length}
+        />
+      )}
       {/* Feedback Visual da Conta Selecionada */}
       <Card className="bg-card border border-border">
         <CardContent className="p-4">
@@ -657,7 +1011,7 @@ export default function ExtractTabCorpX() {
               Limpar
             </Button>
             <Button 
-              onClick={() => loadCorpXTransactions(dateFrom, dateTo, currentPage)} 
+              onClick={() => loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, currentPage)} 
               variant="outline" 
               disabled={isLoading}
               className="rounded-xl px-6 py-3 font-semibold border-border hover:border-purple-500 transition-colors"
@@ -669,15 +1023,146 @@ export default function ExtractTabCorpX() {
               )}
               {isLoading ? "Carregando..." : "Atualizar"}
             </Button>
+            <Dialog open={isSyncDialogOpen} onOpenChange={handleSyncDialogChange}>
+              <DialogTrigger asChild>
             <Button 
-              onClick={exportToCSV} 
               variant="outline" 
-              disabled={isLoading || filteredAndSortedTransactions.length === 0}
+                  disabled={isLoading || isSyncing || selectedAccount.id === 'ALL' || !selectedAccount.available}
+                  className="rounded-xl px-6 py-3 font-semibold border-border hover:border-blue-500 hover:text-blue-600 transition-colors"
+                >
+                  {isSyncing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Sincronizando...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Sincronizar Extrato
+                    </>
+                  )}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Sincronizar extrato CORPX</DialogTitle>
+                  <DialogDescription>
+                    Informe o período que deseja sincronizar. A operação será executada diretamente na API da CORPX.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-card-foreground">Data inicial</label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={`w-full justify-start text-left font-normal ${!syncStartDate ? "text-muted-foreground" : ""}`}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {syncStartDate ? format(syncStartDate, "PPP", { locale: ptBR }) : "Selecionar data"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={syncStartDate || undefined}
+                          onSelect={(date) => date && setSyncStartDate(date)}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-card-foreground">Data final</label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={`w-full justify-start text-left font-normal ${!syncEndDate ? "text-muted-foreground" : ""}`}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {syncEndDate ? format(syncEndDate, "PPP", { locale: ptBR }) : "Selecionar data"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={syncEndDate || undefined}
+                          onSelect={(date) => date && setSyncEndDate(date)}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline" disabled={isSyncing}>
+                      Cancelar
+                    </Button>
+                  </DialogClose>
+                  <Button onClick={handleSyncExtrato} disabled={isSyncing || !syncStartDate || !syncEndDate}>
+                    {isSyncing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Sincronizando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Confirmar sincronização
+                      </>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            <Button 
+              onClick={() => void exportToCSV()} 
+              variant="outline" 
+              disabled={isLoading || isExporting}
               className="rounded-xl px-6 py-3 font-semibold border-border hover:border-green-500 hover:text-green-600 transition-colors"
             >
+              {isExporting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Exportando...
+                </>
+              ) : (
+                <>
               <Download className="h-4 w-4 mr-2" />
               Exportar CSV
+                </>
+              )}
             </Button>
+            <div className="w-[190px]">
+              <Select
+                value={recordsPerPage.toString()}
+                onValueChange={(value) => {
+                  const limit = parseInt(value, 10);
+                  if (Number.isNaN(limit)) {
+                    return;
+                  }
+                  const safeLimit = Math.min(Math.max(limit, 1), 2000);
+                  setRecordsPerPage(safeLimit);
+                  setCurrentPage(1);
+                  loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1, safeLimit);
+                }}
+                disabled={isLoading}
+              >
+                <SelectTrigger className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input">
+                  <SelectValue placeholder="Registros" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="100">100 registros</SelectItem>
+                  <SelectItem value="200">200 registros</SelectItem>
+                  <SelectItem value="500">500 registros</SelectItem>
+                  <SelectItem value="1000">1000 registros</SelectItem>
+                  <SelectItem value="2000">2000 registros</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -717,9 +1202,28 @@ export default function ExtractTabCorpX() {
                 )}
               </div>
             </div>
-            <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs font-medium">
-              {filteredAndSortedTransactions.length} registros
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs font-medium">
+                {filteredAndSortedTransactions.length} registros
+              </Badge>
+              <Badge
+                className={cn(
+                  "text-xs font-medium border",
+                  isRealtimeConnected
+                    ? "bg-green-100 text-green-800 border-green-200"
+                    : isRealtimeReconnecting
+                      ? "bg-yellow-100 text-yellow-800 border-yellow-200"
+                      : "bg-gray-100 text-gray-600 border-gray-200"
+                )}
+                title={realtimeError || undefined}
+              >
+                {isRealtimeReconnecting
+                  ? "Tempo real: reconectando"
+                  : isRealtimeConnected
+                    ? "Tempo real: ativo"
+                    : "Tempo real: offline"}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
 
@@ -734,7 +1238,7 @@ export default function ExtractTabCorpX() {
               <AlertCircle className="h-12 w-12 mx-auto text-red-500 mb-4" />
               <h3 className="text-lg font-semibold text-card-foreground mb-2">Erro ao carregar extrato</h3>
               <p className="text-muted-foreground mb-4">{error}</p>
-              <Button onClick={() => loadCorpXTransactions(dateFrom, dateTo, 1)} variant="outline">
+              <Button onClick={() => loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1)} variant="outline">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Tentar novamente
               </Button>
@@ -756,18 +1260,20 @@ export default function ExtractTabCorpX() {
                     <TableHeader className="sticky top-0 bg-muted/40 backdrop-blur-sm z-10">
                       <TableRow className="border-b border-border hover:bg-transparent">
                         <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Data/Hora</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Valor</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Tipo</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Valor</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 min-w-[200px]">Cliente</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Documento</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[180px]">Documento Beneficiário</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[200px]">Descrição</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[100px]">Status</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Código</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Código (End-to-End)</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[100px] text-center">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {displayTransactions.map((transaction) => (
+                      {displayTransactions.map((transaction) => {
+                        const beneficiaryDocDigits = (transaction.beneficiaryDocument || transaction.document || '').replace(/\D/g, '');
+                        const beneficiaryName = accountNameByDocument[beneficiaryDocDigits];
+
+                        return (
                         <TableRow 
                           key={transaction.id}
                           onClick={() => {
@@ -780,32 +1286,40 @@ export default function ExtractTabCorpX() {
                             {formatDate(transaction.dateTime)}
                           </TableCell>
                           <TableCell className="py-3">
+                            <div className="flex flex-col">
                             <span className={`font-bold text-sm font-mono ${transaction.type === 'DÉBITO' ? "text-red-600" : "text-green-600"}`}>
                               {transaction.type === 'DÉBITO' ? "-" : "+"}{formatCurrency(transaction.value)}
                             </span>
-                          </TableCell>
-                          <TableCell className="py-3">
-                            <Badge className={`${transaction.type === 'DÉBITO' ? "bg-red-100 text-red-800 border-red-200" : "bg-green-100 text-green-800 border-green-200"} rounded-full px-2 py-1 text-xs font-semibold`}>
-                              {transaction.type}
-                            </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {transaction.type === 'CRÉDITO' ? 'Crédito' : 'Débito'}
+                              </span>
+                            </div>
                           </TableCell>
                           <TableCell className="py-3 text-xs text-muted-foreground break-words">
                             <div className="space-y-1">
                               <div className="font-medium text-card-foreground">
                                 {transaction.client}
                               </div>
-                              {transaction.document && (
-                                <div className="text-xs text-purple-600">
-                                  Doc: {transaction.document}
-                                </div>
-                              )}
                               <div className="text-xs text-muted-foreground">
                                 CORPX
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell className="py-3 text-xs text-muted-foreground truncate max-w-[160px]">
-                            {transaction.document || "—"}
+                          <TableCell className="py-3 text-xs text-muted-foreground truncate max-w-[200px]">
+                            {transaction.document ? (
+                              <div className="space-y-1">
+                                <span className="font-mono" title={transaction.document}>
+                                  {formatDocument(transaction.document)}
+                                </span>
+                                {transaction.type === 'CRÉDITO' && beneficiaryName && (
+                                  <span className="block text-[11px] text-muted-foreground">
+                                    {beneficiaryName}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
                           </TableCell>
                           <TableCell className="py-3 text-xs text-muted-foreground break-words max-w-[200px]">
                             {transaction.descCliente ? (
@@ -817,20 +1331,11 @@ export default function ExtractTabCorpX() {
                             )}
                           </TableCell>
                           <TableCell className="py-3">
-                            <div className="space-y-1">
-                              <Badge className="bg-green-100 text-green-800 border-green-200 rounded-full px-2 py-1 text-xs font-semibold">
-                                ✓
-                              </Badge>
-                              <Badge className="bg-purple-50 text-purple-700 border-purple-200 rounded-full px-2 py-1 text-xs font-semibold">
-                                CORPX
-                              </Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-3">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs text-muted-foreground truncate max-w-[100px]">
-                                {transaction.code}
+                              <span className="font-mono text-xs text-muted-foreground truncate max-w-[120px]">
+                                {transaction.code || '—'}
                               </span>
+                              {transaction.code && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -846,6 +1351,7 @@ export default function ExtractTabCorpX() {
                               >
                                 <Copy className="h-3 w-3" />
                               </Button>
+                              )}
                             </div>
                           </TableCell>
                           
@@ -882,7 +1388,8 @@ export default function ExtractTabCorpX() {
                             </div>
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -890,7 +1397,11 @@ export default function ExtractTabCorpX() {
 
               {/* Versão Mobile - cards simplificados */}
               <div className="lg:hidden space-y-4 p-4">
-                {displayTransactions.map((transaction) => (
+                {displayTransactions.map((transaction) => {
+                  const beneficiaryDocDigits = (transaction.beneficiaryDocument || transaction.document || '').replace(/\D/g, '');
+                  const beneficiaryName = accountNameByDocument[beneficiaryDocDigits];
+
+                  return (
                   <Card 
                     key={transaction.id}
                     onClick={() => {
@@ -901,21 +1412,23 @@ export default function ExtractTabCorpX() {
                   >
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between mb-2">
-                        <Badge className={`${transaction.type === 'DÉBITO' ? "bg-red-100 text-red-800 border-red-200" : "bg-green-100 text-green-800 border-green-200"} rounded-full px-2 py-1 text-xs font-semibold`}>
-                          {transaction.type}
-                        </Badge>
                         <span className="text-xs text-muted-foreground">
                           {formatDate(transaction.dateTime)}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between mb-3">
-                        <span className={`font-bold text-lg font-mono ${transaction.type === 'DÉBITO' ? "text-red-600" : "text-green-600"}`}>
-                          {transaction.type === 'DÉBITO' ? "-" : "+"}{formatCurrency(transaction.value)}
                         </span>
                         <Badge className="bg-purple-50 text-purple-700 border-purple-200 rounded-full px-2 py-1 text-xs font-semibold">
                           CORPX
                         </Badge>
+                      </div>
+                      
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex flex-col">
+                        <span className={`font-bold text-lg font-mono ${transaction.type === 'DÉBITO' ? "text-red-600" : "text-green-600"}`}>
+                          {transaction.type === 'DÉBITO' ? "-" : "+"}{formatCurrency(transaction.value)}
+                        </span>
+                          <span className="text-xs text-muted-foreground">
+                            {transaction.type === 'CRÉDITO' ? 'Crédito' : 'Débito'}
+                          </span>
+                        </div>
                       </div>
                       
                       <div className="space-y-1 text-sm">
@@ -924,7 +1437,12 @@ export default function ExtractTabCorpX() {
                         </div>
                         {transaction.document && (
                           <div className="text-xs text-muted-foreground">
-                            Doc: {transaction.document}
+                            Doc. Beneficiário: {formatDocument(transaction.document)}
+                          </div>
+                        )}
+                        {transaction.type === 'CRÉDITO' && beneficiaryName && (
+                          <div className="text-[11px] text-muted-foreground">
+                            {beneficiaryName}
                           </div>
                         )}
                         {transaction.descCliente && (
@@ -936,9 +1454,8 @@ export default function ExtractTabCorpX() {
                       
                       <div className="flex items-center justify-between mt-3">
                         <span className="font-mono text-xs text-muted-foreground">
-                          {transaction.code}
+                          {transaction.code || 'Sem end-to-end'}
                         </span>
-                        
                         {/* ✅ Botão +OTC Mobile */}
                         {transaction.type === 'CRÉDITO' && (
                           <Button
@@ -970,15 +1487,16 @@ export default function ExtractTabCorpX() {
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Paginação */}
-              {(totalPages > 1 || hasMorePages) && (
+              {(totalPagesAvailable > 1 || pagination.has_more) && (
                 <div className="border-t border-border bg-muted/20">
                   <div className="flex items-center justify-between px-6 py-4">
                     <div className="text-sm text-muted-foreground">
-                      Página {currentPage}: {filteredAndSortedTransactions.length} transações{hasMorePages ? ' (+ páginas disponíveis)' : ''}
+                      Mostrando {showingFrom}-{Math.min(showingTo, totalRecords)} de {totalRecords} registros
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
@@ -991,13 +1509,13 @@ export default function ExtractTabCorpX() {
                         Anterior
                       </Button>
                       <span className="text-sm font-medium px-3">
-                        Página {currentPage} de {totalPages}{hasMorePages && '+'}
+                        Página {currentPage} de {totalPagesAvailable}{pagination.has_more ? '+' : ''}
                       </span>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handlePageChange(currentPage + 1)}
-                        disabled={!hasMorePages || isLoading}
+                        disabled={((currentPage >= totalPagesAvailable) && !pagination.has_more) || isLoading}
                         className="rounded-lg"
                       >
                         Próxima
@@ -1020,7 +1538,13 @@ export default function ExtractTabCorpX() {
               Detalhes da Transação CORPX
             </DialogTitle>
           </DialogHeader>
-          {selectedTransaction && (
+          {selectedTransaction && (() => {
+            const beneficiaryDocDigits = (selectedTransaction.beneficiaryDocument || selectedTransaction.document || '').replace(/\D/g, '');
+            const beneficiaryName = accountNameByDocument[beneficiaryDocDigits];
+            const rawExtrato = selectedTransaction.rawExtrato || selectedTransaction._original?.rawExtrato || null;
+            const rawPayer = rawExtrato?.payer || rawExtrato?.pagador;
+            const rawBeneficiary = rawExtrato?.beneficiary || rawExtrato?.beneficiario;
+            return (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1038,8 +1562,8 @@ export default function ExtractTabCorpX() {
                   <p className="text-sm">{selectedTransaction.type}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground">Código</label>
-                  <p className="text-sm font-mono">{selectedTransaction.code}</p>
+                  <label className="text-sm font-medium text-muted-foreground">Código (End-to-End)</label>
+                  <p className="text-sm font-mono">{selectedTransaction.code || '—'}</p>
                 </div>
                 <div className="col-span-2">
                   <label className="text-sm font-medium text-muted-foreground">Cliente</label>
@@ -1047,8 +1571,11 @@ export default function ExtractTabCorpX() {
                 </div>
                 {selectedTransaction.document && (
                   <div className="col-span-2">
-                    <label className="text-sm font-medium text-muted-foreground">Documento</label>
-                    <p className="text-sm">{selectedTransaction.document}</p>
+                    <label className="text-sm font-medium text-muted-foreground">Documento do Beneficiário</label>
+                    <p className="text-sm font-mono">{formatDocument(selectedTransaction.document)}</p>
+                    {selectedTransaction.type === 'CRÉDITO' && beneficiaryName && (
+                      <p className="text-xs text-muted-foreground mt-1">{beneficiaryName}</p>
+                    )}
                   </div>
                 )}
                 {selectedTransaction.descCliente && (
@@ -1058,8 +1585,77 @@ export default function ExtractTabCorpX() {
                   </div>
                 )}
               </div>
+              {rawExtrato && (
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Dados brutos (rawExtrato)</label>
             </div>
-          )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">Data</span>
+                      <span className="text-sm font-mono">{rawExtrato.data || rawExtrato.date || '—'}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">Hora</span>
+                      <span className="text-sm font-mono">{rawExtrato.hora || rawExtrato.time || '—'}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">Tipo</span>
+                      <span className="text-sm font-bold">{rawExtrato.tipo || rawExtrato.type || '—'}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">Valor</span>
+                      <span className="text-sm font-mono">{rawExtrato.valor || rawExtrato.amount || '—'}</span>
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">Descrição</span>
+                      <span className="text-sm">{rawExtrato.descricao || rawExtrato.description || '—'}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">ID End-to-End</span>
+                      <span className="text-sm font-mono break-all">{rawExtrato.idEndToEnd || rawExtrato.endtoend || '—'}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">Nr. Movimento</span>
+                      <span className="text-sm font-mono break-all">{rawExtrato.nrMovimento || rawExtrato.movementId || '—'}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-3 rounded-lg border border-border bg-muted/40">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Payer</h4>
+                      <p className="text-sm font-medium">{rawPayer?.fullName || rawPayer?.nome || '—'}</p>
+                      {rawPayer?.document && (
+                        <p className="text-xs font-mono text-muted-foreground">
+                          Doc: {formatDocument(rawPayer.document)}
+                        </p>
+                      )}
+                      {(rawPayer?.agency || rawPayer?.account) && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Agência {rawPayer?.agency || '—'} • Conta {rawPayer?.account || '—'}
+                        </p>
+                      )}
+                    </div>
+                    <div className="p-3 rounded-lg border border-border bg-muted/40">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Beneficiário</h4>
+                      <p className="text-sm font-medium">{rawBeneficiary?.fullName || rawBeneficiary?.nome || beneficiaryName || '—'}</p>
+                      {rawBeneficiary?.document && (
+                        <p className="text-xs font-mono text-muted-foreground">
+                          Doc: {formatDocument(rawBeneficiary.document)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <details className="rounded-lg border border-border bg-muted/30 p-3">
+                    <summary className="text-xs font-semibold text-muted-foreground cursor-pointer">Ver JSON completo</summary>
+                    <pre className="mt-3 max-h-64 overflow-auto text-xs bg-background/60 rounded-lg p-3 border border-border/60 text-muted-foreground">
+{JSON.stringify(rawExtrato, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+              )}
+            </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

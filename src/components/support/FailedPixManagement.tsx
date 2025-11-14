@@ -24,8 +24,13 @@ import {
 
 export default function FailedPixManagement() {
   const [withdrawals, setWithdrawals] = useState<FailedWithdrawal[]>([]);
+  const [filteredWithdrawals, setFilteredWithdrawals] = useState<FailedWithdrawal[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("failed"); // Padrão: falhados
+  const [minAmount, setMinAmount] = useState<string>("");
+  const [maxAmount, setMaxAmount] = useState<string>("");
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<FailedWithdrawalDetail | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -37,6 +42,51 @@ export default function FailedPixManagement() {
   useEffect(() => {
     loadWithdrawals();
   }, [selectedTenant]);
+
+  // Aplicar filtros
+  useEffect(() => {
+    let filtered = [...withdrawals];
+
+    // Filtro de busca (end-to-end ID, nome do beneficiário, etc.)
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(w =>
+        w.end_to_end_id?.toLowerCase().includes(searchLower) ||
+        w.payee_name?.toLowerCase().includes(searchLower) ||
+        w.payee_tax_id?.toLowerCase().includes(searchLower) ||
+        w.journal_id?.toString().includes(searchLower)
+      );
+    }
+
+    // Filtro de status
+    if (statusFilter !== "all") {
+      if (statusFilter === "reversed") {
+        filtered = filtered.filter(w => w.is_reversed);
+      } else if (statusFilter === "failed") {
+        filtered = filtered.filter(w => !w.is_reversed);
+      } else if (statusFilter === "can_retry") {
+        filtered = filtered.filter(w => w.can_retry);
+      }
+    }
+
+    // Filtro de valor mínimo
+    if (minAmount) {
+      const min = parseFloat(minAmount);
+      if (!isNaN(min)) {
+        filtered = filtered.filter(w => parseFloat(w.amount) / 100 >= min);
+      }
+    }
+
+    // Filtro de valor máximo
+    if (maxAmount) {
+      const max = parseFloat(maxAmount);
+      if (!isNaN(max)) {
+        filtered = filtered.filter(w => parseFloat(w.amount) / 100 <= max);
+      }
+    }
+
+    setFilteredWithdrawals(filtered);
+  }, [withdrawals, searchTerm, statusFilter, minAmount, maxAmount]);
 
   // Carregar lista de PIX falhados
   const loadWithdrawals = async () => {
@@ -152,19 +202,96 @@ export default function FailedPixManagement() {
 
       {/* Filtros */}
       <Card className="p-4">
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <Label>Filtrar por Tenant</Label>
-            <Select value={selectedTenant} onValueChange={setSelectedTenant}>
-              <SelectTrigger>
-                <SelectValue placeholder="Todos os tenants" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os tenants</SelectItem>
-                <SelectItem value="2">TCR Finance</SelectItem>
-                <SelectItem value="3">OTC</SelectItem>
-              </SelectContent>
-            </Select>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Filtro de Tenant */}
+            <div className="flex-1">
+              <Label>Tenant</Label>
+              <Select value={selectedTenant} onValueChange={setSelectedTenant}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos os tenants" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os tenants</SelectItem>
+                  <SelectItem value="2">TCR Finance</SelectItem>
+                  <SelectItem value="3">OTC</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Filtro de Status */}
+            <div className="flex-1">
+              <Label>Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos os status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os status</SelectItem>
+                  <SelectItem value="failed">Falhados</SelectItem>
+                  <SelectItem value="reversed">Estornados</SelectItem>
+                  <SelectItem value="can_retry">Pode refazer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Filtro de Valor Mínimo */}
+            <div className="flex-1">
+              <Label>Valor Mínimo (R$)</Label>
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={minAmount}
+                onChange={(e) => setMinAmount(e.target.value)}
+                step="0.01"
+                min="0"
+              />
+            </div>
+
+            {/* Filtro de Valor Máximo */}
+            <div className="flex-1">
+              <Label>Valor Máximo (R$)</Label>
+              <Input
+                type="number"
+                placeholder="999999.99"
+                value={maxAmount}
+                onChange={(e) => setMaxAmount(e.target.value)}
+                step="0.01"
+                min="0"
+              />
+            </div>
+          </div>
+
+          {/* Campo de Busca */}
+          <div>
+            <Label>Buscar</Label>
+            <Input
+              placeholder="End-to-End ID, Journal ID, Nome do beneficiário, CPF/CNPJ..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          {/* Indicador de resultados */}
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <span>
+              Mostrando {filteredWithdrawals.length} de {withdrawals.length} PIX falhados
+            </span>
+            {(searchTerm || statusFilter !== "all" || minAmount || maxAmount) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearchTerm("");
+                  setStatusFilter("all");
+                  setMinAmount("");
+                  setMaxAmount("");
+                }}
+              >
+                <X className="h-4 w-4 mr-2" />
+                Limpar filtros
+              </Button>
+            )}
           </div>
         </div>
       </Card>
@@ -175,14 +302,18 @@ export default function FailedPixManagement() {
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
-        ) : withdrawals.length === 0 ? (
+        ) : filteredWithdrawals.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>Nenhum PIX falhado encontrado</p>
+            <p>
+              {withdrawals.length === 0 
+                ? "Nenhum PIX falhado encontrado"
+                : "Nenhum PIX falhado corresponde aos filtros aplicados"}
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {withdrawals.map((withdrawal) => (
+            {filteredWithdrawals.map((withdrawal) => (
               <Card
                 key={withdrawal.journal_id}
                 className="p-4 hover:bg-muted/50 transition-colors"

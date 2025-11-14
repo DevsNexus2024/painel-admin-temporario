@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft } from "lucide-react";
 import FailedPixManagement from "@/components/support/FailedPixManagement";
+import BitsoReconciliationTab from "@/components/BitsoReconciliationTab";
 
 export default function SupportPage() {
   return (
@@ -14,16 +15,23 @@ export default function SupportPage() {
         </div>
 
         <Tabs defaultValue="failed-pix" className="w-full">
-          <TabsList className="mb-6">
+          <TabsList className="grid w-full grid-cols-2 mb-6">
             <TabsTrigger value="failed-pix" className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4" />
               PIX Falhados
             </TabsTrigger>
-            {/* Futuramente adicionar mais abas aqui */}
+            <TabsTrigger value="reconciliation" className="flex items-center gap-2">
+              <ArrowRightLeft className="h-4 w-4" />
+              Reconciliação Bitso
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="failed-pix">
             <FailedPixManagement />
+          </TabsContent>
+
+          <TabsContent value="reconciliation">
+            <BitsoReconciliationTab />
           </TabsContent>
         </Tabs>
       </div>

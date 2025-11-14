@@ -33,6 +33,94 @@ export interface CorpXExtratoParams {
   itensporpagina?: number; // Limite de itens por página (máx 500)
 }
 
+export interface CorpXTransactionItem {
+  id: number | string;
+  corpx_account_id?: number;
+  transactionDatetime?: string;
+  transactionDatetimeUtc?: string;
+  transactionDate?: string;
+  amount?: string;
+  transactionType?: 'C' | 'D';
+  description?: string;
+  pixStatus?: string;
+  pixType?: string;
+  source?: string;
+  payerName?: string;
+  payerDocument?: string;
+  beneficiaryName?: string;
+  beneficiaryDocument?: string;
+  endToEndId?: string;
+  nrMovimento?: string;
+  taxDocument?: string;
+  corpxAccount?: {
+    id?: number;
+    taxDocument?: string;
+    fullName?: string;
+    accountNumber?: string;
+    status?: string;
+  } | null;
+  [key: string]: any;
+}
+
+export interface CorpXTransactionsPagination {
+  total?: number;
+  limit?: number;
+  offset?: number;
+  has_more?: boolean;
+  hasMore?: boolean;
+  current_page?: number;
+  total_pages?: number;
+}
+
+export interface CorpXTransactionsSummary {
+  total_credits?: string;
+  total_debits?: string;
+  net_total?: string;
+  [key: string]: any;
+}
+
+export interface CorpXTransactionsResponse {
+  success: boolean;
+  data: CorpXTransactionItem[];
+  pagination?: CorpXTransactionsPagination;
+  summary?: CorpXTransactionsSummary | null;
+  filters_applied?: Record<string, any>;
+}
+
+export interface CorpXTransactionsParams {
+  accountId?: string;
+  transactionType?: 'C' | 'D';
+  startDate?: string;
+  endDate?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  search?: string;
+  pixStatus?: string;
+  pixType?: string;
+  source?: string;
+  payerDocument?: string;
+  beneficiaryDocument?: string;
+  limit?: number;
+  offset?: number;
+  order?: 'asc' | 'desc';
+}
+
+export interface CorpXSyncRequest {
+  taxDocument: string;
+  startDate: string;
+  endDate: string;
+  dryRun?: boolean;
+}
+
+export interface CorpXSyncResponse {
+  success: boolean;
+  message?: string;
+  totalSynced?: number;
+  startedAt?: string;
+  finishedAt?: string;
+  [key: string]: any;
+}
+
 export interface CorpXPixKey {
   id: string;
   key: string;

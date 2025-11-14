@@ -48,9 +48,11 @@ export default function TopBarBitso() {
       if (transactionsResponse?.data && transactionsResponse.data.length > 0) {
         const firstTransaction = transactionsResponse.data[0];
         
-        // Buscar o posting com accountId=27 (LIQUIDITY_POOL) e side=PAY_IN
+        // Buscar o posting com accountId=27 (LIQUIDITY_POOL) - qualquer side
+        // Para DEPOSIT: accountId=27 tem side=PAY_IN
+        // Para WITHDRAWAL: accountId=27 tem side=PAY_OUT
         const liquidityPoolPosting = firstTransaction.postings?.find(
-          (p: any) => p.accountId === OTC_ACCOUNT_ID.toString() && p.side === 'PAY_IN'
+          (p: any) => p.accountId === OTC_ACCOUNT_ID.toString()
         );
         
         if (liquidityPoolPosting?.account?.balance) {

@@ -15,7 +15,7 @@ export interface FailedWithdrawal {
     id: string;
     slug: string;
     name: string;
-  };
+  } | null;
   end_to_end_id: string;
   created_at: string;
   failed_at: string;
@@ -56,7 +56,7 @@ export interface FailedWithdrawalDetail {
       id: string;
       slug: string;
       name: string;
-    };
+    } | null;
     metadata: {
       amount: string;
       pix_qr_code: string | null;
@@ -284,10 +284,15 @@ export function formatDate(dateString: string): string {
 /**
  * Obter nome do tenant
  */
-export function getTenantName(tenant: { slug: string; name: string } | string): string {
+export function getTenantName(tenant: { slug: string; name: string } | string | null | undefined): string {
+  if (!tenant) {
+    return 'N/A';
+  }
+  
   if (typeof tenant === 'string') {
     return tenant === 'otc' ? 'OTC' : tenant === 'tcr' ? 'TCR' : tenant.toUpperCase();
   }
-  return tenant.name || tenant.slug.toUpperCase();
+  
+  return tenant.name || tenant.slug?.toUpperCase() || 'N/A';
 }
 

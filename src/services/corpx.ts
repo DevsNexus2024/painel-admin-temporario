@@ -1,6 +1,5 @@
 // services/corpx.ts - Serviço CORPX Banking
 // Baseado no guia oficial de integração frontend
-import { api } from '@/config/api';
 import type {
   CorpXSaldoResponse,
   CorpXExtratoResponse,
@@ -17,7 +16,11 @@ import type {
   CorpXQRCodeResponse,
   CorpXCreateAccountRequest,
   CorpXCreateAccountResponse,
-  CorpXErrorResponse
+  CorpXErrorResponse,
+  CorpXTransactionsParams,
+  CorpXTransactionsResponse,
+  CorpXSyncRequest,
+  CorpXSyncResponse
 } from '@/types/corpx';
 
 // Estrutura de resposta padrão do backend CorpX
@@ -46,6 +49,10 @@ const CORPX_CONFIG = {
     
     // 📱 QR CODE PIX (TODO: verificar se existe no backend)
     gerarQRCodePix: '/api/corpx/pix/qrcode',
+
+    // 📊 NOVA API DE TRANSAÇÕES
+    listarTransacoes: '/api/corpx/transactions',
+    sincronizarExtrato: '/api/corpx/sync',
   }
 } as const;
 
@@ -338,6 +345,155 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       totalPages: 1,
       transactions: []
     } as CorpXExtratoResponse;
+  }
+}
+
+/**
+ * Listar transações usando a nova API consolidada
+ * Endpoint: GET /api/corpx/transactions
+ */
+export async function listarTransacoesCorpX(params: CorpXTransactionsParams = {}): Promise<CorpXTransactionsResponse> {
+  try {
+    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const userToken = TOKEN_STORAGE.get();
+
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+
+    const corpxBaseUrl =
+      (API_CONFIG?.BASE_URL && API_CONFIG.BASE_URL.includes('api-bank-v2.gruponexus.com.br'))
+        ? API_CONFIG.BASE_URL
+        : 'https://api-bank-v2.gruponexus.com.br';
+
+    const baseUrlTrimmed = corpxBaseUrl.endsWith('/') ? corpxBaseUrl.slice(0, -1) : corpxBaseUrl;
+    const url = new URL(`${baseUrlTrimmed}${CORPX_CONFIG.endpoints.listarTransacoes}`);
+    const query = url.searchParams;
+
+    if (params.accountId) {
+      query.append('accountId', params.accountId);
+    }
+    if (params.transactionType) {
+      query.append('transactionType', params.transactionType);
+    }
+    if (params.startDate) {
+      query.append('startDate', params.startDate);
+    }
+    if (params.endDate) {
+      query.append('endDate', params.endDate);
+    }
+    if (typeof params.minAmount === 'number') {
+      query.append('minAmount', params.minAmount.toString());
+    }
+    if (typeof params.maxAmount === 'number') {
+      query.append('maxAmount', params.maxAmount.toString());
+    }
+    if (params.search) {
+      query.append('search', params.search);
+    }
+    if (params.pixStatus) {
+      query.append('pixStatus', params.pixStatus);
+    }
+    if (params.pixType) {
+      query.append('pixType', params.pixType);
+    }
+    if (params.source) {
+      query.append('source', params.source);
+    }
+    if (params.payerDocument) {
+      query.append('payerDocument', params.payerDocument);
+    }
+    if (params.beneficiaryDocument) {
+      query.append('beneficiaryDocument', params.beneficiaryDocument);
+    }
+    if (typeof params.limit === 'number') {
+      const safeLimit = Math.min(Math.max(params.limit, 1), 2000);
+      query.append('limit', safeLimit.toString());
+    }
+    if (typeof params.offset === 'number') {
+      query.append('offset', Math.max(params.offset, 0).toString());
+    }
+    if (params.order) {
+      query.append('order', params.order);
+    }
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    return responseData as CorpXTransactionsResponse;
+  } catch (error: any) {
+    console.error('[CORPX-TRANSACTIONS] Erro ao listar transações:', error.message || error);
+    throw error;
+  }
+}
+
+export async function sincronizarExtratoCorpX(params: CorpXSyncRequest): Promise<CorpXSyncResponse> {
+  try {
+    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const userToken = TOKEN_STORAGE.get();
+
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+
+    const corpxBaseUrl =
+      (API_CONFIG?.BASE_URL && API_CONFIG.BASE_URL.includes('api-bank-v2.gruponexus.com.br'))
+        ? API_CONFIG.BASE_URL
+        : 'https://api-bank-v2.gruponexus.com.br';
+
+    const baseUrlTrimmed = corpxBaseUrl.endsWith('/') ? corpxBaseUrl.slice(0, -1) : corpxBaseUrl;
+    const url = `${baseUrlTrimmed}${CORPX_CONFIG.endpoints.sincronizarExtrato}`;
+
+    const payload = {
+      taxDocument: params.taxDocument,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      dryRun: params.dryRun ?? false,
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const text = await response.text();
+    let parsed: any;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch (parseError) {
+        parsed = { success: response.ok, raw: text };
+      }
+    } else {
+      parsed = { success: response.ok };
+    }
+
+    if (!response.ok) {
+      const message = parsed?.message || `HTTP error! status: ${response.status}`;
+      throw new Error(message);
+    }
+
+    return parsed as CorpXSyncResponse;
+  } catch (error: any) {
+    console.error('[CORPX-SYNC] Erro ao sincronizar extrato:', error?.message || error);
+    throw error;
   }
 }
 
@@ -968,6 +1124,8 @@ export const CorpXService = {
   // 💰 CONTA / SALDO
   consultarSaldo: consultarSaldoCorpX,
   consultarExtrato: consultarExtratoCorpX,
+  listarTransacoes: listarTransacoesCorpX,
+  sincronizarExtrato: sincronizarExtratoCorpX,
   criarConta: criarContaCorpX,
   
   // 🔑 CHAVES PIX

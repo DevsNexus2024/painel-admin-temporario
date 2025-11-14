@@ -1214,13 +1214,26 @@ function AccountSelector() {
 
   const handleAccountChange = (accountId: string) => {
     const account = CORPX_ACCOUNTS.find(acc => acc.id === accountId);
-    if (account) {
-      setSelectedAccount(account);
-      toast.success(`Conta alterada para: ${account.razaoSocial}`);
+    if (!account) {
+      return;
     }
+
+    if (!account.available) {
+      toast.error('Conta indisponível no momento.', {
+        description: 'Selecione outra conta para continuar',
+      });
+      return;
+    }
+
+    setSelectedAccount(account);
+    toast.success(account.id === 'ALL' ? 'Exibindo todas as contas' : `Conta alterada para: ${account.razaoSocial}`);
   };
 
   const formatCNPJ = (cnpj: string) => {
+    if (!/\d/.test(cnpj)) {
+      return cnpj === 'ALL' ? '—' : cnpj;
+    }
+
     return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
   };
 
@@ -1241,16 +1254,26 @@ function AccountSelector() {
             <Label htmlFor="account-select">Conta</Label>
             <Select value={selectedAccount.id} onValueChange={handleAccountChange}>
               <SelectTrigger id="account-select">
-                <SelectValue />
+                <SelectValue placeholder="Selecione uma conta" />
               </SelectTrigger>
               <SelectContent>
                 {CORPX_ACCOUNTS.map((account) => (
-                  <SelectItem key={account.id} value={account.id}>
+                  <SelectItem key={account.id} value={account.id} disabled={!account.available}>
                     <div className="flex flex-col">
-                      <span className="font-medium">{account.razaoSocial}</span>
-                      <span className="text-sm text-muted-foreground font-mono">
-                        {formatCNPJ(account.cnpj)}
+                      <span className="font-medium">
+                        {account.razaoSocial}
+                        {!account.available && (
+                          <span className="text-xs text-red-500 ml-2">Indisponível</span>
+                        )}
                       </span>
+                      {account.id !== 'ALL' && (
+                        <span className="text-sm text-muted-foreground font-mono">
+                          {formatCNPJ(account.cnpj)}
+                        </span>
+                      )}
+                      {account.id === 'ALL' && (
+                        <span className="text-sm text-muted-foreground">Consolidado de todas as contas</span>
+                      )}
                     </div>
                   </SelectItem>
                 ))}
@@ -1263,12 +1286,16 @@ function AccountSelector() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium text-sm">{selectedAccount.razaoSocial}</p>
-                <p className="text-xs text-muted-foreground font-mono">
-                  CNPJ: {formatCNPJ(selectedAccount.cnpj)}
-                </p>
+                {selectedAccount.id === 'ALL' ? (
+                  <p className="text-xs text-muted-foreground">Exibindo extrato consolidado de todas as contas</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground font-mono">
+                    CNPJ: {formatCNPJ(selectedAccount.cnpj)}
+                  </p>
+                )}
               </div>
               <Badge variant="secondary" className="text-xs">
-                Ativa
+                {selectedAccount.id === 'ALL' ? 'Consolidado' : selectedAccount.available ? 'Ativa' : 'Indisponível'}
               </Badge>
             </div>
           </div>

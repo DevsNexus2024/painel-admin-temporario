@@ -3,24 +3,34 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 // Lista de contas CorpX disponíveis
 export const CORPX_ACCOUNTS = [
   {
+    id: 'ALL',
+    razaoSocial: 'Todas as contas',
+    cnpj: 'ALL',
+    available: true,
+  },
+  {
     id: '1',
     razaoSocial: 'TTF SERVICOS DIGITAIS LTDA',
-    cnpj: '14283885000198'
+    cnpj: '14283885000198',
+    available: true,
   },
   {
-    id: '2', 
+    id: '3', 
     razaoSocial: 'NEXUS COMERCIO E IMPORTACAO LTDA',
-    cnpj: '62804797000137'
-  },
-  {
-    id: '3',
-    razaoSocial: 'FATTOR INCORPORACOES LTDA', 
-    cnpj: '49741299000124'
+    cnpj: '62804797000137',
+    available: true,
   },
   {
     id: '4',
+    razaoSocial: 'FATTOR INCORPORACOES LTDA', 
+    cnpj: '49741299000124',
+    available: false,
+  },
+  {
+    id: '2',
     razaoSocial: 'TRKBIT TECNOLOGIA E INFORMACAO LTDA',
-    cnpj: '41586874000150'
+    cnpj: '41586874000150',
+    available: true,
   }
 ];
 
@@ -28,6 +38,7 @@ interface CorpXAccount {
   id: string;
   razaoSocial: string;
   cnpj: string;
+  available: boolean;
 }
 
 interface CorpXContextType {

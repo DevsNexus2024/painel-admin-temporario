@@ -21,6 +21,7 @@ import CorpXTTFPage from "./pages/CorpXTTFPage";
 import BitsoPage from "./pages/BitsoPage";
 import BitsoTcrPage from "./pages/BitsoTcrPage";
 import BitsoApiPage from "./pages/BitsoApiPage";
+import IpRevyOtcPage from "./pages/IpRevyOtcPage";
 import SupportPage from "./pages/SupportPage";
 import ContasOrganizacoesLayout from "./pages/ContasOrganizacoes/ContasOrganizacoesLayout";
 import OrganizacaoDetailsPage from "./pages/ContasOrganizacoes/OrganizacaoDetailsPage";
@@ -156,6 +157,7 @@ const App = () => (
                 <Route path="/bitso" element={<BitsoPage />} />
                 <Route path="/bitso-tcr" element={<BitsoTcrPage />} />
                 <Route path="/bitso-api" element={<BitsoApiPage />} />
+                <Route path="/ip-revy-otc" element={<IpRevyOtcPage />} />
                 <Route path="/contas-organizacoes" element={<ContasOrganizacoesLayout />} />
                 <Route path="/suporte" element={<SupportPage />} />
                 <Route path="/contas-organizacoes/organizacao/:id" element={<OrganizacaoDetailsPage />} />
