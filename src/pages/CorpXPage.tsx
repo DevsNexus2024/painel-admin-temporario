@@ -339,28 +339,9 @@ function PixProgressModal({ isOpen, onClose, progressData }: {
 function PixProgramadoComponent() {
   const { selectedAccount } = useCorpX();
   const [isLoading, setIsLoading] = useState(false);
-  const [showProgressModal, setShowProgressModal] = useState(false);
-  const [progressData, setProgressData] = useState({
-    current: 0,
-    total: 0,
-    currentValue: 0,
-    totalProcessed: 0,
-    status: 'processing' as 'processing' | 'completed' | 'error',
-    transactions: [] as Array<{
-      id: number;
-      status: 'pending' | 'processing' | 'success' | 'error';
-      value: number;
-      message?: string;
-    }>
-  });
   const [formData, setFormData] = useState({
-    chave_destino: '',
-    tipo: '2', // PIX
-    montante: '',
-    valor: '',
-    intervalo: '5000',
-    nome: '',
-    description: ''
+    key: '',
+    valor: ''
   });
 
   const formatCurrency = (value: string) => {
@@ -372,23 +353,10 @@ function PixProgramadoComponent() {
     });
   };
 
-  const handleMontanteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, '');
-    const formattedValue = formatCurrency(value);
-    setFormData(prev => ({ ...prev, montante: formattedValue }));
-  };
-
   const handleValorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, '');
     const formattedValue = formatCurrency(value);
     setFormData(prev => ({ ...prev, valor: formattedValue }));
-  };
-
-  const calcularTransacoes = () => {
-    const montanteNum = parseFloat(formData.montante.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
-    const valorNum = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
-    if (valorNum === 0) return 0;
-    return Math.ceil(montanteNum / valorNum);
   };
 
   // Função utilitária para limpar formatação de documentos apenas
@@ -397,127 +365,47 @@ function PixProgramadoComponent() {
     return valor.replace(/\D/g, ''); // Remove tudo que não é número - apenas para CPF/CNPJ
   };
 
-  // Simular progresso das transações
-  const simulateProgress = async (totalTransactions: number, valorPorTransacao: number, intervalo: number) => {
-    const transactions = Array.from({ length: totalTransactions }, (_, i) => ({
-      id: i + 1,
-      status: 'pending' as const,
-      value: valorPorTransacao,
-      message: ''
-    }));
-
-    setProgressData({
-      current: 0,
-      total: totalTransactions,
-      currentValue: valorPorTransacao,
-      totalProcessed: 0,
-      status: 'processing',
-      transactions
-    });
-
-    setShowProgressModal(true);
-
-    // Simular processamento de cada transação
-    for (let i = 0; i < totalTransactions; i++) {
-      // Atualizar transação atual como "processando"
-      setProgressData(prev => ({
-        ...prev,
-        transactions: prev.transactions.map((t, idx) => 
-          idx === i ? { ...t, status: 'processing' } : t
-        )
-      }));
-
-      // Aguardar intervalo
-      await new Promise(resolve => setTimeout(resolve, Math.max(intervalo, 1000)));
-
-      // Simular sucesso (95% de chance) ou erro (5% de chance)
-      const isSuccess = Math.random() > 0.05;
-      
-      setProgressData(prev => ({
-        ...prev,
-        current: i + 1,
-        totalProcessed: prev.totalProcessed + (isSuccess ? valorPorTransacao : 0),
-        transactions: prev.transactions.map((t, idx) => 
-          idx === i ? { 
-            ...t, 
-            status: isSuccess ? 'success' : 'error',
-            message: isSuccess ? 'Transação processada com sucesso' : 'Erro no processamento'
-          } : t
-        )
-      }));
-    }
-
-    // Finalizar
-    setProgressData(prev => ({
-      ...prev,
-      status: 'completed'
-    }));
-  };
 
   const executarPixProgramado = async () => {
-    if (!formData.chave_destino || !formData.montante || !formData.valor) {
-      toast.error("Chave PIX, montante e valor são obrigatórios");
+    if (!formData.key || !formData.valor) {
+      toast.error("Chave PIX e valor são obrigatórios");
       return;
     }
 
-    const montanteNumerico = parseFloat(formData.montante.replace(/[^\d,]/g, '').replace(',', '.'));
     const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
 
-    if (valorNumerico > montanteNumerico) {
-      toast.error("Valor por transação não pode ser maior que o montante total");
+    if (isNaN(valorNumerico) || valorNumerico <= 0) {
+      toast.error("Valor deve ser um número maior que zero");
       return;
     }
-
-    const totalTransactions = Math.ceil(montanteNumerico / valorNumerico);
-    const intervalo = parseInt(formData.intervalo);
 
     setIsLoading(true);
     
     try {
       const payload = {
-        tax_document: limparFormatacaoDocumentoProgramado(selectedAccount.cnpj), // Remove formatação do documento
-        chave_destino: formData.chave_destino, // Mantém a chave PIX original SEM formatação
-        tipo: parseInt(formData.tipo),
-        montante: montanteNumerico,
-        valor: valorNumerico,
-        intervalo: intervalo,
-        nome: formData.nome || undefined,
-        description: formData.description || undefined
+        tax_document: limparFormatacaoDocumentoProgramado(selectedAccount.cnpj),
+        key: formData.key,
+        valor: valorNumerico
       };
 
-
-      // Iniciar simulação de progresso
-      simulateProgress(totalTransactions, valorNumerico, intervalo);
-
-      // Executar a API real em paralelo
       const { executarTransferenciaCompletaProgramadaCorpX } = await import('@/services/corpx');
       
-      // Executar API em background enquanto mostra progresso
-      executarTransferenciaCompletaProgramadaCorpX(payload)
-        .then(result => {
-          if (!result || result.error) {
-            // Atualizar progresso para erro se a API falhar
-            setProgressData(prev => ({ ...prev, status: 'error' }));
-          }
-        })
-        .catch(error => {
-          setProgressData(prev => ({ ...prev, status: 'error' }));
-        });
+      const result = await executarTransferenciaCompletaProgramadaCorpX(payload);
+      
+      if (result && !result.error) {
+        toast.success("PIX programado executado com sucesso");
+      } else {
+        toast.error(result?.message || "Erro ao executar PIX programado");
+      }
 
-      // Reset form após iniciar
+      // Reset form após executar
       setFormData({
-        chave_destino: '',
-        tipo: '2',
-        montante: '',
-        valor: '',
-        intervalo: '5000',
-        nome: '',
-        description: ''
+        key: '',
+        valor: ''
       });
 
     } catch (error) {
       toast.error("Erro ao executar PIX programado");
-      setShowProgressModal(false);
     } finally {
       setIsLoading(false);
     }
@@ -559,85 +447,19 @@ function PixProgramadoComponent() {
             <Label htmlFor="prog-key">Chave PIX Destinatário</Label>
             <Input
               id="prog-key"
-              value={formData.chave_destino}
-              onChange={(e) => setFormData(prev => ({ ...prev, chave_destino: e.target.value }))}
+              value={formData.key}
+              onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
               placeholder="email@exemplo.com, CPF, CNPJ, celular ou chave aleatória"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="prog-montante">Montante Total</Label>
-              <Input
-                id="prog-montante"
-                value={formData.montante}
-                onChange={handleMontanteChange}
-                placeholder="R$ 0,00"
-              />
-            </div>
-            <div>
-              <Label htmlFor="prog-valor">Valor por Transação</Label>
-              <Input
-                id="prog-valor"
-                value={formData.valor}
-                onChange={handleValorChange}
-                placeholder="R$ 0,00"
-              />
-            </div>
-          </div>
-
-          {formData.montante && formData.valor && (
-            <div className="p-2 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="text-sm text-blue-800">
-                <strong>{calcularTransacoes()} transações</strong> serão executadas
-              </p>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="prog-tipo">Tipo</Label>
-              <Select value={formData.tipo} onValueChange={(value) => setFormData(prev => ({ ...prev, tipo: value }))}>
-                <SelectTrigger id="prog-tipo">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Interna</SelectItem>
-                  <SelectItem value="2">PIX</SelectItem>
-                  <SelectItem value="3">Copia e Cola</SelectItem>
-                  <SelectItem value="5">PIX com Dados</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="prog-intervalo">Intervalo (ms)</Label>
-              <Input
-                id="prog-intervalo"
-                value={formData.intervalo}
-                onChange={(e) => setFormData(prev => ({ ...prev, intervalo: e.target.value }))}
-                placeholder="5000"
-                type="number"
-              />
-            </div>
-          </div>
-
           <div>
-            <Label htmlFor="prog-nome">Nome Destinatário (Opcional)</Label>
+            <Label htmlFor="prog-valor">Valor</Label>
             <Input
-              id="prog-nome"
-              value={formData.nome}
-              onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
-              placeholder="Nome do destinatário"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="prog-desc">Descrição (Opcional)</Label>
-            <Input
-              id="prog-desc"
-              value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Descrição das transferências"
+              id="prog-valor"
+              value={formData.valor}
+              onChange={handleValorChange}
+              placeholder="R$ 0,00"
             />
           </div>
         </div>
@@ -658,12 +480,6 @@ function PixProgramadoComponent() {
         </Button>
       </CardContent>
 
-      {/* Modal de Progresso */}
-      <PixProgressModal 
-        isOpen={showProgressModal}
-        onClose={() => setShowProgressModal(false)}
-        progressData={progressData}
-      />
     </Card>
   );
 }
