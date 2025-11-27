@@ -499,48 +499,116 @@ function UserCard({
         <div className="space-y-3">
           {/* BRL */}
           <div className="relative p-4 rounded-xl bg-gradient-to-br from-green-500/10 to-green-500/5 border border-green-500/20">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-8 bg-green-500 rounded-full"></div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">BRL</p>
-                  {isChecked && comparacao.brl.diferenca !== 0 && (
-                    <p className="text-[10px] text-orange-400 money-font mt-0.5">
-                      Diff: R$ {Math.abs(comparacao.brl.diferenca).toFixed(2)}
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-1.5 h-6 bg-green-500 rounded-full"></div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">BRL</p>
+            </div>
+            
+            {isChecked && comparacao ? (
+              <div className="grid grid-cols-2 gap-3">
+                {/* TCR */}
+                <div className="space-y-1">
+                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">TCR</p>
+                  <p className={cn(
+                    "text-base font-bold money-font",
+                    comparacao.brl.local > 0 ? "text-green-400" : "text-gray-500"
+                  )}>
+                    R$ {comparacao.brl.local.toFixed(2)}
+                  </p>
+                </div>
+                
+                {/* Divisor */}
+                <div className="absolute left-1/2 top-4 bottom-4 w-px bg-gradient-to-b from-transparent via-white/20 to-transparent"></div>
+                
+                {/* Brasil Bitcoin */}
+                <div className="space-y-1">
+                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Brasil Bitcoin</p>
+                  <p className={cn(
+                    "text-base font-bold money-font",
+                    comparacao.brl.externo > 0 ? "text-amber-400" : "text-gray-500"
+                  )}>
+                    R$ {comparacao.brl.externo.toFixed(2)}
+                  </p>
+                  {comparacao.brl.diferenca !== 0 && (
+                    <p className={cn(
+                      "text-[10px] money-font mt-0.5",
+                      comparacao.brl.diferenca > 0 ? "text-green-400" : "text-red-400"
+                    )}>
+                      {comparacao.brl.diferenca > 0 ? '+' : ''}R$ {comparacao.brl.diferenca.toFixed(2)}
                     </p>
                   )}
                 </div>
               </div>
-              <p className={cn(
-                "text-lg font-bold money-font",
-                (user.saldos?.BRL ?? 0) > 0 ? "text-green-400" : "text-gray-500"
-              )}>
-                R$ {(user.saldos?.BRL ?? 0).toFixed(2)}
-              </p>
-            </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">TCR</p>
+                </div>
+                <p className={cn(
+                  "text-lg font-bold money-font",
+                  (user.saldos?.BRL ?? 0) > 0 ? "text-green-400" : "text-gray-500"
+                )}>
+                  R$ {(user.saldos?.BRL ?? 0).toFixed(2)}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* USDT */}
           <div className="relative p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-blue-500/5 border border-blue-500/20">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-8 bg-blue-500 rounded-full"></div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">USDT</p>
-                  {isChecked && comparacao.usdt.diferenca !== 0 && (
-                    <p className="text-[10px] text-orange-400 money-font mt-0.5">
-                      Diff: {Math.abs(comparacao.usdt.diferenca).toFixed(8)}
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-1.5 h-6 bg-blue-500 rounded-full"></div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">USDT</p>
+            </div>
+            
+            {isChecked && comparacao ? (
+              <div className="grid grid-cols-2 gap-3">
+                {/* TCR */}
+                <div className="space-y-1">
+                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">TCR</p>
+                  <p className={cn(
+                    "text-base font-bold money-font",
+                    comparacao.usdt.local > 0 ? "text-blue-400" : "text-gray-500"
+                  )}>
+                    {comparacao.usdt.local.toFixed(8)}
+                  </p>
+                </div>
+                
+                {/* Divisor */}
+                <div className="absolute left-1/2 top-4 bottom-4 w-px bg-gradient-to-b from-transparent via-white/20 to-transparent"></div>
+                
+                {/* Brasil Bitcoin */}
+                <div className="space-y-1">
+                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Brasil Bitcoin</p>
+                  <p className={cn(
+                    "text-base font-bold money-font",
+                    comparacao.usdt.externo > 0 ? "text-cyan-400" : "text-gray-500"
+                  )}>
+                    {comparacao.usdt.externo.toFixed(8)}
+                  </p>
+                  {comparacao.usdt.diferenca !== 0 && (
+                    <p className={cn(
+                      "text-[10px] money-font mt-0.5",
+                      comparacao.usdt.diferenca > 0 ? "text-green-400" : "text-red-400"
+                    )}>
+                      {comparacao.usdt.diferenca > 0 ? '+' : ''}{comparacao.usdt.diferenca.toFixed(8)}
                     </p>
                   )}
                 </div>
               </div>
-              <p className={cn(
-                "text-lg font-bold money-font",
-                (user.saldos?.USDT ?? 0) > 0 ? "text-blue-400" : "text-gray-500"
-              )}>
-                {(user.saldos?.USDT ?? 0).toFixed(8)}
-              </p>
-            </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">TCR</p>
+                </div>
+                <p className={cn(
+                  "text-lg font-bold money-font",
+                  (user.saldos?.USDT ?? 0) > 0 ? "text-blue-400" : "text-gray-500"
+                )}>
+                  {(user.saldos?.USDT ?? 0).toFixed(8)}
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
