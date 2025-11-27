@@ -110,7 +110,7 @@ const App = () => (
       <BankingSystemInitializer>
         <AuthProvider>
           <Toaster />
-          <Sonner position="top-right" theme="dark" />
+          <Sonner />
           <BrowserRouter>
             <Routes>
               {/* Rota pública de autenticação UNIFICADA */}
