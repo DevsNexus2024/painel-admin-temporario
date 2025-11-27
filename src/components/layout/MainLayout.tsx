@@ -20,7 +20,8 @@ import {
     Lock,
     KeyRound,
     Building2,
-    HelpCircle
+    HelpCircle,
+    FileSearch
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -293,9 +294,27 @@ export default function MainLayout() {
                                     
                                     {/* ✅ MENU ATIVO */}
                                     <SidebarLink
-                                        to="/bitso-tcr"
+                                        to="/brasilcash-tcr"
                                         icon={<CreditCard className="h-4 w-4" />}
-                                        label="Bitso <> TCR"
+                                        label="BrasilCash <> TCR"
+                                        badge="NOVO"
+                                        isCollapsed={isCollapsed}
+                                    />
+                                    
+                                    {/* ✅ MENU ATIVO */}
+                                    <SidebarLink
+                                        to="/ip-revy-tcr"
+                                        icon={<CreditCard className="h-4 w-4" />}
+                                        label="IP Revy <> TCR"
+                                        badge="NOVO"
+                                        isCollapsed={isCollapsed}
+                                    />
+                                    
+                                    {/* ✅ MENU ATIVO - Auditoria de Depósitos */}
+                                    <SidebarLink
+                                        to="/auditoria-depositos"
+                                        icon={<FileSearch className="h-4 w-4" />}
+                                        label="Auditoria de Depósitos"
                                         badge="NOVO"
                                         isCollapsed={isCollapsed}
                                     />

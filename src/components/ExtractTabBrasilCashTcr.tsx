@@ -21,21 +21,21 @@ import { TCRVerificacaoService } from "@/services/tcrVerificacao";
 // Constantes para TCR BrasilCash
 const TCR_ACCOUNT_ID = BrasilCashRealtimeService.TCR_ACCOUNT_ID;
 
-export default function ExtractTabBitsoTcr() {
-  // WebSocket filtrado para TCR
+export default function ExtractTabBrasilCashTcr() {
+  // WebSocket filtrado para TCR (mantendo compatibilidade por enquanto)
   const { isConnected } = useFilteredBitsoWebSocket({
     context: 'tcr',
-    tenantId: TCR_TENANT_ID,
+    tenantId: 2,
   });
 
   // Estados de transações
-  const [transactions, setTransactions] = useState<BitsoTransactionDB[]>([]);
+  const [transactions, setTransactions] = useState<BrasilCashTransactionDB[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recordsPerPage, setRecordsPerPage] = useState(500);
+  const [recordsPerPage, setRecordsPerPage] = useState(2000); // Usar limite máximo da API
   const [pagination, setPagination] = useState({
     total: 0,
-    limit: 500,
+    limit: 2000, // Limite máximo da API
     offset: 0,
     has_more: false,
     current_page: 1,
@@ -45,8 +45,8 @@ export default function ExtractTabBitsoTcr() {
   // Estados de filtros
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<{ start: string; end: string }>({
-    start: BitsoRealtimeService.getDateStringDaysAgo(7),
-    end: BitsoRealtimeService.getTodayDateString()
+    start: BrasilCashRealtimeService.getDateStringDaysAgo(7),
+    end: BrasilCashRealtimeService.getTodayDateString()
   });
   
   // Estado para o Date Range Picker
@@ -56,16 +56,26 @@ export default function ExtractTabBitsoTcr() {
   });
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'FUNDING' | 'WITHDRAWAL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'COMPLETE' | 'FAILED' | 'CANCELLED'>('ALL');
+  const [methodTypeFilter, setMethodTypeFilter] = useState<'ALL' | 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode'>('ALL');
   const [minAmount, setMinAmount] = useState<string>("");
   const [maxAmount, setMaxAmount] = useState<string>("");
   const [specificAmount, setSpecificAmount] = useState<string>("");
+  const [endToEndIdFilter, setEndToEndIdFilter] = useState<string>("");
+  const [externalIdFilter, setExternalIdFilter] = useState<string>("");
   const [showReversalsOnly, setShowReversalsOnly] = useState(false);
+
+  // Estados para sincronização de extrato
+  const [syncing, setSyncing] = useState(false);
+  const [syncDateRange, setSyncDateRange] = useState<{ from: Date; to: Date }>({
+    from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    to: new Date()
+  });
+  const [showSyncDatePicker, setShowSyncDatePicker] = useState(false);
 
   // Estados para funcionalidade de Compensação
   const [compensationModalOpen, setCompensationModalOpen] = useState(false);
   const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<any>(null);
   const [compensatedRecords, setCompensatedRecords] = useState<Set<string>>(new Set());
-  const [syncing, setSyncing] = useState(false);
 
   // Estado para controlar linha expandida
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
@@ -79,95 +89,7 @@ export default function ExtractTabBitsoTcr() {
     loading: false
   });
 
-  // Função para converter LedgerTransaction para BitsoTransactionDB
-  const mapLedgerToBitsoTransaction = (ledgerTx: any): BitsoTransactionDB => {
-    const metadata = ledgerTx.metadata || {};
-    const posting = ledgerTx.postings?.find((p: any) => p.accountId === TCR_ACCOUNT_ID.toString() && p.side === 'PAY_IN') || ledgerTx.postings?.[0];
-    
-    const isDeposit = ledgerTx.journalType === 'DEPOSIT';
-    let payerName = '';
-    let payeeName = '';
-    
-    if (isDeposit) {
-      payerName = metadata.payer_name || '';
-      payeeName = metadata.payee_name || '';
-    } else {
-      // Para saques, verificar se há payee_name nos metadados
-      payeeName = metadata.payee_name || '';
-      
-      // Se ainda não tiver, tentar extrair da description se houver padrão " - NOME"
-      if (!payeeName) {
-        const description = ledgerTx.description || '';
-        const nameMatch = description.match(/ - (.+)$/);
-        if (nameMatch && nameMatch[1]) {
-          payeeName = nameMatch[1].trim();
-        }
-      }
-    }
-    
-    // Reconciliation ID: para DEPOSIT usar metadata.reconciliation_id, para WITHDRAWAL usar idemKey
-    const reconciliationId = isDeposit 
-      ? (metadata.reconciliation_id || ledgerTx.idemKey || '')
-      : (ledgerTx.idemKey || '');
-    
-    // Determinar status real baseado nos metadados
-    // Para WITHDRAWAL: usar withdrawal_status
-    // Para DEPOSIT: usar deposit_status ou status padrão
-    let status: 'PENDING' | 'COMPLETE' | 'FAILED' | 'CANCELLED' = 'COMPLETE';
-    
-    if (ledgerTx.journalType === 'WITHDRAWAL') {
-      const withdrawalStatus = metadata.withdrawal_status?.toUpperCase();
-      if (withdrawalStatus === 'FAILED') {
-        status = 'FAILED';
-      } else if (withdrawalStatus === 'PENDING' || withdrawalStatus === 'IN_PROGRESS') {
-        status = 'PENDING';
-      } else if (withdrawalStatus === 'CANCELLED') {
-        status = 'CANCELLED';
-      } else if (withdrawalStatus === 'COMPLETE' || withdrawalStatus === 'COMPLETED') {
-        status = 'COMPLETE';
-      }
-      // Se há failed_at mas não há withdrawal_status, considerar como FAILED
-      if (metadata.failed_at && !withdrawalStatus) {
-        status = 'FAILED';
-      }
-    } else if (ledgerTx.journalType === 'DEPOSIT') {
-      const depositStatus = metadata.deposit_status?.toUpperCase();
-      if (depositStatus === 'FAILED') {
-        status = 'FAILED';
-      } else if (depositStatus === 'PENDING' || depositStatus === 'IN_PROGRESS') {
-        status = 'PENDING';
-      } else if (depositStatus === 'CANCELLED') {
-        status = 'CANCELLED';
-      } else if (depositStatus === 'COMPLETE' || depositStatus === 'COMPLETED') {
-        status = 'COMPLETE';
-      }
-    }
-    
-    return {
-      id: parseInt(ledgerTx.id),
-      type: ledgerTx.journalType === 'DEPOSIT' ? 'FUNDING' : 'WITHDRAWAL',
-      transactionId: ledgerTx.providerTxId || ledgerTx.externalId || ledgerTx.id,
-      endToEndId: ledgerTx.endToEndId || '',
-      reconciliationId: reconciliationId,
-      status: status,
-      amount: metadata.net_amount || metadata.gross_amount || metadata.amount || posting?.amount || '0',
-      fee: metadata.fee || '0',
-      currency: ledgerTx.functionalCurrency || 'BRL',
-      method: 'pixstark',
-      methodName: 'Pix',
-      payerName: payerName,
-      payerTaxId: metadata.payer_tax_id || '',
-      payerBankName: '',
-      payeeName: payeeName,
-      createdAt: ledgerTx.createdAt,
-      receivedAt: ledgerTx.createdAt,
-      updatedAt: ledgerTx.updatedAt || ledgerTx.createdAt,
-      isReversal: false,
-      originEndToEndId: null
-    };
-  };
-
-  // Buscar transações do ledger
+  // Buscar transações do BrasilCash
   const fetchTransactions = async (resetOffset: boolean = false, overrideLimit?: number) => {
     setLoading(true);
     setError(null);
@@ -176,34 +98,89 @@ export default function ExtractTabBitsoTcr() {
       const limit = overrideLimit ?? recordsPerPage;
       const offset = resetOffset ? 0 : pagination.offset;
       
-      const response = await ledgerApi.listTransactions(TCR_TENANT_ID, {
-        provider: 'BITSO',
+      // Converter filtros de status
+      // Nota: Quando PENDING, não filtramos na API (busca pending e processing) e filtramos localmente
+      let statusFilterApi: 'pending' | 'processing' | 'paid' | 'refused' | undefined;
+      if (statusFilter === 'COMPLETE') statusFilterApi = 'paid';
+      else if (statusFilter === 'FAILED') statusFilterApi = 'refused';
+      // Para PENDING, não filtramos na API (vai buscar todos e filtrar localmente)
+      
+      // Converter filtros de tipo para method
+      let methodFilter: 'cashin' | 'cashout' | undefined;
+      if (typeFilter === 'FUNDING') methodFilter = 'cashin';
+      else if (typeFilter === 'WITHDRAWAL') methodFilter = 'cashout';
+      
+      // Converter filtro de tipo de método
+      let typeFilterApi: 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode' | undefined;
+      if (methodTypeFilter !== 'ALL') {
+        typeFilterApi = methodTypeFilter;
+      }
+      
+      // Converter valor específico para centavos (API espera em centavos)
+      let amountFilter: number | undefined;
+      if (specificAmount) {
+        amountFilter = Math.round(parseFloat(specificAmount) * 100);
+      }
+      
+      const filters: BrasilCashTransactionFilters = {
         accountId: TCR_ACCOUNT_ID,
         startDate: dateFilter.start,
         endDate: dateFilter.end,
+        status: statusFilterApi,
+        method: methodFilter,
+        type: typeFilterApi,
+        endToEndId: endToEndIdFilter.trim() || undefined,
+        external_id: externalIdFilter.trim() || undefined,
+        amount: amountFilter,
         limit,
         offset,
-        includePostings: true,
-      });
-
-      // Converter dados do ledger para formato BitsoTransactionDB
-      const mappedTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
+      };
       
-      // Aplicar filtros locais que não estão na API
-      let filtered = mappedTransactions;
+      // Buscar todas as páginas se necessário
+      let allMappedTransactions: BrasilCashTransactionDB[] = [];
+      let currentOffset = offset;
+      let hasMore = true;
+      let totalFromApi = 0;
       
-      if (typeFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.type === typeFilter);
+      while (hasMore) {
+        const currentFilters: BrasilCashTransactionFilters = {
+          ...filters,
+          limit,
+          offset: currentOffset,
+        };
+        
+        const response = await BrasilCashRealtimeService.getTransactions(currentFilters);
+        
+      // Converter dados do BrasilCash para formato BrasilCashTransactionDB
+      const mappedTransactions = (response.data || [])
+        .map(BrasilCashRealtimeService.mapBrasilCashToTransactionDB)
+        // Filtrar transações com event_type 'tarifa'
+        .filter(tx => tx.eventType !== 'tarifa');
+      allMappedTransactions = [...allMappedTransactions, ...mappedTransactions];
+        
+        // Atualizar informações de paginação
+        totalFromApi = response.pagination?.total ?? allMappedTransactions.length;
+        hasMore = response.pagination?.has_more ?? false;
+        
+        // Se não há mais páginas ou já buscamos todas as transações, parar
+        if (!hasMore || allMappedTransactions.length >= totalFromApi) {
+          break;
+        }
+        
+        // Avançar para próxima página
+        currentOffset += limit;
+        
+        // Limite de segurança: não buscar mais de 10 páginas de uma vez
+        if (currentOffset >= limit * 10) {
+          break;
+        }
       }
       
-      if (statusFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.status === statusFilter);
-      }
+      // Aplicar filtros locais que não estão na API (min/max amount)
+      let filtered = allMappedTransactions;
       
-      if (specificAmount) {
-        const amount = parseFloat(specificAmount);
-        filtered = filtered.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
-      } else {
+      // Filtros de valor mínimo e máximo (já que a API só suporta valor exato)
+      if (!specificAmount) {
         if (minAmount) {
           const min = parseFloat(minAmount);
           filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
@@ -217,15 +194,15 @@ export default function ExtractTabBitsoTcr() {
       setTransactions(filtered);
       
       // Atualizar paginação baseada na resposta
-      const total = response.pagination?.total ?? filtered.length;
-      const hasMore = response.pagination?.hasMore ?? response.pagination?.has_more ?? false;
+      const total = totalFromApi > 0 ? totalFromApi : filtered.length;
+      const hasMorePages = hasMore;
       const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
 
       setPagination({
         total,
         limit,
         offset,
-        has_more: hasMore,
+        has_more: hasMorePages,
         current_page: Math.floor(offset / limit) + 1,
         total_pages: totalPages
       });
@@ -244,27 +221,59 @@ export default function ExtractTabBitsoTcr() {
     setMetrics(prev => ({ ...prev, loading: true }));
     
     try {
+      // Converter filtros de status
+      // Nota: Quando PENDING, não filtramos na API (busca pending e processing) e filtramos localmente
+      let statusFilterApi: 'pending' | 'processing' | 'paid' | 'refused' | undefined;
+      if (statusFilter === 'COMPLETE') statusFilterApi = 'paid';
+      else if (statusFilter === 'FAILED') statusFilterApi = 'refused';
+      // Para PENDING, não filtramos na API (vai buscar todos e filtrar localmente)
+      
+      // Converter filtros de tipo para method
+      let methodFilter: 'cashin' | 'cashout' | undefined;
+      if (typeFilter === 'FUNDING') methodFilter = 'cashin';
+      else if (typeFilter === 'WITHDRAWAL') methodFilter = 'cashout';
+      
+      // Converter filtro de tipo de método
+      let typeFilterApi: 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode' | undefined;
+      if (methodTypeFilter !== 'ALL') {
+        typeFilterApi = methodTypeFilter;
+      }
+      
+      // Converter valor específico para centavos
+      let amountFilter: number | undefined;
+      if (specificAmount) {
+        amountFilter = Math.round(parseFloat(specificAmount) * 100);
+      }
+      
       // Buscar TODAS as transações com os filtros aplicados
-      const response = await ledgerApi.listTransactions(TCR_TENANT_ID, {
-        provider: 'BITSO',
+      const filters: BrasilCashTransactionFilters = {
         accountId: TCR_ACCOUNT_ID,
         startDate: dateFilter.start,
         endDate: dateFilter.end,
-        limit: 999999,
+        status: statusFilterApi,
+        method: methodFilter,
+        type: typeFilterApi,
+        endToEndId: endToEndIdFilter.trim() || undefined,
+        external_id: externalIdFilter.trim() || undefined,
+        amount: amountFilter,
+        limit: 2000, // Máximo permitido pela API
         offset: 0,
-        includePostings: true,
-      });
+      };
+      
+      const response = await BrasilCashRealtimeService.getTransactions(filters);
 
-      const allTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
+      const allTransactions = (response.data || [])
+        .map(BrasilCashRealtimeService.mapBrasilCashToTransactionDB)
+        // Filtrar transações com event_type 'tarifa'
+        .filter(tx => tx.eventType !== 'tarifa');
       
       // Aplicar os mesmos filtros locais
       let filtered = allTransactions;
       
-      if (typeFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.type === typeFilter);
-      }
-      
-      if (statusFilter !== 'ALL') {
+      // Filtrar por status PENDING localmente (inclui pending e processing da API)
+      if (statusFilter === 'PENDING') {
+        filtered = filtered.filter(tx => tx.status === 'PENDING');
+      } else if (statusFilter !== 'ALL') {
         filtered = filtered.filter(tx => tx.status === statusFilter);
       }
       
@@ -291,6 +300,7 @@ export default function ExtractTabBitsoTcr() {
           tx.transactionId?.toLowerCase().includes(searchLower) ||
           tx.endToEndId?.toLowerCase().includes(searchLower) ||
           tx.reconciliationId?.toLowerCase().includes(searchLower) ||
+          tx.description?.toLowerCase().includes(searchLower) ||
           tx.amount?.toString().includes(searchLower)
         );
       }
@@ -328,7 +338,7 @@ export default function ExtractTabBitsoTcr() {
     }, 500); // Debounce de 500ms
 
     return () => clearTimeout(timer);
-  }, [typeFilter, statusFilter, minAmount, maxAmount, specificAmount, showReversalsOnly, searchTerm]);
+  }, [typeFilter, statusFilter, methodTypeFilter, minAmount, maxAmount, specificAmount, endToEndIdFilter, externalIdFilter, showReversalsOnly, searchTerm]);
 
   // Sincronizar dateRange com dateFilter
   useEffect(() => {
@@ -361,10 +371,13 @@ export default function ExtractTabBitsoTcr() {
 
   // Filtro de busca local (frontend)
   const filteredTransactions = useMemo(() => {
-    if (!searchTerm.trim()) return transactions;
+    // Filtrar tarifas primeiro
+    let filtered = transactions.filter(tx => tx.eventType !== 'tarifa');
+    
+    if (!searchTerm.trim()) return filtered;
 
     const searchLower = searchTerm.toLowerCase().trim();
-    return transactions.filter(tx => {
+    return filtered.filter(tx => {
       return (
         tx.payerName?.toLowerCase().includes(searchLower) ||
         tx.payeeName?.toLowerCase().includes(searchLower) ||
@@ -372,18 +385,19 @@ export default function ExtractTabBitsoTcr() {
         tx.transactionId?.toLowerCase().includes(searchLower) ||
         tx.endToEndId?.toLowerCase().includes(searchLower) ||
         tx.reconciliationId?.toLowerCase().includes(searchLower) ||
+        tx.description?.toLowerCase().includes(searchLower) ||
         tx.amount?.toString().includes(searchLower)
       );
     });
   }, [transactions, searchTerm]);
 
   const formatCurrency = (value: string | number) => {
-    return BitsoRealtimeService.formatCurrency(value);
+    return BrasilCashRealtimeService.formatCurrency(value);
   };
 
   const formatDate = (dateString: string) => {
     try {
-      return BitsoRealtimeService.formatUTCToLocalString(dateString);
+      return BrasilCashRealtimeService.formatUTCToLocalString(dateString);
     } catch {
       return dateString;
     }
@@ -391,29 +405,59 @@ export default function ExtractTabBitsoTcr() {
 
   const exportToCSV = async () => {
     try {
-      toast.info('Preparando exportação...', { description: 'Buscando todos os registros TCR do ledger' });
+      toast.info('Preparando exportação...', { description: 'Buscando todos os registros TCR do BrasilCash' });
       
-      // ✅ Buscar TODOS os registros do ledger para TCR
-      let allTransactions: BitsoTransactionDB[] = [];
+      // ✅ Buscar TODOS os registros do BrasilCash para TCR
+      let allTransactions: BrasilCashTransactionDB[] = [];
       let offset = 0;
-      const limit = 500;
+      const limit = 2000; // Máximo permitido pela API
       let hasMore = true;
 
       while (hasMore) {
-        const response = await ledgerApi.listTransactions(TCR_TENANT_ID, {
-          provider: 'BITSO',
+        // Converter filtros para exportação
+        // Nota: Quando PENDING, não filtramos na API (busca pending e processing) e filtramos localmente
+        let statusFilterApi: 'pending' | 'processing' | 'paid' | 'refused' | undefined;
+        if (statusFilter === 'COMPLETE') statusFilterApi = 'paid';
+        else if (statusFilter === 'FAILED') statusFilterApi = 'refused';
+        // Para PENDING, não filtramos na API (vai buscar todos e filtrar localmente)
+        
+        let methodFilter: 'cashin' | 'cashout' | undefined;
+        if (typeFilter === 'FUNDING') methodFilter = 'cashin';
+        else if (typeFilter === 'WITHDRAWAL') methodFilter = 'cashout';
+        
+        let typeFilterApi: 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode' | undefined;
+        if (methodTypeFilter !== 'ALL') {
+          typeFilterApi = methodTypeFilter;
+        }
+        
+        let amountFilter: number | undefined;
+        if (specificAmount) {
+          amountFilter = Math.round(parseFloat(specificAmount) * 100);
+        }
+        
+        const filters: BrasilCashTransactionFilters = {
           accountId: TCR_ACCOUNT_ID,
           startDate: dateFilter.start,
           endDate: dateFilter.end,
-          limit: limit,
-          offset: offset,
-          includePostings: true,
-        });
+          status: statusFilterApi,
+          method: methodFilter,
+          type: typeFilterApi,
+          endToEndId: endToEndIdFilter.trim() || undefined,
+          external_id: externalIdFilter.trim() || undefined,
+          amount: amountFilter,
+          limit,
+          offset,
+        };
+        
+        const response = await BrasilCashRealtimeService.getTransactions(filters);
 
-        const mappedTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
+        const mappedTransactions = (response.data || [])
+          .map(BrasilCashRealtimeService.mapBrasilCashToTransactionDB)
+          // Filtrar transações com event_type 'tarifa'
+          .filter(tx => tx.eventType !== 'tarifa');
         allTransactions = [...allTransactions, ...mappedTransactions];
 
-        hasMore = response.pagination?.hasMore || false;
+        hasMore = response.pagination?.has_more || false;
         offset += limit;
       }
 
@@ -424,7 +468,10 @@ export default function ExtractTabBitsoTcr() {
         transactionsToExport = transactionsToExport.filter(tx => tx.type === typeFilter);
       }
       
-      if (statusFilter !== 'ALL') {
+      // Filtrar por status PENDING localmente (inclui pending e processing da API)
+      if (statusFilter === 'PENDING') {
+        transactionsToExport = transactionsToExport.filter(tx => tx.status === 'PENDING');
+      } else if (statusFilter !== 'ALL') {
         transactionsToExport = transactionsToExport.filter(tx => tx.status === statusFilter);
       }
       
@@ -444,7 +491,7 @@ export default function ExtractTabBitsoTcr() {
       
       if (searchTerm.trim()) {
         const searchLower = searchTerm.toLowerCase();
-        transactionsToExport = transactionsToExport.filter((t: BitsoTransactionDB) => {
+        transactionsToExport = transactionsToExport.filter((t: BrasilCashTransactionDB) => {
           return (
             t.payerName?.toLowerCase().includes(searchLower) ||
             t.payeeName?.toLowerCase().includes(searchLower) ||
@@ -457,10 +504,10 @@ export default function ExtractTabBitsoTcr() {
       }
 
       // Gerar CSV com todas as colunas relevantes para TCR
-      const headers = ['Data', 'Tipo', 'Status', 'Valor', 'Moeda', 'Nome Pagador', 'Nome Beneficiário', 'Banco', 'End-to-End ID', 'Transaction ID', 'Reconciliation ID'];
-      const rows = transactionsToExport.map((t: BitsoTransactionDB) => [
+      const headers = ['Data', 'Tipo', 'Status', 'Valor', 'Moeda', 'Nome Pagador', 'Nome Beneficiário', 'Banco', 'End-to-End ID', 'Transaction ID', 'External ID', 'Descrição'];
+      const rows = transactionsToExport.map((t: BrasilCashTransactionDB) => [
         formatDate(t.createdAt),
-        BitsoRealtimeService.getTransactionTypeLabel(t.type),
+        BrasilCashRealtimeService.getTransactionTypeLabel(t.type),
         t.status,
         t.amount,
         t.currency,
@@ -469,7 +516,8 @@ export default function ExtractTabBitsoTcr() {
         t.payerBankName || '',
         t.endToEndId || '',
         t.transactionId || '',
-        t.reconciliationId || ''
+        t.reconciliationId || '', // External ID
+        t.description || '' // Descrição
       ]);
 
       const csvContent = [
@@ -480,11 +528,11 @@ export default function ExtractTabBitsoTcr() {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `extrato-bitso-tcr-${new Date().toISOString().split('T')[0]}.csv`;
+      link.download = `extrato-brasilcash-tcr-${new Date().toISOString().split('T')[0]}.csv`;
       link.click();
       
       toast.success(`${transactionsToExport.length} registros TCR exportados com sucesso!`, {
-        description: `Arquivo: extrato-bitso-tcr-${new Date().toISOString().split('T')[0]}.csv`
+        description: `Arquivo: extrato-brasilcash-tcr-${new Date().toISOString().split('T')[0]}.csv`
       });
     } catch (error: any) {
       toast.error('Erro ao exportar extrato', {
@@ -493,12 +541,12 @@ export default function ExtractTabBitsoTcr() {
     }
   };
 
-  const isRecordCompensated = (transaction: BitsoTransactionDB): boolean => {
-    const recordKey = `bitso-tcr-${transaction.id}`;
+  const isRecordCompensated = (transaction: BrasilCashTransactionDB): boolean => {
+    const recordKey = `brasilcash-tcr-${transaction.id}`;
     return compensatedRecords.has(recordKey);
   };
 
-  const handleCompensation = async (transaction: BitsoTransactionDB, event: React.MouseEvent) => {
+  const handleCompensation = async (transaction: BrasilCashTransactionDB, event: React.MouseEvent) => {
     event.stopPropagation();
     
     if (isRecordCompensated(transaction)) {
@@ -517,11 +565,11 @@ export default function ExtractTabBitsoTcr() {
         : (transaction.payeeName || 'N/A'),  // Quem recebeu (para saques)
       document: transaction.payerTaxId || '',
       code: transaction.endToEndId,
-      descCliente: `Bitso TCR - ${transaction.type === 'FUNDING' 
+      descCliente: `BrasilCash TCR - ${transaction.type === 'FUNDING' 
         ? (transaction.payerName || 'N/A')
         : (transaction.payeeName || 'N/A')}`,
       identified: true,
-      descricaoOperacao: `Bitso TCR - ${transaction.type === 'FUNDING' 
+      descricaoOperacao: `BrasilCash TCR - ${transaction.type === 'FUNDING' 
         ? (transaction.payerName || 'N/A')
         : (transaction.payeeName || 'N/A')}`,
       _original: transaction
@@ -571,7 +619,7 @@ export default function ExtractTabBitsoTcr() {
 
   const handleCloseCompensationModal = (wasSuccessful?: boolean) => {
     if (wasSuccessful && selectedCompensationRecord) {
-      const recordKey = `bitso-tcr-${selectedCompensationRecord._original.id}`;
+      const recordKey = `brasilcash-tcr-${selectedCompensationRecord._original.id}`;
       setCompensatedRecords(prev => new Set(prev).add(recordKey));
       toast.success('Compensação realizada com sucesso!');
       fetchTransactions(true); // Recarregar dados
@@ -582,23 +630,46 @@ export default function ExtractTabBitsoTcr() {
   };
 
   const handleSyncExtrato = async () => {
+    // Validar se as datas foram selecionadas
+    if (!syncDateRange.from || !syncDateRange.to) {
+      toast.error('Selecione as datas', {
+        description: 'Por favor, selecione a data inicial e final para sincronização'
+      });
+      return;
+    }
+
     setSyncing(true);
+    setShowSyncDatePicker(false);
+    
     try {
-      // Importar o serviço dinamicamente
-      const { syncBitsoExtract } = await import('@/services/bitso-sync');
-      
-      // Chamar API de sincronização
-      const result = await syncBitsoExtract();
+      // Formatar datas para YYYY-MM-DD
+      const formatDate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const startDate = formatDate(syncDateRange.from);
+      const endDate = formatDate(syncDateRange.to);
+
+      // Chamar API de sincronização do BrasilCash
+      const result = await BrasilCashRealtimeService.syncTransactions(
+        startDate,
+        endDate,
+        TCR_ACCOUNT_ID
+      );
       
       if (result.success) {
         toast.success('Extrato sincronizado!', {
-          description: result.message || 'Dados sincronizados com sucesso'
+          description: `Período: ${startDate} a ${endDate} • Total: ${result.total}, Criados: ${result.created}, Atualizados: ${result.updated}`
         });
         
         // Recarregar dados após sync
         await fetchTransactions(true);
+        await fetchMetrics();
       } else {
-        throw new Error(result.error || 'Erro ao sincronizar');
+        throw new Error(result.errors?.length ? result.errors[0].toString() : 'Erro ao sincronizar');
       }
     } catch (err: any) {
       toast.error('Erro ao sincronizar extrato', {
@@ -645,34 +716,63 @@ export default function ExtractTabBitsoTcr() {
     
     try {
       const limit = overrideLimit ?? recordsPerPage;
-      const response = await ledgerApi.listTransactions(TCR_TENANT_ID, {
-        provider: 'BITSO',
+      
+      // Converter filtros de status
+      // Nota: Quando PENDING, não filtramos na API (busca pending e processing) e filtramos localmente
+      let statusFilterApi: 'pending' | 'processing' | 'paid' | 'refused' | undefined;
+      if (statusFilter === 'COMPLETE') statusFilterApi = 'paid';
+      else if (statusFilter === 'FAILED') statusFilterApi = 'refused';
+      // Para PENDING, não filtramos na API (vai buscar todos e filtrar localmente)
+      
+      // Converter filtros de tipo para method
+      let methodFilter: 'cashin' | 'cashout' | undefined;
+      if (typeFilter === 'FUNDING') methodFilter = 'cashin';
+      else if (typeFilter === 'WITHDRAWAL') methodFilter = 'cashout';
+      
+      // Converter filtro de tipo de método
+      let typeFilterApi: 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode' | undefined;
+      if (methodTypeFilter !== 'ALL') {
+        typeFilterApi = methodTypeFilter;
+      }
+      
+      // Converter valor específico para centavos
+      let amountFilter: number | undefined;
+      if (specificAmount) {
+        amountFilter = Math.round(parseFloat(specificAmount) * 100);
+      }
+      
+      const filters: BrasilCashTransactionFilters = {
         accountId: TCR_ACCOUNT_ID,
         startDate: dateFilter.start,
         endDate: dateFilter.end,
+        status: statusFilterApi,
+        method: methodFilter,
+        type: typeFilterApi,
+        endToEndId: endToEndIdFilter.trim() || undefined,
+        external_id: externalIdFilter.trim() || undefined,
+        amount: amountFilter,
         limit,
         offset,
-        includePostings: true,
-      });
-
-      // Converter dados do ledger para formato BitsoTransactionDB
-      const mappedTransactions = (response.data || []).map(mapLedgerToBitsoTransaction);
+      };
       
-      // Aplicar filtros locais que não estão na API
+      const response = await BrasilCashRealtimeService.getTransactions(filters);
+
+      // Converter dados do BrasilCash para formato BrasilCashTransactionDB
+      const mappedTransactions = (response.data || [])
+        .map(BrasilCashRealtimeService.mapBrasilCashToTransactionDB)
+        // Filtrar transações com event_type 'tarifa'
+        .filter(tx => tx.eventType !== 'tarifa');
+      
+      // Aplicar filtros locais que não estão na API (min/max amount e status PENDING)
       let filtered = mappedTransactions;
       
-      if (typeFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.type === typeFilter);
+      // Filtrar por status PENDING localmente (inclui pending e processing da API)
+      if (statusFilter === 'PENDING') {
+        filtered = filtered.filter(tx => tx.status === 'PENDING');
       }
       
-      if (statusFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.status === statusFilter);
-      }
-      
-      if (specificAmount) {
-        const amount = parseFloat(specificAmount);
-        filtered = filtered.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
-      } else {
+      // Filtros de valor mínimo e máximo (já que a API só suporta valor exato)
+      if (!specificAmount) {
         if (minAmount) {
           const min = parseFloat(minAmount);
           filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
@@ -686,7 +786,7 @@ export default function ExtractTabBitsoTcr() {
       setTransactions(filtered);
       
       const total = response.pagination?.total ?? filtered.length;
-      const hasMore = response.pagination?.hasMore ?? response.pagination?.has_more ?? false;
+      const hasMore = response.pagination?.has_more ?? false;
       const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
 
       setPagination({
@@ -755,15 +855,103 @@ export default function ExtractTabBitsoTcr() {
               <Download className="h-4 w-4 mr-2" />
               Exportar
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSyncExtrato}
-              disabled={syncing}
-            >
-              <RotateCcw className={cn("h-4 w-4 mr-2", syncing && "animate-spin")} />
-              Sync Extrato
-            </Button>
+            <div className="flex items-center gap-2">
+              <Popover open={showSyncDatePicker} onOpenChange={setShowSyncDatePicker}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={syncing}
+                    className="h-9"
+                  >
+                    <CalendarIcon className="h-3.5 w-3.5 mr-1.5" />
+                    <span className="text-xs">
+                      {syncDateRange.from && syncDateRange.to
+                        ? `${format(syncDateRange.from, "dd/MM", { locale: ptBR })} - ${format(syncDateRange.to, "dd/MM", { locale: ptBR })}`
+                        : "Período"}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-3 shadow-lg" align="end">
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground uppercase">De</label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-full text-xs justify-start font-normal"
+                            >
+                              <CalendarIcon className="h-3 w-3 mr-1" />
+                              {syncDateRange.from ? format(syncDateRange.from, "dd/MM/yyyy", { locale: ptBR }) : "Selecione"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={syncDateRange.from}
+                              onSelect={(date) => {
+                                if (date) {
+                                  setSyncDateRange({ ...syncDateRange, from: date });
+                                }
+                              }}
+                              locale={ptBR}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground uppercase">Até</label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-full text-xs justify-start font-normal"
+                            >
+                              <CalendarIcon className="h-3 w-3 mr-1" />
+                              {syncDateRange.to ? format(syncDateRange.to, "dd/MM/yyyy", { locale: ptBR }) : "Selecione"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={syncDateRange.to}
+                              onSelect={(date) => {
+                                if (date) {
+                                  setSyncDateRange({ ...syncDateRange, to: date });
+                                }
+                              }}
+                              locale={ptBR}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleSyncExtrato}
+                      disabled={syncing || !syncDateRange.from || !syncDateRange.to}
+                      className="w-full h-8 text-xs"
+                    >
+                      {syncing ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                          Sincronizando...
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw className="h-3 w-3 mr-1.5" />
+                          Sincronizar
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
         </div>
 
@@ -831,7 +1019,7 @@ export default function ExtractTabBitsoTcr() {
       {/* Filtros (sempre visíveis) */}
       <Card className="p-4 lg:p-6 bg-background border border-[rgba(255,255,255,0.1)]">
         <div className="space-y-3 lg:space-y-4">
-          {/* Linha 1: Busca, Tipo, Status, Valor específico */}
+          {/* Linha 1: Busca, Tipo, Status, Método */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
             <div className="space-y-2">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Buscar</label>
@@ -868,15 +1056,54 @@ export default function ExtractTabBitsoTcr() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Todos</SelectItem>
-                  <SelectItem value="COMPLETE">Completo</SelectItem>
-                  <SelectItem value="PENDING">Pendente</SelectItem>
-                  <SelectItem value="FAILED">Falhou</SelectItem>
+                  <SelectItem value="COMPLETE">Completo (paid)</SelectItem>
+                  <SelectItem value="PENDING">Pendente (pending/processing)</SelectItem>
+                  <SelectItem value="FAILED">Falhou (refused)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor específico</label>
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tipo de Método</label>
+              <Select value={methodTypeFilter} onValueChange={(v: any) => setMethodTypeFilter(v)}>
+                <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todos</SelectItem>
+                  <SelectItem value="manual">Manual</SelectItem>
+                  <SelectItem value="dict">DICT</SelectItem>
+                  <SelectItem value="staticQrcode">QR Estático</SelectItem>
+                  <SelectItem value="dynamicQrcode">QR Dinâmico</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Linha 1.5: End-to-End ID, External ID, Valor específico */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End-to-End ID</label>
+              <Input
+                placeholder="E18236120202511240407s0974cda408"
+                value={endToEndIdFilter}
+                onChange={(e) => setEndToEndIdFilter(e.target.value)}
+                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)] font-mono text-xs"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">External ID (Reconciliation)</label>
+              <Input
+                placeholder="caas436344xU1265"
+                value={externalIdFilter}
+                onChange={(e) => setExternalIdFilter(e.target.value)}
+                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)] font-mono text-xs"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor específico (R$)</label>
               <Input
                 type="number"
                 placeholder="0.00"
@@ -1011,17 +1238,20 @@ export default function ExtractTabBitsoTcr() {
                 setSearchTerm("");
                 setTypeFilter('ALL');
                 setStatusFilter('ALL');
+                setMethodTypeFilter('ALL');
                 setMinAmount("");
                 setMaxAmount("");
                 setSpecificAmount("");
+                setEndToEndIdFilter("");
+                setExternalIdFilter("");
                 setShowReversalsOnly(false);
                 setDateRange({
                   from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
                   to: new Date()
                 });
                 setDateFilter({
-                  start: BitsoRealtimeService.getDateStringDaysAgo(7),
-                  end: BitsoRealtimeService.getTodayDateString()
+                  start: BrasilCashRealtimeService.getDateStringDaysAgo(7),
+                  end: BrasilCashRealtimeService.getTodayDateString()
                 });
               }}
               className="h-10 bg-black border border-orange-500 text-white hover:bg-orange-500 hover:text-white transition-all duration-200 rounded-md px-3 lg:px-4"
@@ -1067,7 +1297,7 @@ export default function ExtractTabBitsoTcr() {
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Valor</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Status</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">End-to-End</th>
-                    <th className="text-left p-3 text-xs font-medium text-muted-foreground">Reconciliation ID</th>
+                    <th className="text-left p-3 text-xs font-medium text-muted-foreground">External ID</th>
                     <th className="w-24 p-3"></th>
                   </tr>
                 </thead>
@@ -1130,8 +1360,8 @@ export default function ExtractTabBitsoTcr() {
                         </div>
                       </td>
                       <td className="p-3">
-                        <Badge {...BitsoRealtimeService.getStatusBadge(tx.status)} className="text-xs">
-                          {BitsoRealtimeService.getStatusBadge(tx.status).label}
+                        <Badge {...BrasilCashRealtimeService.getStatusBadge(tx.status)} className="text-xs">
+                          {BrasilCashRealtimeService.getStatusBadge(tx.status).label}
                         </Badge>
                       </td>
                       <td className="p-3">
@@ -1141,11 +1371,11 @@ export default function ExtractTabBitsoTcr() {
                       </td>
                       <td className="p-3">
                         <div className="text-xs font-mono text-muted-foreground">
-                          {tx.reconciliationId || '-'}
+                          {tx.reconciliationId ? `${tx.reconciliationId.substring(0, 20)}...` : '-'}
                         </div>
                       </td>
                       <td className="p-3">
-                        {tx.type === 'FUNDING' && tx.reconciliationId && (
+                        {tx.type === 'FUNDING' && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -1178,20 +1408,25 @@ export default function ExtractTabBitsoTcr() {
                     {/* Linha expandida com detalhes */}
                     {expandedRow === tx.id && (
                       <tr className="bg-muted/5 dark:bg-muted/5 border-b border-border/50">
-                        <td colSpan={8} className="p-0">
+                        <td colSpan={7} className="p-0">
                           <div className="p-6 space-y-4">
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-sm font-semibold text-orange-700">Detalhes da Transação</h4>
                               <Badge variant="outline" className="text-xs">ID: {tx.id}</Badge>
                             </div>
                             
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                              {/* Coluna 1 */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                              {/* Coluna 1: IDs e Métodos */}
                               <div className="space-y-3">
                                 <div>
-                                  <label className="text-xs font-medium text-muted-foreground uppercase">Transaction ID</label>
+                                  <label className="text-xs font-medium text-muted-foreground uppercase">ID</label>
+                                  <p className="text-sm font-mono">{tx.id}</p>
+                                </div>
+                                
+                                <div>
+                                  <label className="text-xs font-medium text-muted-foreground uppercase">Transaction ID (PIX ID)</label>
                                   <div className="flex items-center gap-2 mt-1">
-                                    <p className="text-sm font-mono">{tx.transactionId}</p>
+                                    <p className="text-sm font-mono break-all">{tx.transactionId}</p>
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -1200,7 +1435,7 @@ export default function ExtractTabBitsoTcr() {
                                         navigator.clipboard.writeText(tx.transactionId);
                                         toast.success('Transaction ID copiado!');
                                       }}
-                                      className="h-6 w-6 p-0"
+                                      className="h-6 w-6 p-0 flex-shrink-0"
                                     >
                                       <Copy className="h-3 w-3" />
                                     </Button>
@@ -1230,18 +1465,18 @@ export default function ExtractTabBitsoTcr() {
                                 
                                 {tx.reconciliationId && (
                                   <div>
-                                    <label className="text-xs font-medium text-muted-foreground uppercase">Reconciliation ID</label>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">External ID (Reconciliation)</label>
                                     <div className="flex items-center gap-2 mt-1">
-                                      <p className="text-sm font-mono text-orange-600 font-semibold">{tx.reconciliationId}</p>
+                                      <p className="text-sm font-mono text-orange-600 font-semibold break-all">{tx.reconciliationId}</p>
                                       <Button
                                         variant="ghost"
                                         size="sm"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           navigator.clipboard.writeText(tx.reconciliationId);
-                                          toast.success('Reconciliation ID copiado!');
+                                          toast.success('External ID copiado!');
                                         }}
-                                        className="h-6 w-6 p-0"
+                                        className="h-6 w-6 p-0 flex-shrink-0"
                                       >
                                         <Copy className="h-3 w-3" />
                                       </Button>
@@ -1253,37 +1488,165 @@ export default function ExtractTabBitsoTcr() {
                                   <label className="text-xs font-medium text-muted-foreground uppercase">Método</label>
                                   <p className="text-sm mt-1">{tx.methodName || tx.method}</p>
                                 </div>
+                                
+                                {tx.eventType && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Event Type</label>
+                                    <p className="text-sm mt-1">{tx.eventType}</p>
+                                  </div>
+                                )}
                               </div>
                               
-                              {/* Coluna 2 */}
+                              {/* Coluna 2: Pagador */}
                               <div className="space-y-3">
-                                <div>
-                                  <label className="text-xs font-medium text-muted-foreground uppercase">Moeda</label>
-                                  <p className="text-sm mt-1">{tx.currency}</p>
-                                </div>
+                                <h4 className="text-xs font-semibold text-orange-600 uppercase mb-2">Pagador</h4>
                                 
-                                <div>
-                                  <label className="text-xs font-medium text-muted-foreground uppercase">Taxa</label>
-                                  <p className="text-sm mt-1">{formatCurrency(tx.fee)}</p>
-                                </div>
+                                {tx.payerName && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Nome</label>
+                                    <p className="text-sm mt-1">{tx.payerName}</p>
+                                  </div>
+                                )}
                                 
                                 {tx.payerTaxId && (
                                   <div>
-                                    <label className="text-xs font-medium text-muted-foreground uppercase">CPF/CNPJ do Pagador</label>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">CPF/CNPJ</label>
                                     <p className="text-sm mt-1 font-mono">{tx.payerTaxId}</p>
                                   </div>
                                 )}
                                 
                                 {tx.payerBankName && (
                                   <div>
-                                    <label className="text-xs font-medium text-muted-foreground uppercase">Banco do Pagador</label>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Banco</label>
                                     <p className="text-sm mt-1">🏦 {tx.payerBankName}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.payer_ispb && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">ISPB</label>
+                                    <p className="text-sm mt-1 font-mono">{tx._original.payer_ispb}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.payer_account && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Conta</label>
+                                    <p className="text-sm mt-1 font-mono">{tx._original.payer_account}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.payer_branch_code && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Agência</label>
+                                    <p className="text-sm mt-1 font-mono">{tx._original.payer_branch_code}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.payer_account_type && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Tipo de Conta</label>
+                                    <p className="text-sm mt-1">{tx._original.payer_account_type}</p>
                                   </div>
                                 )}
                               </div>
                               
-                              {/* Coluna 3 */}
+                              {/* Coluna 3: Beneficiário */}
                               <div className="space-y-3">
+                                <h4 className="text-xs font-semibold text-green-600 uppercase mb-2">Beneficiário</h4>
+                                
+                                {tx.payeeName && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Nome</label>
+                                    <p className="text-sm mt-1">{tx.payeeName}</p>
+                                  </div>
+                                )}
+                                
+                                {tx.payeeTaxId && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">CPF/CNPJ</label>
+                                    <p className="text-sm mt-1 font-mono">{tx.payeeTaxId}</p>
+                                  </div>
+                                )}
+                                
+                                {tx.payeeBankName && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Banco</label>
+                                    <p className="text-sm mt-1">🏦 {tx.payeeBankName}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.receiver_ispb && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">ISPB</label>
+                                    <p className="text-sm mt-1 font-mono">{tx._original.receiver_ispb}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.receiver_account && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Conta</label>
+                                    <p className="text-sm mt-1 font-mono">{tx._original.receiver_account}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.receiver_branch_code && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Agência</label>
+                                    <p className="text-sm mt-1 font-mono">{tx._original.receiver_branch_code}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.receiver_account_type && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Tipo de Conta</label>
+                                    <p className="text-sm mt-1">{tx._original.receiver_account_type}</p>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* Coluna 4: Transação e Datas */}
+                              <div className="space-y-3">
+                                <h4 className="text-xs font-semibold text-blue-600 uppercase mb-2">Transação</h4>
+                                
+                                <div>
+                                  <label className="text-xs font-medium text-muted-foreground uppercase">Valor</label>
+                                  <p className="text-sm mt-1 font-bold">{formatCurrency(tx.amount)}</p>
+                                </div>
+                                
+                                <div>
+                                  <label className="text-xs font-medium text-muted-foreground uppercase">Moeda</label>
+                                  <p className="text-sm mt-1">{tx.currency}</p>
+                                </div>
+                                
+                                <div>
+                                  <label className="text-xs font-medium text-muted-foreground uppercase">Status</label>
+                                  <Badge {...BrasilCashRealtimeService.getStatusBadge(tx.status)} className="text-xs mt-1">
+                                    {BrasilCashRealtimeService.getStatusBadge(tx.status).label}
+                                  </Badge>
+                                </div>
+                                
+                                {tx.description && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Descrição</label>
+                                    <p className="text-sm mt-1 break-words">{tx.description}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.source && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Origem</label>
+                                    <p className="text-sm mt-1">{tx._original.source}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.pix_key && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">PIX Key</label>
+                                    <p className="text-sm mt-1 font-mono break-all">{tx._original.pix_key}</p>
+                                  </div>
+                                )}
+                                
                                 <div>
                                   <label className="text-xs font-medium text-muted-foreground uppercase">Criado em</label>
                                   <p className="text-sm mt-1">{formatDate(tx.createdAt)}</p>
@@ -1300,6 +1663,27 @@ export default function ExtractTabBitsoTcr() {
                                   <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">Atualizado em</label>
                                     <p className="text-sm mt-1">{formatDate(tx.updatedAt)}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.webhook_processed_at && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Webhook Processado</label>
+                                    <p className="text-sm mt-1">{formatDate(tx._original.webhook_processed_at)}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.brasilcash_account_id && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">BrasilCash Account ID</label>
+                                    <p className="text-sm mt-1 font-mono">{tx._original.brasilcash_account_id}</p>
+                                  </div>
+                                )}
+                                
+                                {tx._original?.account_id && (
+                                  <div>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase">Account ID</label>
+                                    <p className="text-sm mt-1 font-mono break-all">{tx._original.account_id}</p>
                                   </div>
                                 )}
                                 

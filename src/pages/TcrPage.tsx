@@ -497,43 +497,201 @@ function PixProgramadoQRComponent() {
 }
 
 // Componente temporário para Ações PIX (replicando layout BMP 531)
+// Componente PIX Normal para TCR
+function PixNormalComponentTCR() {
+  const TCR_CNPJ = "53781325000115"; // CNPJ da TCR
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [formData, setFormData] = React.useState({
+    key: '',
+    tipo: '2', // PIX
+    valor: '',
+    nome: '',
+    description: ''
+  });
+
+  const formatCurrency = (value: string) => {
+    const numbers = value.replace(/\D/g, '');
+    const amount = parseFloat(numbers) / 100;
+    return amount.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+  };
+
+  const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '');
+    const formattedValue = formatCurrency(value);
+    setFormData(prev => ({ ...prev, valor: formattedValue }));
+  };
+
+  // Função utilitária para limpar formatação de documentos apenas
+  const limparFormatacaoDocumento = (valor: string) => {
+    if (!valor) return '';
+    return valor.replace(/\D/g, ''); // Remove tudo que não é número - apenas para CPF/CNPJ
+  };
+
+  const executarPix = async () => {
+    if (!formData.key || !formData.valor) {
+      toast.error("Chave PIX e valor são obrigatórios");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
+      
+      const payload = {
+        tax_document: limparFormatacaoDocumento(TCR_CNPJ), // Remove formatação do documento
+        key: formData.key, // Mantém a chave PIX original SEM formatação
+        tipo: parseInt(formData.tipo),
+        valor: valorNumerico,
+        nome: formData.nome || undefined,
+        description: formData.description || undefined
+      };
+
+      const { enviarPixCompletoTCR } = await import('@/services/tcr');
+      const result = await enviarPixCompletoTCR(payload);
+
+      if (!result || result.confirmacao?.erro) {
+        toast.error(result?.confirmacao?.message || "Erro ao executar PIX");
+        return;
+      }
+
+      toast.success("PIX executado com sucesso!", {
+        description: `End-to-End: ${result.confirmacao?.idEndToEnd || 'N/A'}`,
+        duration: 5000
+      });
+      
+      // Reset form
+      setFormData({
+        key: '',
+        tipo: '2',
+        valor: '',
+        nome: '',
+        description: ''
+      });
+    } catch (error: any) {
+      toast.error("Erro ao executar PIX", {
+        description: error.message || "Tente novamente"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 via-transparent to-green-600/5"></div>
+      <CardHeader className="relative pb-4">
+        <CardTitle className="text-lg flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-green-500/10">
+            <SendHorizontal className="h-5 w-5 text-green-600" />
+          </div>
+          Enviar PIX
+          <Badge className="bg-green-100 text-green-800 border-green-200 text-xs font-medium">
+            TCR
+          </Badge>
+        </CardTitle>
+        <CardDescription>
+          Transferência instantânea por chave PIX
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="relative space-y-4">
+        {/* Feedback Visual da Conta */}
+        <div className="p-3 bg-muted/30 rounded-lg border">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">TCR - Grupo TCR</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                CNPJ: {TCR_CNPJ.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="pix-key-tcr">Chave PIX Destinatário</Label>
+            <Input
+              id="pix-key-tcr"
+              value={formData.key}
+              onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
+              placeholder="email@exemplo.com, CPF, CNPJ, celular ou chave aleatória"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="pix-tipo-tcr">Tipo de Transferência</Label>
+            <Select value={formData.tipo} onValueChange={(value) => setFormData(prev => ({ ...prev, tipo: value }))}>
+              <SelectTrigger id="pix-tipo-tcr">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Interna</SelectItem>
+                <SelectItem value="2">PIX</SelectItem>
+                <SelectItem value="3">Copia e Cola</SelectItem>
+                <SelectItem value="5">PIX com Dados</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="pix-valor-tcr">Valor</Label>
+            <Input
+              id="pix-valor-tcr"
+              value={formData.valor}
+              onChange={handleValueChange}
+              placeholder="R$ 0,00"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="pix-nome-tcr">Nome Destinatário (Opcional)</Label>
+            <Input
+              id="pix-nome-tcr"
+              value={formData.nome}
+              onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+              placeholder="Nome do destinatário"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="pix-desc-tcr">Descrição (Opcional)</Label>
+            <Input
+              id="pix-desc-tcr"
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Descrição da transferência"
+            />
+          </div>
+        </div>
+
+        <Button 
+          onClick={executarPix}
+          disabled={isLoading}
+          className="w-full bg-green-600 hover:bg-green-700"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Executando PIX...
+            </>
+          ) : (
+            'Executar PIX'
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function PixActionsTabTCR() {
   return (
     <div className="w-full max-w-7xl mx-auto">
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
         {/* Enviar por Chave */}
-        <Card className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-blue-600/5"></div>
-          <CardHeader className="relative pb-4">
-            <CardTitle className="text-lg flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-500/10">
-                <SendHorizontal className="h-5 w-5 text-blue-600" />
-              </div>
-              Enviar PIX
-              <Badge className="bg-green-100 text-green-800 border-green-200 text-xs font-medium">
-                TCR
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              Transferência por chave PIX
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="relative">
-            <div className="space-y-4">
-              <div className="p-4 border rounded-lg text-center">
-                <p className="text-sm text-muted-foreground">
-                  Funcionalidade em desenvolvimento
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Aguardando integração com API TCR
-                </p>
-              </div>
-              <Button className="w-full" disabled>
-                Configurar PIX
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <PixNormalComponentTCR />
 
         {/* Pagar QR Code */}
         <Card className="relative overflow-hidden">
@@ -1096,62 +1254,45 @@ function PixKeysTabTCR() {
 }
 
 export default function TcrPage() {
-  // TCR sempre tem suporte completo a PIX
-  const bankFeatures = {
-    provider: 'tcr',
-    displayName: 'TCR',
-    hasPixKeys: true,
-    hasQrCodePayment: true,
-    hasExtract: true
-  };
-
   return (
-    <div className="min-h-screen bg-background">
+    <div className="w-full min-h-screen bg-background">
+      {/* Top Bar com Saldos */}
       <TopBarTCR />
-      
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
-        {/* Layout Principal - Tabs no Topo */}
-        <Tabs defaultValue="extract" className="w-full">
-          <div className="flex items-center justify-between mb-6">
-            <TabsList className="grid grid-cols-3 w-fit bg-muted/30 p-1 h-auto">
-              <TabsTrigger 
-                value="extract" 
-                className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-3 px-6 font-medium transition-all duration-200 flex items-center gap-2"
-              >
-                <FileText className="h-4 w-4" />
-                <span className="text-sm">Extrato</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="actions" 
-                className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-3 px-6 font-medium transition-all duration-200 flex items-center gap-2"
-              >
-                <SendHorizontal className="h-4 w-4" />
-                <span className="text-sm">Ações PIX</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="keys" 
-                className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-3 px-6 font-medium transition-all duration-200 flex items-center gap-2"
-              >
-                <Key className="h-4 w-4" />
-                <span className="text-sm">Chaves PIX</span>
-                <Badge variant="secondary" className="ml-2 text-xs px-2 py-0">0</Badge>
-              </TabsTrigger>
-            </TabsList>
-          </div>
 
-          {/* Extrato - Largura Total */}
-          <TabsContent value="extract" className="mt-0">
+      {/* Conteúdo Principal */}
+      <div className="container mx-auto px-4 py-6">
+        <Tabs defaultValue="extract" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsTrigger value="extract" className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Extrato
+            </TabsTrigger>
+            <TabsTrigger value="pix" className="flex items-center gap-2">
+              <SendHorizontal className="h-4 w-4" />
+              Ações PIX
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ABA: Extrato */}
+          <TabsContent value="extract">
             <ExtractTabTCR />
           </TabsContent>
 
-          {/* Ações PIX - Layout Mais Largo */}
-          <TabsContent value="actions" className="mt-0">
-            <PixActionsTabTCR />
-          </TabsContent>
-
-          {/* Chaves PIX - Layout Vertical */}
-          <TabsContent value="keys" className="mt-0">
-            <PixKeysTabTCR />
+          {/* ABA: Ações PIX */}
+          <TabsContent value="pix">
+            <div className="space-y-6">
+              {/* Ações PIX */}
+              <PixActionsTabTCR />
+              
+              {/* Chaves PIX */}
+              <div className="mt-8">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Key className="h-5 w-5" />
+                  Chaves PIX
+                </h3>
+                <PixKeysTabTCR />
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

@@ -92,6 +92,10 @@ export default function ExtractTabCorpX() {
   const [searchName, setSearchName] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [searchDescCliente, setSearchDescCliente] = useState("");
+  const [searchTerm, setSearchTerm] = useState(""); // Busca geral (pode ser endToEnd ou texto)
+  const [minAmount, setMinAmount] = useState<string>("");
+  const [maxAmount, setMaxAmount] = useState<string>("");
+  const [specificAmount, setSpecificAmount] = useState<string>(""); // Valor exato
   const [transactionTypeFilter, setTransactionTypeFilter] = useState<"todos" | "debito" | "credito">("todos");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("desc");
   const [sortBy, setSortBy] = useState<"value" | "date" | "none">("date");
@@ -108,6 +112,13 @@ export default function ExtractTabCorpX() {
     current_page: 1,
     total_pages: 1,
   });
+
+  const handleRecordsPerPageChange = (value: string) => {
+    const newLimit = parseInt(value, 10);
+    setRecordsPerPage(newLimit);
+    setCurrentPage(1);
+    loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1, newLimit);
+  };
   
   // Estados para modal
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -307,12 +318,19 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
       const baseFilters = buildQueryFilters();
 
+      // ✅ Usar apiAccountId numérico quando disponível, ou 'ALL' para todas as contas
       const baseQueryParams: Record<string, any> = {
-        accountId: accountIdParam,
         limit,
         offset,
         ...baseFilters,
       };
+
+      // Adicionar accountId: 'ALL' para todas as contas, ou apiAccountId numérico para conta específica
+      if (isAllAccounts) {
+        baseQueryParams.accountId = 'ALL';
+      } else if (selectedAccount.apiAccountId) {
+        baseQueryParams.accountId = selectedAccount.apiAccountId;
+      }
 
       if (dataInicio) {
         baseQueryParams.startDate = dataInicio;
@@ -450,8 +468,57 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       filters.order = 'desc';
     }
 
+    // ✅ Prioridade: exactAmount ignora minAmount e maxAmount
+    if (specificAmount && specificAmount.trim() !== '') {
+      const specificValue = parseFloat(specificAmount);
+      if (!isNaN(specificValue) && specificValue > 0) {
+        filters.exactAmount = specificValue;
+      }
+    } else {
+      // Só adicionar minAmount e maxAmount se exactAmount não foi informado
+      if (minAmount && minAmount.trim() !== '') {
+        const minValue = parseFloat(minAmount);
+        if (!isNaN(minValue) && minValue > 0) {
+          filters.minAmount = minValue;
+        }
+      }
+      
+      if (maxAmount && maxAmount.trim() !== '') {
+        const maxValue = parseFloat(maxAmount);
+        if (!isNaN(maxValue) && maxValue > 0) {
+          filters.maxAmount = maxValue;
+        }
+      }
+    }
+
+    // ✅ Verificar se searchTerm parece ser um endToEnd (começa com 'E' e tem formato específico)
+    const searchTermTrimmed = searchTerm?.trim() || '';
+    const isEndToEndPattern = /^E\d{20,}/.test(searchTermTrimmed); // Padrão: E seguido de números
+    
+    if (isEndToEndPattern && searchTermTrimmed.length >= 20) {
+      // ✅ Prioridade: endToEnd ignora search
+      filters.endToEnd = searchTermTrimmed;
+    } else if (searchTermTrimmed) {
+      // Busca textual normal
+      filters.search = searchTermTrimmed;
+    } else {
+      // Se não há searchTerm, verificar outros campos de busca
+      if (searchName && searchName.trim() !== '') {
+        filters.search = searchName.trim();
+      }
+      
+      if (searchDescCliente && searchDescCliente.trim() !== '') {
+        if (filters.search) {
+          // Combinar com busca existente
+          filters.search = `${filters.search} ${searchDescCliente.trim()}`;
+        } else {
+          filters.search = searchDescCliente.trim();
+        }
+      }
+    }
+
     return filters;
-  }, [transactionTypeFilter, sortBy, sortOrder]);
+  }, [transactionTypeFilter, sortBy, sortOrder, specificAmount, minAmount, maxAmount, searchTerm, searchName, searchDescCliente]);
 
   const fetchAllTransactionsMatchingFilters = React.useCallback(async () => {
     const accountIdParam = selectedAccount.id || 'ALL';
@@ -476,11 +543,17 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
     while (hasMore && guard < maxIterations) {
       const params: Record<string, any> = {
-        accountId: accountIdParam,
         limit: limitPerRequest,
         offset,
         ...baseFilters,
       };
+
+      // ✅ Adicionar accountId: 'ALL' para todas as contas, ou apiAccountId numérico para conta específica
+      if (isAllAccounts) {
+        params.accountId = 'ALL';
+      } else if (selectedAccount.apiAccountId) {
+        params.accountId = selectedAccount.apiAccountId;
+      }
 
       if (dataInicio) {
         params.startDate = dataInicio;
@@ -507,7 +580,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     }
 
     return applyFiltersAndSorting(aggregated);
-  }, [selectedAccount.id, selectedAccount.cnpj, dateFrom, dateTo, buildQueryFilters, normalizeTransactions, applyFiltersAndSorting]);
+  }, [selectedAccount.id, selectedAccount.cnpj, selectedAccount.apiAccountId, dateFrom, dateTo, buildQueryFilters, normalizeTransactions, applyFiltersAndSorting]);
 
   const handleSyncExtrato = async () => {
     if (selectedAccount.id === 'ALL') {
@@ -611,6 +684,10 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     setSearchName("");
     setSearchValue("");
     setSearchDescCliente("");
+    setSearchTerm("");
+    setMinAmount("");
+    setMaxAmount("");
+    setSpecificAmount("");
     setTransactionTypeFilter("todos");
     setSortBy("date");
     setSortOrder("desc");
@@ -796,7 +873,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
   }, []);
 
   useEffect(() => {
-      setCurrentPage(1);
+    setCurrentPage(1);
     loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1, recordsPerPage);
     toast.info(
       selectedAccount.id === 'ALL'
@@ -805,6 +882,22 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccount.id]);
+
+  // Calcular métricas
+  const metrics = useMemo(() => {
+    const deposits = filteredAndSortedTransactions.filter(t => t.type === 'CRÉDITO');
+    const withdrawals = filteredAndSortedTransactions.filter(t => t.type === 'DÉBITO');
+    
+    return {
+      totalDeposits: deposits.length,
+      depositAmount: deposits.reduce((sum, t) => sum + Math.abs(t.value), 0),
+      totalWithdrawals: withdrawals.length,
+      withdrawalAmount: withdrawals.reduce((sum, t) => sum + Math.abs(t.value), 0),
+      netAmount: deposits.reduce((sum, t) => sum + Math.abs(t.value), 0) - withdrawals.reduce((sum, t) => sum + Math.abs(t.value), 0),
+      totalTransactions: filteredAndSortedTransactions.length,
+      loading: isLoading
+    };
+  }, [filteredAndSortedTransactions, isLoading]);
 
   return (
     <div className="space-y-6">
@@ -816,27 +909,124 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
           queueCount={realtimeQueue.length}
         />
       )}
-      {/* Feedback Visual da Conta Selecionada */}
-      <Card className="bg-card border border-border">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-500/10">
-              <Building2 className="h-5 w-5 text-blue-600" />
+
+      {/* Barra de ações */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex items-center gap-2">
+          {isRealtimeConnected && (
+            <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-md">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              Tempo Real
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-foreground">
-                Consultando extrato de: <span className="font-semibold">{selectedAccount.razaoSocial}</span>
-              </p>
-              <p className="text-xs text-muted-foreground font-mono">
-                CNPJ: {selectedAccount.cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}
-              </p>
-            </div>
-            <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">
-              Ativa
-            </Badge>
+          )}
+          <span className="text-sm text-muted-foreground">
+            {pagination.total || filteredAndSortedTransactions.length} transações
+          </span>
+        </div>
+        
+        <div className="flex gap-2">
+          <Select
+            value={recordsPerPage.toString()}
+            onValueChange={handleRecordsPerPageChange}
+            disabled={isLoading}
+          >
+            <SelectTrigger className="h-10 w-[180px]">
+              <SelectValue placeholder="Registros" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="500">500 registros</SelectItem>
+              <SelectItem value="1000">1000 registros</SelectItem>
+              <SelectItem value="2000">2000 registros</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, currentPage)}
+            disabled={isLoading}
+          >
+            <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportToCSV}
+            disabled={filteredAndSortedTransactions.length === 0}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Exportar
+          </Button>
+        </div>
+      </div>
+
+      {/* Métricas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Depósitos</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-purple-500" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-purple-500">{metrics.totalDeposits}</p>
+                <p className="text-sm text-muted-foreground">
+                  {formatCurrency(metrics.depositAmount)}
+                </p>
+              </>
+            )}
           </div>
-        </CardContent>
-      </Card>
+        </Card>
+
+        <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Saques</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-purple-500" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-purple-500">{metrics.totalWithdrawals}</p>
+                <p className="text-sm text-muted-foreground">
+                  {formatCurrency(metrics.withdrawalAmount)}
+                </p>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Saldo Líquido</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-purple-500" />
+            ) : (
+              <>
+                <p className={`text-2xl font-bold ${metrics.netAmount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {formatCurrency(metrics.netAmount)}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {metrics.netAmount >= 0 ? 'Positivo' : 'Negativo'}
+                </p>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Transações</p>
+            {metrics.loading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-purple-500" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-purple-500">{metrics.totalTransactions}</p>
+                <p className="text-sm text-muted-foreground">
+                  Na página atual
+                </p>
+              </>
+            )}
+          </div>
+        </Card>
+      </div>
 
       {/* Filtros de Pesquisa - CorpX */}
       <Card className="bg-card border border-border shadow-2xl rounded-3xl overflow-hidden">
@@ -913,22 +1103,27 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-card-foreground">Buscar por nome</label>
-              <Input
-                placeholder="Nome do cliente ou documento..."
-                value={searchName}
-                onChange={(e) => setSearchName(e.target.value)}
-                disabled={isLoading}
-                className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
-              />
+              <label className="text-sm font-semibold text-card-foreground">Buscar</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Nome, CPF, EndToEnd (E...)..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  disabled={isLoading}
+                  className="pl-10 h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-card-foreground">Buscar por valor</label>
+              <label className="text-sm font-semibold text-card-foreground">Valor específico</label>
               <Input
-                placeholder="Ex: 100,50"
-                value={searchValue}
-                onChange={(e) => setSearchValue(e.target.value)}
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={specificAmount}
+                onChange={(e) => setSpecificAmount(e.target.value)}
                 disabled={isLoading}
                 className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
               />
@@ -936,7 +1131,33 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
           </div>
 
           {/* Segunda linha - Filtros específicos */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-card-foreground">Valor mínimo</label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={minAmount}
+                onChange={(e) => setMinAmount(e.target.value)}
+                disabled={isLoading || (specificAmount && specificAmount.trim() !== '')}
+                className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-card-foreground">Valor máximo</label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={maxAmount}
+                onChange={(e) => setMaxAmount(e.target.value)}
+                disabled={isLoading || (specificAmount && specificAmount.trim() !== '')}
+                className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
+              />
+            </div>
+
             <div className="space-y-2">
               <label className="text-sm font-semibold text-card-foreground">Descrição</label>
               <Input

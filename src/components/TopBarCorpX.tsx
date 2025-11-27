@@ -1,14 +1,16 @@
 import React, { useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SendHorizontal, RefreshCcw, Loader2, DollarSign, Lock, CheckCircle, AlertCircle } from "lucide-react";
+import { SendHorizontal, RefreshCcw, Loader2, DollarSign, Lock, CheckCircle, AlertCircle, FileText, Banknote, ArrowDownCircle, ArrowUpCircle, Wifi, WifiOff } from "lucide-react";
 import { useCorpXSaldo } from "@/hooks/useCorpXSaldo";
 import { CorpXService } from "@/services/corpx";
 import { useCorpX } from "@/contexts/CorpXContext";
 import { toast } from "sonner";
+import AnimatedBalance from "@/components/AnimatedBalance";
+import { useCorpxRealtime } from "@/hooks/useCorpxRealtime";
 
 export default function TopBarCorpX() {
-  const { taxDocument } = useCorpX();
+  const { taxDocument, selectedAccount } = useCorpX();
   
   // Remove formatação do CNPJ para usar apenas números na API
   const cnpjNumerico = taxDocument.replace(/\D/g, '');
@@ -22,6 +24,11 @@ export default function TopBarCorpX() {
   } = useCorpXSaldo({ 
     cnpj: cnpjNumerico,
     autoRefresh: false // Refresh manual via botão
+  });
+
+  // WebSocket para tempo real (se disponível)
+  const { isConnected, isReconnecting } = useCorpxRealtime({
+    taxDocument: cnpjNumerico
   });
 
   // 🔄 Recarregar saldo automaticamente quando tax_document mudar
@@ -59,15 +66,9 @@ export default function TopBarCorpX() {
     return formatCurrency(saldoData?.limiteBloqueado || 0);
   };
 
-  const getContaInfo = () => {
-    const { selectedAccount } = useCorpX();
-    return (
-      <div className="text-xs text-muted-foreground">
-        <span>
-          {selectedAccount.razaoSocial} • CORPX • BRL • {lastUpdated ? lastUpdated.toLocaleTimeString('pt-BR') : 'Nunca atualizado'}
-        </span>
-      </div>
-    );
+  const parseValue = (value: string | number): number => {
+    const numValue = parseFloat(String(value));
+    return isNaN(numValue) ? 0 : numValue;
   };
 
   const getStatusIcon = () => {
@@ -81,28 +82,50 @@ export default function TopBarCorpX() {
   };
 
   return (
-    <div className="sticky top-0 z-30 bg-tcr-dark/95 backdrop-blur-xl border-b border-border h-auto p-6">
+    <div className="sticky top-0 z-30 bg-background border-b border-border h-auto p-6">
       {/* Header principal */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-gradient-to-br from-purple-600 to-purple-800 shadow-xl">
-            <SendHorizontal className="h-6 w-6 text-white" />
+          <div className="p-3 rounded-2xl bg-purple-600 shadow-xl">
+            <Banknote className="h-6 w-6 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-3">
+              <Banknote className="h-5 w-5 text-purple-600" />
               <h1 className="text-2xl font-bold text-foreground">CORPX</h1>
-              <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-medium">
+              <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs font-medium">
                 Banking
               </Badge>
               {getStatusIcon()}
+              {/* Status WebSocket com estado de reconexão */}
+              <div className="flex items-center gap-2">
+                {isConnected ? (
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-md">
+                    <Wifi className="h-3 w-3" />
+                    <span className="text-xs font-medium">Tempo Real</span>
+                  </div>
+                ) : isReconnecting ? (
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-md animate-pulse">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span className="text-xs font-medium">Reconectando...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 text-gray-600 border border-gray-200 rounded-md">
+                    <WifiOff className="h-3 w-3" />
+                    <span className="text-xs font-medium">Offline</span>
+                  </div>
+                )}
+              </div>
             </div>
-            <p className="text-muted-foreground text-sm">Central de transferências PIX</p>
+            <p className="text-muted-foreground text-sm">
+              Central de transferências PIX {isConnected && '• Atualizações em tempo real'}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="sm"
             onClick={handleRefresh}
             disabled={isLoadingSaldo}
@@ -120,74 +143,88 @@ export default function TopBarCorpX() {
         </div>
       </div>
 
-      {/* Cards de saldo - CORPX Nova API */}
-      <div className="w-full max-w-7xl mx-auto">
-        {errorSaldo && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-red-500" />
-              <span className="text-red-700 text-sm">{errorSaldo}</span>
-            </div>
+      {/* Cards lado a lado - 5 cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
+        {/* Card 1: Total */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <FileText className="h-[18px] w-[18px] text-purple-500 group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Total</span>
           </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          
-          {/* Card: Saldo Principal */}
-          <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-emerald-500/20">
-                <DollarSign className="h-5 w-5 text-emerald-400" />
-              </div>
-              <div className="flex-1">
-                <p className="text-muted-foreground text-sm">Saldo principal</p>
-                <p className={`font-bold text-lg font-mono mt-1 ${errorSaldo || saldoData?.erro ? 'text-destructive' : 'text-foreground'}`}>
-                  {getSaldoDisplay()}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">Saldo total</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Card: Saldo Disponível */}
-          <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-blue-500/20">
-                <CheckCircle className="h-5 w-5 text-blue-400" />
-              </div>
-              <div className="flex-1">
-                <p className="text-muted-foreground text-sm">Saldo disponível</p>
-                <p className={`font-bold text-lg font-mono mt-1 ${errorSaldo || saldoData?.erro ? 'text-destructive' : 'text-foreground'}`}>
-                  {getSaldoDisponivelDisplay()}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">Para transferências</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Card: Limite Bloqueado */}
-          <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-orange-500/20">
-                <Lock className="h-5 w-5 text-orange-400" />
-              </div>
-              <div className="flex-1">
-                <p className="text-muted-foreground text-sm">Limite bloqueado</p>
-                <p className="font-bold text-lg font-mono mt-1 text-foreground">
-                  {getLimiteBloqueadoDisplay()}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">Reservado</p>
-              </div>
-            </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-purple-500 mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : errorSaldo ? (
+              <span className="text-lg text-red-500">Erro</span>
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.saldo || 0)} /></div>
+            )}
           </div>
         </div>
-        
-        {/* Informações da conta */}
-        <div className="mt-4 text-center">
-          {getContaInfo()}
+
+        {/* Card 2: Available */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <CheckCircle className="h-[18px] w-[18px] text-purple-500 group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Disponível</span>
+          </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-purple-500 mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : errorSaldo ? (
+              <span className="text-lg text-red-500">Erro</span>
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.saldoDisponivel || 0)} /></div>
+            )}
+          </div>
         </div>
 
-        
+        {/* Card 3: Locked */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <Lock className="h-[18px] w-[18px] text-orange-500 group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Bloqueado</span>
+          </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-orange-500 mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : errorSaldo ? (
+              <span className="text-lg text-red-500">Erro</span>
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.limiteBloqueado || 0)} /></div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 4: Pending Deposit */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowDownCircle className="h-[18px] w-[18px] text-blue-500 group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Depósito Pendente</span>
+          </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-blue-500 mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={0} /></div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 5: Pending Withdrawal */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowUpCircle className="h-[18px] w-[18px] text-red-500 group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saque Pendente</span>
+          </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-red-500 mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={0} /></div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

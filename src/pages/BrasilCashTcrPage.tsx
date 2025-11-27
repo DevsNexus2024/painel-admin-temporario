@@ -2,44 +2,36 @@ import React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, SendHorizontal } from "lucide-react";
 
-// Componentes IP Revy
-import TopBarIpRevyOtc from "@/components/TopBarIpRevyOtc";
-import ExtractTabIpRevyOtc from "@/components/ExtractTabIpRevyOtc";
+// Componentes BrasilCash TCR
+import TopBarBrasilCashTcr from "@/components/TopBarBrasilCashTcr";
+import ExtractTabBrasilCashTcr from "@/components/ExtractTabBrasilCashTcr";
 import MoneyRainEffect from "@/components/MoneyRainEffect";
-import IpRevyPixActions from "@/components/IpRevyPixActions";
+import BrasilCashPixActions from "@/components/BrasilCashPixActions";
 
-// WebSocket Hook
-import { useRevyRealtime } from "@/hooks/useRevyRealtime";
+// WebSocket Hook (mantendo compatibilidade por enquanto)
+import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 
-export default function IpRevyOtcPage() {
-  // WebSocket para IP Revy OTC
-  const { isConnected, lastEvent } = useRevyRealtime({
-    tenantId: 3,
-    onTransaction: (payload) => {
-      // Callback será tratado internamente pelo hook
-    },
+export default function BrasilCashTcrPage() {
+  // WebSocket filtrado para TCR (pode ser adaptado no futuro para BrasilCash)
+  const { showMoneyEffect, newTransaction, transactionQueue } = useFilteredBitsoWebSocket({
+    context: 'tcr',
+    tenantId: 2,
   });
-
-  // Determinar se deve mostrar efeito de dinheiro (similar ao Bitso)
-  const showMoneyEffect = lastEvent !== null;
-  const newTransaction = lastEvent ? {
-    amount: String(lastEvent.data?.amount || 0),
-    type: lastEvent.data?.cashInOrOut === "CASH IN" ? "funding" : "withdrawal" as "funding" | "withdrawal"
-  } : null;
 
   return (
     <div className="w-full min-h-screen bg-background">
-      {/* 🎉 Efeito Visual de Dinheiro */}
+      {/* 🎉 Efeito Visual de Dinheiro com contador de fila */}
       {newTransaction && (
         <MoneyRainEffect 
           trigger={showMoneyEffect} 
           amount={newTransaction.amount}
           type={newTransaction.type}
+          queueCount={transactionQueue.length}
         />
       )}
       
       {/* Top Bar com Saldos */}
-      <TopBarIpRevyOtc />
+      <TopBarBrasilCashTcr />
 
       {/* Conteúdo Principal */}
       <div className="container mx-auto px-4 py-6">
@@ -57,15 +49,16 @@ export default function IpRevyOtcPage() {
 
           {/* ABA: Extrato */}
           <TabsContent value="extract">
-            <ExtractTabIpRevyOtc />
+            <ExtractTabBrasilCashTcr />
           </TabsContent>
 
-          {/* ABA: Ações PIX */}
+          {/* ABA: Ações PIX (Enviar, QR Dinâmico, QR Estático) */}
           <TabsContent value="pix">
-            <IpRevyPixActions />
+            <BrasilCashPixActions />
           </TabsContent>
         </Tabs>
       </div>
     </div>
   );
 }
+

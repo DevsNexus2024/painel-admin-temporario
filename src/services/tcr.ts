@@ -17,7 +17,11 @@ import type {
   CorpXQRCodeResponse,
   CorpXCreateAccountRequest,
   CorpXCreateAccountResponse,
-  CorpXErrorResponse
+  CorpXErrorResponse,
+  CorpXTransactionsParams,
+  CorpXTransactionsResponse,
+  CorpXSyncRequest,
+  CorpXSyncResponse
 } from '@/types/corpx'; // Reutilizando os types do CorpX
 
 // Estrutura de resposta padrão do backend TCR (mesmo formato do CorpX)
@@ -49,6 +53,12 @@ const TCR_CONFIG = {
     
     // 🔄 PIX PROGRAMADO COM QR
     pixProgramadoComQR: '/api/corpx/pix/programado-qr',
+    
+    // 📊 NOVA API DE TRANSAÇÕES
+    listarTransacoes: '/api/corpx/transactions',
+    
+    // 🔄 SINCRONIZAR EXTRATO
+    sincronizarExtrato: '/api/corpx/sync',
   }
 } as const;
 
@@ -357,6 +367,173 @@ export async function consultarExtratoTCR(params: CorpXExtratoParams): Promise<C
       totalPages: 1,
       transactions: []
     } as CorpXExtratoResponse;
+  }
+}
+
+/**
+ * Listar transações usando a nova API consolidada
+ * Endpoint: GET /api/corpx/transactions
+ */
+export async function listarTransacoesTCR(params: CorpXTransactionsParams = {}): Promise<CorpXTransactionsResponse> {
+  try {
+    const { TOKEN_STORAGE } = await import('@/config/api');
+    const userToken = TOKEN_STORAGE.get();
+
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+
+    // ✅ URL base fixa para API CorpX
+    const tcrBaseUrl = 'https://api-bank-v2.gruponexus.com.br';
+    const baseUrlTrimmed = tcrBaseUrl.endsWith('/') ? tcrBaseUrl.slice(0, -1) : tcrBaseUrl;
+    const url = new URL(`${baseUrlTrimmed}${TCR_CONFIG.endpoints.listarTransacoes}`);
+    const query = url.searchParams;
+
+    // ✅ AccountId fixo para TCR: 51771
+    query.append('accountId', '51771');
+
+    if (params.transactionType) {
+      query.append('transactionType', params.transactionType);
+    }
+    if (params.startDate) {
+      query.append('startDate', params.startDate);
+    }
+    if (params.endDate) {
+      query.append('endDate', params.endDate);
+    }
+    
+    // ✅ Prioridade: exactAmount ignora minAmount e maxAmount
+    if (typeof params.exactAmount === 'number' && params.exactAmount > 0) {
+      query.append('exactAmount', params.exactAmount.toString());
+    } else {
+      // Só adicionar minAmount e maxAmount se exactAmount não foi informado
+      if (typeof params.minAmount === 'number') {
+        query.append('minAmount', params.minAmount.toString());
+      }
+      if (typeof params.maxAmount === 'number') {
+        query.append('maxAmount', params.maxAmount.toString());
+      }
+    }
+    
+    // ✅ Prioridade: endToEnd ignora search
+    if (params.endToEnd && params.endToEnd.trim() !== '') {
+      query.append('endToEnd', params.endToEnd.trim());
+    } else if (params.search && params.search.trim() !== '') {
+      query.append('search', params.search.trim());
+    }
+    if (params.pixStatus) {
+      query.append('pixStatus', params.pixStatus);
+    }
+    if (params.pixType) {
+      query.append('pixType', params.pixType);
+    }
+    if (params.source) {
+      query.append('source', params.source);
+    }
+    if (params.payerDocument) {
+      query.append('payerDocument', params.payerDocument);
+    }
+    if (params.beneficiaryDocument) {
+      query.append('beneficiaryDocument', params.beneficiaryDocument);
+    }
+    if (typeof params.limit === 'number') {
+      const safeLimit = Math.min(Math.max(params.limit, 1), 2000);
+      query.append('limit', safeLimit.toString());
+    } else {
+      // Default limit de 500 se não especificado
+      query.append('limit', '500');
+    }
+    if (typeof params.offset === 'number') {
+      query.append('offset', Math.max(params.offset, 0).toString());
+    } else {
+      // Default offset de 0 se não especificado
+      query.append('offset', '0');
+    }
+    if (params.order) {
+      query.append('order', params.order);
+    } else {
+      // Default order desc se não especificado
+      query.append('order', 'desc');
+    }
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    return responseData as CorpXTransactionsResponse;
+  } catch (error: any) {
+    console.error('[TCR-TRANSACTIONS] Erro ao listar transações:', error.message || error);
+    throw error;
+  }
+}
+
+/**
+ * Sincronizar extrato TCR
+ * Endpoint: POST /api/corpx/sync
+ */
+export async function sincronizarExtratoTCR(params: CorpXSyncRequest): Promise<CorpXSyncResponse> {
+  try {
+    const { TOKEN_STORAGE } = await import('@/config/api');
+    const userToken = TOKEN_STORAGE.get();
+
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+
+    // ✅ URL base fixa para API CorpX
+    const tcrBaseUrl = 'https://api-bank-v2.gruponexus.com.br';
+    const baseUrlTrimmed = tcrBaseUrl.endsWith('/') ? tcrBaseUrl.slice(0, -1) : tcrBaseUrl;
+    const url = `${baseUrlTrimmed}${TCR_CONFIG.endpoints.sincronizarExtrato}`;
+
+    const payload = {
+      taxDocument: params.taxDocument,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      dryRun: params.dryRun ?? false,
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const text = await response.text();
+    let parsed: any;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch (parseError) {
+        parsed = { success: response.ok, raw: text };
+      }
+    } else {
+      parsed = { success: response.ok };
+    }
+
+    if (!response.ok) {
+      const message = parsed?.message || `HTTP error! status: ${response.status}`;
+      throw new Error(message);
+    }
+
+    return parsed as CorpXSyncResponse;
+  } catch (error: any) {
+    console.error('[TCR-SYNC] Erro ao sincronizar extrato:', error?.message || error);
+    throw error;
   }
 }
 
@@ -925,6 +1102,8 @@ export const TCRService = {
   // 💰 CONTA / SALDO
   consultarSaldo: consultarSaldoTCR,
   consultarExtrato: consultarExtratoTCR,
+  listarTransacoes: listarTransacoesTCR,
+  sincronizarExtrato: sincronizarExtratoTCR,
   criarConta: criarContaTCR,
   
   // 🔑 CHAVES PIX

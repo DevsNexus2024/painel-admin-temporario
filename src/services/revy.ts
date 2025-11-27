@@ -34,7 +34,8 @@ export interface LedgerPosting {
 
 export interface LedgerTransaction {
   id: string;
-  type: RevyJournalType;
+  type?: RevyJournalType; // Campo opcional para compatibilidade
+  journalType?: RevyJournalType; // Campo real da API
   description: string | null;
   endToEndId: string | null;
   externalId: string | null;
@@ -218,6 +219,91 @@ export async function sendRevyPixPayment(
       .json()
       .catch(() => ({ message: response.statusText }));
     throw new Error(errorPayload.message || "Erro ao enviar PIX Revy");
+  }
+
+  return response.json();
+}
+
+// Interfaces para Chaves PIX
+export interface RevyPixKey {
+  id: string;
+  key: string;
+  type: "EVP" | "CPF" | "CNPJ" | "EMAIL" | "PHONE";
+  status: "ACTIVE" | "INACTIVE";
+}
+
+export interface RevyPixKeysResponse {
+  keys: RevyPixKey[];
+}
+
+export interface RevyCreatePixKeyRequest {
+  keyType: "EVP" | "CPF" | "CNPJ" | "EMAIL" | "PHONE";
+  key?: string; // Opcional para EVP (gerado automaticamente), obrigatório para outros tipos
+}
+
+export interface RevyCreatePixKeyResponse {
+  key: RevyPixKey;
+}
+
+/**
+ * Listar chaves PIX de uma conta Revy
+ */
+export async function listRevyPixKeys(
+  accountId: string
+): Promise<RevyPixKeysResponse> {
+  const token = TOKEN_STORAGE.get();
+  if (!token) {
+    throw new Error("Token de autenticação não encontrado. Faça login novamente.");
+  }
+
+  const endpoint = `https://api-v2.tcr.finance/revy/accounts/${accountId}/pix/keys`;
+
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errorPayload = await response
+      .json()
+      .catch(() => ({ message: response.statusText }));
+    throw new Error(errorPayload.message || "Erro ao listar chaves PIX Revy");
+  }
+
+  return response.json();
+}
+
+/**
+ * Criar nova chave PIX em uma conta Revy
+ */
+export async function createRevyPixKey(
+  accountId: string,
+  payload: RevyCreatePixKeyRequest
+): Promise<RevyCreatePixKeyResponse> {
+  const token = TOKEN_STORAGE.get();
+  if (!token) {
+    throw new Error("Token de autenticação não encontrado. Faça login novamente.");
+  }
+
+  const endpoint = `https://api-v2.tcr.finance/revy/accounts/${accountId}/pix/keys`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorPayload = await response
+      .json()
+      .catch(() => ({ message: response.statusText }));
+    throw new Error(errorPayload.message || "Erro ao criar chave PIX Revy");
   }
 
   return response.json();

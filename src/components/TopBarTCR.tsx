@@ -1,8 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SendHorizontal, RefreshCcw, Loader2, DollarSign, Lock, CheckCircle, AlertCircle } from "lucide-react";
+import { RefreshCcw, Loader2, Wifi, WifiOff, CheckCircle, AlertCircle, FileText, Banknote, Lock, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { useTCRSaldo } from "@/hooks/useTCRSaldo";
 import { TCRService } from "@/services/tcr";
+import AnimatedBalance from "@/components/AnimatedBalance";
 
 export default function TopBarTCR() {
   // CNPJ da TCR
@@ -23,36 +24,12 @@ export default function TopBarTCR() {
     return TCRService.formatarValor(value);
   };
 
-  // Funções para exibir saldos baseadas na nova API
-  const getSaldoDisplay = () => {
-    if (isLoadingSaldo) return 'Carregando...';
-    if (errorSaldo) return 'Erro ao consultar saldo TCR';
-    if (saldoData?.erro) return 'Erro na API TCR';
-    return formatCurrency(saldoData?.saldo || 0);
-  };
-
-  const getSaldoDisponivelDisplay = () => {
-    if (isLoadingSaldo) return 'Carregando...';
-    if (errorSaldo) return 'Erro';
-    if (saldoData?.erro) return 'Erro';
-    return formatCurrency(saldoData?.saldoDisponivel || 0);
-  };
-
-  const getLimiteBloqueadoDisplay = () => {
-    if (isLoadingSaldo) return 'Carregando...';
-    if (errorSaldo) return 'Erro';
-    if (saldoData?.erro) return 'Erro';
-    return formatCurrency(saldoData?.limiteBloqueado || 0);
-  };
-
-  const getContaInfo = () => {
-    return (
-      <div className="text-xs text-muted-foreground">
-        <span>
-          TCR • BRL • {lastUpdated ? lastUpdated.toLocaleTimeString('pt-BR') : 'Nunca atualizado'}
-        </span>
-      </div>
-    );
+  const parseValue = (value: number | string): number => {
+    if (typeof value === 'string') {
+      const numValue = parseFloat(value.replace(/[^\d,]/g, '').replace(',', '.'));
+      return isNaN(numValue) ? 0 : numValue;
+    }
+    return isNaN(value) ? 0 : value;
   };
 
   const getStatusIcon = () => {
@@ -65,23 +42,31 @@ export default function TopBarTCR() {
     return <CheckCircle className="h-4 w-4 text-green-500" />;
   };
 
+  // Valores dos saldos
+  const saldoTotal = saldoData?.saldo || 0;
+  const saldoDisponivel = saldoData?.saldoDisponivel || 0;
+  const limiteBloqueado = saldoData?.limiteBloqueado || 0;
+
   return (
-    <div className="sticky top-0 z-30 bg-tcr-dark/95 backdrop-blur-xl border-b border-border h-auto p-6">
+    <div className="sticky top-0 z-30 bg-background border-b border-border h-auto p-6">
       {/* Header principal */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-2xl bg-gradient-to-br from-green-600 to-green-800 shadow-xl">
-            <SendHorizontal className="h-6 w-6 text-white" />
+            <Banknote className="h-6 w-6 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-3">
+              <Banknote className="h-5 w-5 text-green-600" />
               <h1 className="text-2xl font-bold text-foreground">TCR</h1>
-              <Badge className="bg-green-100 text-green-800 border-green-200 text-xs font-medium">
+              <Badge className="bg-[rgba(34,197,94,0.2)] text-green-600 border-[rgba(34,197,94,0.4)] text-xs font-medium">
                 Banking
               </Badge>
               {getStatusIcon()}
             </div>
-            <p className="text-muted-foreground text-sm">Central de transferências PIX</p>
+            <p className="text-muted-foreground text-sm">
+              Central de transferências PIX
+            </p>
           </div>
         </div>
 
@@ -98,81 +83,97 @@ export default function TopBarTCR() {
             ) : (
               <RefreshCcw className="h-4 w-4 text-muted-foreground" />
             )}
-            <span className="ml-2 text-sm text-muted-foreground">
-              {isLoadingSaldo ? "Atualizando..." : "Atualizar"}
-            </span>
+            <span className="ml-2 text-sm">Atualizar</span>
           </Button>
         </div>
       </div>
 
-      {/* Cards de saldo - TCR Nova API */}
-      <div className="w-full max-w-7xl mx-auto">
-        {errorSaldo && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-red-500" />
-              <span className="text-red-700 text-sm">{errorSaldo}</span>
-            </div>
+      {/* Cards lado a lado - 5 cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
+        {/* Card 1: Total */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <FileText className="h-[18px] w-[18px] text-[rgb(0,105,209)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Total</span>
           </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          
-          {/* Card: Saldo Principal */}
-          <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-emerald-500/20">
-                <DollarSign className="h-5 w-5 text-emerald-400" />
-              </div>
-              <div className="flex-1">
-                <p className="text-muted-foreground text-sm">Saldo principal</p>
-                <p className={`font-bold text-lg font-mono mt-1 ${errorSaldo || saldoData?.erro ? 'text-destructive' : 'text-foreground'}`}>
-                  {getSaldoDisplay()}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">Saldo total</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Card: Saldo Disponível */}
-          <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-blue-500/20">
-                <CheckCircle className="h-5 w-5 text-blue-400" />
-              </div>
-              <div className="flex-1">
-                <p className="text-muted-foreground text-sm">Saldo disponível</p>
-                <p className={`font-bold text-lg font-mono mt-1 ${errorSaldo || saldoData?.erro ? 'text-destructive' : 'text-foreground'}`}>
-                  {getSaldoDisponivelDisplay()}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">Para transferências</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Card: Limite Bloqueado */}
-          <div className="bg-gradient-to-br from-card to-muted/20 rounded-2xl p-4 border border-border shadow-lg backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-orange-500/20">
-                <Lock className="h-5 w-5 text-orange-400" />
-              </div>
-              <div className="flex-1">
-                <p className="text-muted-foreground text-sm">Limite bloqueado</p>
-                <p className="font-bold text-lg font-mono mt-1 text-foreground">
-                  {getLimiteBloqueadoDisplay()}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">Reservado</p>
-              </div>
-            </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(0,105,209)] mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : errorSaldo || saldoData?.erro ? (
+              <span className="text-lg text-red-500">Erro</span>
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoTotal)} /></div>
+            )}
           </div>
         </div>
-        
-        {/* Informações da conta */}
-        <div className="mt-4 text-center">
-          {getContaInfo()}
+
+        {/* Card 2: Available */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <CheckCircle className="h-[18px] w-[18px] text-[rgb(56,209,0)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Disponível</span>
+          </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(56,209,0)] mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : errorSaldo || saldoData?.erro ? (
+              <span className="text-lg text-red-500">Erro</span>
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoDisponivel)} /></div>
+            )}
+          </div>
         </div>
 
-        
+        {/* Card 3: Locked */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <Lock className="h-[18px] w-[18px] text-[rgb(184,0,0)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Bloqueado</span>
+          </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(184,0,0)] mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : errorSaldo || saldoData?.erro ? (
+              <span className="text-lg text-red-500">Erro</span>
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(limiteBloqueado)} /></div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 4: Pending Deposit */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowDownCircle className="h-[18px] w-[18px] text-green-600 group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Depósito Pendente</span>
+          </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-green-600 mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : errorSaldo || saldoData?.erro ? (
+              <span className="text-lg text-red-500">Erro</span>
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={0} /></div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 5: Pending Withdrawal */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowUpCircle className="h-[18px] w-[18px] text-green-600 group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saque Pendente</span>
+          </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-green-600 mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : errorSaldo || saldoData?.erro ? (
+              <span className="text-lg text-red-500">Erro</span>
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={0} /></div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

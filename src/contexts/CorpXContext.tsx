@@ -31,6 +31,13 @@ export const CORPX_ACCOUNTS = [
     razaoSocial: 'TRKBIT TECNOLOGIA E INFORMACAO LTDA',
     cnpj: '41586874000150',
     available: true,
+  },
+  {
+    id: '5',
+    razaoSocial: 'EDITION LIMITED SERVICOS DIGITAIS',
+    cnpj: '61504259000164',
+    available: true,
+    apiAccountId: 51807, // ID numérico da API
   }
 ];
 
@@ -39,6 +46,7 @@ interface CorpXAccount {
   razaoSocial: string;
   cnpj: string;
   available: boolean;
+  apiAccountId?: number; // ID numérico usado na API /api/corpx/transactions
 }
 
 interface CorpXContextType {

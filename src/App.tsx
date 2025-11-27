@@ -21,7 +21,9 @@ import CorpXTTFPage from "./pages/CorpXTTFPage";
 import BitsoPage from "./pages/BitsoPage";
 import BitsoTcrPage from "./pages/BitsoTcrPage";
 import BitsoApiPage from "./pages/BitsoApiPage";
+import BrasilCashTcrPage from "./pages/BrasilCashTcrPage";
 import IpRevyOtcPage from "./pages/IpRevyOtcPage";
+import IpRevyTcrPage from "./pages/IpRevyTcrPage";
 import SupportPage from "./pages/SupportPage";
 import ContasOrganizacoesLayout from "./pages/ContasOrganizacoes/ContasOrganizacoesLayout";
 import OrganizacaoDetailsPage from "./pages/ContasOrganizacoes/OrganizacaoDetailsPage";
@@ -35,6 +37,7 @@ import AdminClientStatement from "./pages/otc/AdminClientStatement.tsx";
 import ClientStatement from "./pages/ClientStatement";
 import EmployeeStatement from "./pages/EmployeeStatement";
 import AnaliseUsuario from "./pages/AnaliseUsuario";
+import AuditoriaDepositosPage from "./pages/AuditoriaDepositosPage";
 
 // 🚨 IMPORTAR NOVA ARQUITETURA MULTI-BANCO
 import { initializeBankingSystem } from "@/services/banking";
@@ -157,7 +160,10 @@ const App = () => (
                 <Route path="/bitso" element={<BitsoPage />} />
                 <Route path="/bitso-tcr" element={<BitsoTcrPage />} />
                 <Route path="/bitso-api" element={<BitsoApiPage />} />
+                <Route path="/brasilcash-tcr" element={<BrasilCashTcrPage />} />
                 <Route path="/ip-revy-otc" element={<IpRevyOtcPage />} />
+                <Route path="/ip-revy-tcr" element={<IpRevyTcrPage />} />
+                <Route path="/auditoria-depositos" element={<AuditoriaDepositosPage />} />
                 <Route path="/contas-organizacoes" element={<ContasOrganizacoesLayout />} />
                 <Route path="/suporte" element={<SupportPage />} />
                 <Route path="/contas-organizacoes/organizacao/:id" element={<OrganizacaoDetailsPage />} />

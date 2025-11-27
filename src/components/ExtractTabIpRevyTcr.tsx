@@ -7,24 +7,24 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Plus, Check, CheckSquare, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon } from "lucide-react";
+import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Plus, Check, CheckCircle, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
-import BulkCreditOTCModal from "@/components/otc/BulkCreditOTCModal";
+import CompensationModalInteligente from "@/components/CompensationModalInteligente";
+import { TCRVerificacaoService } from "@/services/tcrVerificacao";
 import { useRevyRealtime } from "@/hooks/useRevyRealtime";
 import { BitsoRealtimeService, type BitsoTransactionDB } from "@/services/bitso-realtime";
 import { fetchRevyTransactions, type LedgerTransaction } from "@/services/revy";
 import type { MovimentoExtrato } from "@/services/extrato";
 
-// Constantes para IP Revy OTC
-const IP_REVY_TENANT_ID = 3;
-const IP_REVY_ACCOUNT_ID = 100;
+// Constantes para IP Revy TCR
+const IP_REVY_TENANT_ID = 2;
+const IP_REVY_ACCOUNT_ID = 35; // TODO: Confirmar accountId correto para TCR
 
-export default function ExtractTabIpRevyOtc() {
-  // WebSocket para IP Revy OTC
+export default function ExtractTabIpRevyTcr() {
+  // WebSocket para IP Revy TCR
   const { isConnected } = useRevyRealtime({
     tenantId: IP_REVY_TENANT_ID,
   });
@@ -62,15 +62,10 @@ export default function ExtractTabIpRevyOtc() {
   const [specificAmount, setSpecificAmount] = useState<string>("");
   const [showReversalsOnly, setShowReversalsOnly] = useState(false);
 
-  // Estados para funcionalidade OTC
-  const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
-  const [selectedExtractRecord, setSelectedExtractRecord] = useState<MovimentoExtrato | null>(null);
-  const [creditedRecords, setCreditedRecords] = useState<Set<string>>(new Set());
-
-  // Estados para crédito em lote
-  const [bulkMode, setBulkMode] = useState(false);
-  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
-  const [bulkOTCModalOpen, setBulkOTCModalOpen] = useState(false);
+  // Estados para funcionalidade de Compensação
+  const [compensationModalOpen, setCompensationModalOpen] = useState(false);
+  const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<any>(null);
+  const [compensatedRecords, setCompensatedRecords] = useState<Set<string>>(new Set());
   const [syncing, setSyncing] = useState(false);
 
   // Estado para controlar linha expandida
@@ -146,8 +141,8 @@ export default function ExtractTabIpRevyOtc() {
         status = 'COMPLETE';
       }
     }
-
-  return {
+    
+    return {
       id: parseInt(ledgerTx.id),
       type: journalType === 'DEPOSIT' ? 'FUNDING' : 'WITHDRAWAL',
       transactionId: ledgerTx.providerTxId || ledgerTx.externalId || ledgerTx.id,
@@ -174,21 +169,21 @@ export default function ExtractTabIpRevyOtc() {
   // Buscar transações do Revy
   const fetchTransactions = async (resetOffset: boolean = false, overrideLimit?: number) => {
     setLoading(true);
-      setError(null);
-
-      try {
+    setError(null);
+    
+    try {
       const limit = overrideLimit ?? recordsPerPage;
       const offset = resetOffset ? 0 : pagination.offset;
       
-        const response = await fetchRevyTransactions({
+      const response = await fetchRevyTransactions({
         tenantId: IP_REVY_TENANT_ID,
         accountId: IP_REVY_ACCOUNT_ID,
         startDate: dateFilter.start,
         endDate: dateFilter.end,
-          limit,
-          offset,
-          includePostings: true,
-        });
+        limit,
+        offset,
+        includePostings: true,
+      });
 
       // Converter dados do Revy para formato BitsoTransactionDB
       const mappedTransactions = (response.data || []).map(mapRevyToBitsoTransaction);
@@ -393,8 +388,8 @@ export default function ExtractTabIpRevyOtc() {
     }
   };
 
-  // Função customizada para badge de status com tema roxo (apenas para IP Revy OTC)
-  const getStatusBadgeForIpRevyOTC = (status: string) => {
+  // Função customizada para badge de status com tema roxo (apenas para IP Revy TCR)
+  const getStatusBadgeForIpRevyTCR = (status: string) => {
     const baseBadge = BitsoRealtimeService.getStatusBadge(status);
     let customClassName = "";
     
@@ -414,7 +409,7 @@ export default function ExtractTabIpRevyOtc() {
       default:
         customClassName = "";
     }
-
+    
     return {
       ...baseBadge,
       className: cn("text-xs", customClassName)
@@ -476,11 +471,11 @@ export default function ExtractTabIpRevyOtc() {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `extrato-ip-revy-otc-${new Date().toISOString().split('T')[0]}.csv`;
+      link.download = `extrato-ip-revy-tcr-${new Date().toISOString().split('T')[0]}.csv`;
       link.click();
       
       toast.success(`${transactionsToExport.length} registros exportados com sucesso!`, {
-        description: `Arquivo: extrato-ip-revy-otc-${new Date().toISOString().split('T')[0]}.csv`
+        description: `Arquivo: extrato-ip-revy-tcr-${new Date().toISOString().split('T')[0]}.csv`
       });
     } catch (error: any) {
       toast.error('Erro ao exportar extrato', {
@@ -489,47 +484,89 @@ export default function ExtractTabIpRevyOtc() {
     }
   };
 
-  const isRecordCredited = (transaction: BitsoTransactionDB): boolean => {
-    const recordKey = `ip-revy-${transaction.id}`;
-    return creditedRecords.has(recordKey);
+  const isRecordCompensated = (transaction: BitsoTransactionDB): boolean => {
+    const recordKey = `ip-revy-tcr-${transaction.id}`;
+    return compensatedRecords.has(recordKey);
   };
 
-  const handleCreditToOTC = async (transaction: BitsoTransactionDB, event: React.MouseEvent) => {
+  const handleCompensation = async (transaction: BitsoTransactionDB, event: React.MouseEvent) => {
     event.stopPropagation();
     
-    if (isRecordCredited(transaction)) {
-      toast.error('Registro já creditado');
+    if (isRecordCompensated(transaction)) {
+      toast.error('Registro já compensado');
       return;
     }
-
-    // Converter para o formato esperado pelo modal (MovimentoExtrato)
-    setSelectedExtractRecord({
+    
+    // ✅ Converter para formato MovimentoExtrato esperado pelo modal (IGUAL Bitso TCR)
+    const extractRecord: MovimentoExtrato = {
       id: transaction.transactionId,
       dateTime: transaction.createdAt,
       value: parseFloat(transaction.amount),
       type: transaction.type === 'FUNDING' ? 'CRÉDITO' : 'DÉBITO',
       document: transaction.payerTaxId || '',
-      client: transaction.type === 'FUNDING' 
-        ? (transaction.payerName || 'N/A')
-        : (transaction.payeeName || 'N/A'),
-      identified: true,
       code: transaction.endToEndId,
-      descCliente: `IP Revy OTC - ${transaction.type === 'FUNDING' 
+      descCliente: `IP Revy TCR - ${transaction.type === 'FUNDING' 
+        ? (transaction.payerName || 'N/A')
+        : (transaction.payeeName || 'N/A')}`,
+      identified: true,
+      descricaoOperacao: `IP Revy TCR - ${transaction.type === 'FUNDING' 
         ? (transaction.payerName || 'N/A')
         : (transaction.payeeName || 'N/A')}`,
       _original: transaction
-    });
-    setCreditOTCModalOpen(true);
-  };
-
-  const handleCloseCreditOTCModal = (wasSuccessful?: boolean) => {
-    if (wasSuccessful && selectedExtractRecord) {
-      const recordKey = `ip-revy-${selectedExtractRecord._original.id}`;
-      setCreditedRecords(prev => new Set(prev).add(recordKey));
+    };
+    
+    // ✅ Buscar id_usuario automaticamente via endtoend (IGUAL Bitso TCR)
+    try {
+      toast.info('Buscando usuário...', {
+        description: 'Verificando endtoend da transação via API'
+      });
+      
+      // Criar objeto compatível com TCRVerificacaoService
+      const tcTransaction = {
+        id: transaction.transactionId || transaction.endToEndId,
+        _original: {
+          idEndToEnd: transaction.endToEndId,
+          endToEndId: transaction.endToEndId
+        },
+        code: transaction.endToEndId
+      };
+      
+      const resultado = await TCRVerificacaoService.verificarTransacaoTCR(tcTransaction);
+      
+      if (resultado.encontrou && resultado.id_usuario) {
+        // ✅ ENCONTROU! Modificar descCliente para incluir o ID do usuário
+        extractRecord.descCliente = `Usuario ${resultado.id_usuario}; ${extractRecord.descCliente}`;
+        
+        toast.success(`Usuário encontrado: ID ${resultado.id_usuario}`, {
+          description: 'Abrindo modal com todas as funcionalidades'
+        });
+      } else {
+        // ❌ Não encontrou - mostrar aviso mas abrir modal mesmo assim
+        toast.warning('Usuário não encontrado automaticamente', {
+          description: 'Modal aberto - você pode informar o ID manualmente'
+        });
+      }
+    } catch (error) {
+      toast.error('Erro na verificação automática', {
+        description: 'Modal aberto - você pode informar o ID manualmente'
+      });
     }
     
-    setCreditOTCModalOpen(false);
-    setSelectedExtractRecord(null);
+    // ✅ SEMPRE abrir o modal (com ou sem id_usuario encontrado)
+    setSelectedCompensationRecord(extractRecord);
+    setCompensationModalOpen(true);
+  };
+
+  const handleCloseCompensationModal = (wasSuccessful?: boolean) => {
+    if (wasSuccessful && selectedCompensationRecord) {
+      const recordKey = `ip-revy-tcr-${selectedCompensationRecord._original.id}`;
+      setCompensatedRecords(prev => new Set(prev).add(recordKey));
+      toast.success('Compensação realizada com sucesso!');
+      fetchTransactions(true); // Recarregar dados
+    }
+    
+    setCompensationModalOpen(false);
+    setSelectedCompensationRecord(null);
   };
 
   const handleSyncExtrato = async () => {
@@ -555,84 +592,6 @@ export default function ExtractTabIpRevyOtc() {
     }
   };
 
-  const toggleTransactionSelection = (transactionId: number) => {
-    setSelectedTransactions(prev => {
-      const newSet = new Set(prev);
-      const key = transactionId.toString();
-      if (newSet.has(key)) {
-        newSet.delete(key);
-      } else {
-        newSet.add(key);
-      }
-      return newSet;
-    });
-  };
-
-  const selectAllVisibleCredits = () => {
-    const creditTransactions = transactions
-      .filter(t => t.type === 'FUNDING' && !isRecordCredited(t))
-      .map(t => t.id.toString());
-    
-    setSelectedTransactions(new Set(creditTransactions));
-    toast.success(`${creditTransactions.length} transações selecionadas`);
-  };
-
-  const clearSelection = () => {
-    setSelectedTransactions(new Set());
-  };
-
-  const toggleBulkMode = () => {
-    const newBulkMode = !bulkMode;
-    setBulkMode(newBulkMode);
-    
-    if (!newBulkMode) {
-      clearSelection();
-    }
-  };
-
-  const handleBulkCredit = () => {
-    if (selectedTransactions.size === 0) {
-      toast.error('Selecione pelo menos uma transação');
-      return;
-    }
-
-    setBulkOTCModalOpen(true);
-  };
-
-  const handleCloseBulkOTCModal = (wasSuccessful?: boolean, successfulIds?: string[]) => {
-    if (wasSuccessful && successfulIds && successfulIds.length > 0) {
-      setCreditedRecords(prev => {
-        const newSet = new Set(prev);
-        successfulIds.forEach(id => newSet.add(`ip-revy-${id}`));
-        return newSet;
-      });
-      
-      clearSelection();
-    }
-    
-    setBulkOTCModalOpen(false);
-  };
-
-  const getSelectedTransactionsData = () => {
-    return transactions
-      .filter(t => selectedTransactions.has(t.id.toString()))
-      .map(t => ({
-        id: t.transactionId,
-        dateTime: t.createdAt,
-        value: parseFloat(t.amount),
-        type: t.type === 'FUNDING' ? 'CRÉDITO' as const : 'DÉBITO' as const,
-        document: t.payerTaxId || '',
-        client: t.type === 'FUNDING' 
-          ? (t.payerName || 'N/A')
-          : (t.payeeName || 'N/A'),
-        identified: true,
-        code: t.endToEndId,
-        descCliente: `IP Revy OTC - ${t.type === 'FUNDING' 
-          ? (t.payerName || 'N/A')
-          : (t.payeeName || 'N/A')}`,
-        _original: t
-      }));
-  };
 
   const handlePreviousPage = () => {
     if (pagination.offset > 0) {
@@ -742,7 +701,7 @@ export default function ExtractTabIpRevyOtc() {
     }
   };
 
-    return (
+  return (
     <div className="space-y-4">
       {/* Barra de ações */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
@@ -756,7 +715,7 @@ export default function ExtractTabIpRevyOtc() {
           <span className="text-sm text-muted-foreground">
             {pagination.total} transações
           </span>
-            </div>
+          </div>
           
           <div className="flex gap-2">
           <Select
@@ -773,9 +732,9 @@ export default function ExtractTabIpRevyOtc() {
               <SelectItem value="2000">2000 registros</SelectItem>
             </SelectContent>
           </Select>
-              <Button
-                variant="outline"
-                size="sm"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => fetchTransactions(true)}
             disabled={loading}
           >
@@ -809,15 +768,15 @@ export default function ExtractTabIpRevyOtc() {
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Depósitos</p>
             {metrics.loading ? (
               <Loader2 className="h-5 w-5 animate-spin text-[#9333ea]" />
-                ) : (
-                  <>
+            ) : (
+              <>
                 <p className="text-2xl font-bold text-[#9333ea]">{metrics.totalDeposits}</p>
                 <p className="text-sm text-muted-foreground">
                   {formatCurrency(metrics.depositAmount)}
                 </p>
-                  </>
-                )}
-            </div>
+              </>
+            )}
+          </div>
         </Card>
 
         <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
@@ -833,7 +792,7 @@ export default function ExtractTabIpRevyOtc() {
                 </p>
               </>
             )}
-            </div>
+          </div>
         </Card>
 
         <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
@@ -847,7 +806,7 @@ export default function ExtractTabIpRevyOtc() {
               </p>
             )}
           </div>
-      </Card>
+        </Card>
 
         <Card className="p-4 bg-background border border-[rgba(147,51,234,0.3)]">
           <div className="space-y-1">
@@ -859,8 +818,8 @@ export default function ExtractTabIpRevyOtc() {
                 {formatCurrency(metrics.withdrawalAmount)}
               </p>
             )}
-              </div>
-          </Card>
+          </div>
+        </Card>
       </div>
 
       {/* Filtros (sempre visíveis) */}
@@ -908,7 +867,7 @@ export default function ExtractTabIpRevyOtc() {
                   <SelectItem value="FAILED">Falhou</SelectItem>
                 </SelectContent>
               </Select>
-              </div>
+            </div>
 
             <div className="space-y-2">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor específico</label>
@@ -919,8 +878,8 @@ export default function ExtractTabIpRevyOtc() {
                 onChange={(e) => setSpecificAmount(e.target.value)}
                 className="h-10 bg-background border-2 focus:border-[rgba(147,51,234,0.6)]"
               />
-              </div>
             </div>
+          </div>
 
           {/* Linha 2: Data inicial, Data final, Valor mínimo, Valor máximo */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
@@ -951,7 +910,7 @@ export default function ExtractTabIpRevyOtc() {
                     onSelect={(date) => {
                       if (date) {
                         setDateRange({ ...dateRange, from: date });
-                    }
+                      }
                     }}
                     locale={ptBR}
                   />
@@ -986,7 +945,7 @@ export default function ExtractTabIpRevyOtc() {
                     onSelect={(date) => {
                       if (date) {
                         setDateRange({ ...dateRange, to: date });
-                    }
+                      }
                     }}
                     locale={ptBR}
                   />
@@ -996,14 +955,14 @@ export default function ExtractTabIpRevyOtc() {
 
             <div className="space-y-2">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor mínimo</label>
-                <Input
+              <Input
                 type="number"
                 placeholder="0.00"
                 value={minAmount}
                 onChange={(e) => setMinAmount(e.target.value)}
                 className="h-10 bg-background border-2 focus:border-[rgba(147,51,234,0.6)]"
-                />
-              </div>
+              />
+            </div>
 
             <div className="space-y-2">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor máximo</label>
@@ -1029,14 +988,14 @@ export default function ExtractTabIpRevyOtc() {
                 />
                 <label htmlFor="reversals" className="text-sm font-medium cursor-pointer">
                   Apenas Estornos
-              </label>
-            </div>
+                </label>
+              </div>
               
               {loading && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Aplicando filtros...
-            </div>
+                </div>
               )}
             </div>
           
@@ -1065,100 +1024,43 @@ export default function ExtractTabIpRevyOtc() {
               <X className="h-4 w-4 mr-2" />
               Limpar Filtros
             </Button>
-            </div>
           </div>
+        </div>
       </Card>
 
       {/* Tabela */}
       <Card className="overflow-hidden">
-      {/* 🆕 Barra de Ações em Lote */}
-        <div className={cn(
-          "px-6 py-4 border-b border-border transition-all",
-          "bg-muted/30"
-      )}>
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              variant={bulkMode ? "default" : "outline"}
-              onClick={toggleBulkMode}
-                className={bulkMode ? "bg-[#9333ea] hover:bg-[#7c3aed]" : ""}
-            >
-              <CheckSquare className="h-4 w-4 mr-2" />
-              {bulkMode ? "Sair do Modo Lote" : "Modo Seleção em Lote"}
-            </Button>
-            
-            {bulkMode && (
-              <>
-                <Badge variant="secondary" className="text-sm px-3 py-1">
-                  {selectedTransactions.size} selecionada{selectedTransactions.size !== 1 ? 's' : ''}
-                </Badge>
-                
-            <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={selectAllVisibleCredits}
-                    disabled={filteredTransactions.filter(t => t.type === 'FUNDING' && !isRecordCredited(t)).length === 0}
-                >
-                  Selecionar Todas Visíveis
-            </Button>
-                
-            <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearSelection}
-                  disabled={selectedTransactions.size === 0}
-                >
-                  <X className="h-3 w-3 mr-1" />
-                  Limpar Seleção
-            </Button>
-                </>
-              )}
-          </div>
-          
-          {bulkMode && selectedTransactions.size > 0 && (
-            <Button
-              onClick={handleBulkCredit}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Creditar {selectedTransactions.size} em Lote
-            </Button>
-          )}
-              </div>
-                </div>
-
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-[#9333ea]" />
-            </div>
-          ) : error ? (
+          </div>
+        ) : error ? (
           <div className="p-6 text-center">
             <p className="text-red-500 mb-4">Erro ao carregar extrato</p>
             <Button onClick={() => fetchTransactions(true)} variant="outline">
               Tentar Novamente
-              </Button>
-            </div>
+            </Button>
+          </div>
         ) : filteredTransactions.length === 0 ? (
           <div className="p-12 text-center">
             <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <p className="text-muted-foreground">
               {searchTerm ? 'Nenhuma transação encontrada com esse filtro' : 'Nenhuma transação encontrada'}
             </p>
-            </div>
-          ) : (
-            <>
+          </div>
+        ) : (
+          <>
             <div className="overflow-x-auto max-h-[1000px] overflow-y-auto relative">
               <table className="w-full">
                 <thead className="bg-muted/50 border-b sticky top-0 z-10">
                   <tr>
-                    {bulkMode && <th className="w-12 p-3"></th>}
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Data/Hora</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Tipo</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Nome</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Valor</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Status</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">End-to-End</th>
-                    {!bulkMode && <th className="w-24 p-3"></th>}
+                    <th className="w-24 p-3"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1166,48 +1068,30 @@ export default function ExtractTabIpRevyOtc() {
                     <>
                     <tr
                       key={tx.id}
-                                className={cn(
+            className={cn(
                         "border-b hover:bg-muted/30 transition-colors cursor-pointer",
                         index % 2 === 0 ? "bg-[#181818]" : "bg-[#1E1E1E]",
-                        bulkMode && selectedTransactions.has(tx.id.toString()) && "bg-muted/20 dark:bg-muted/10",
                         expandedRow === tx.id && "bg-muted/10 dark:bg-muted/5"
             )}
             onClick={() => {
-                        if (bulkMode && tx.type === 'FUNDING' && !isRecordCredited(tx)) {
-                          toggleTransactionSelection(tx.id);
-                        } else if (!bulkMode) {
-                          setExpandedRow(expandedRow === tx.id ? null : tx.id);
-                        }
+                        setExpandedRow(expandedRow === tx.id ? null : tx.id);
                       }}
                     >
-                      {bulkMode && (
-                        <td className="p-3">
-                          {tx.type === 'FUNDING' && !isRecordCredited(tx) && (
-                <Checkbox
-                              checked={selectedTransactions.has(tx.id.toString())}
-                              onCheckedChange={() => toggleTransactionSelection(tx.id)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              )}
-                        </td>
-                      )}
                       <td className="p-3">
                         <div className="flex items-center gap-2">
-                          {!bulkMode && (
-                            expandedRow === tx.id ? (
-                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                            )
+                          {expandedRow === tx.id ? (
+                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           )}
                   <div>
                             <div className="text-sm">{formatDate(tx.createdAt).split(' ')[0]}</div>
                             <div className="text-xs text-muted-foreground">{formatDate(tx.createdAt).split(' ')[1]}</div>
-                            </div>
+                  </div>
                 </div>
                       </td>
                       <td className="p-3">
-                            <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
                           {tx.type === 'FUNDING' ? (
                             <ArrowDownCircle className="h-4 w-4 text-green-500" />
                           ) : (
@@ -1215,8 +1099,8 @@ export default function ExtractTabIpRevyOtc() {
                           )}
                           <span className="text-sm">
                             {tx.type === 'FUNDING' ? 'Recebimento' : 'Envio'}
-                              </span>
-                            </div>
+                          </span>
+                        </div>
                       </td>
                       <td className="p-3">
                         <div className="text-sm font-medium">
@@ -1238,7 +1122,7 @@ export default function ExtractTabIpRevyOtc() {
                         </div>
                       </td>
                       <td className="p-3">
-                        <Badge {...getStatusBadgeForIpRevyOTC(tx.status)}>
+                        <Badge {...getStatusBadgeForIpRevyTCR(tx.status)}>
                           {BitsoRealtimeService.getStatusBadge(tx.status).label}
                         </Badge>
                       </td>
@@ -1247,53 +1131,51 @@ export default function ExtractTabIpRevyOtc() {
                           {tx.endToEndId ? `${tx.endToEndId.substring(0, 20)}...` : '-'}
                         </div>
                       </td>
-                      {!bulkMode && (
-                        <td className="p-3">
-                          {tx.type === 'FUNDING' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                              onClick={(e) => handleCreditToOTC(tx, e)}
-                              disabled={isRecordCredited(tx)}
-                                  className={cn(
-                                    "h-7 px-2 text-xs transition-all",
-                                isRecordCredited(tx)
-                                      ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                  : "bg-[rgba(147,51,234,0.1)] hover:bg-[rgba(147,51,234,0.2)] text-[#9333ea] border-[rgba(147,51,234,0.4)] hover:border-[rgba(147,51,234,0.6)]"
-                      )}
-                              title={isRecordCredited(tx) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
-                    >
-                              {isRecordCredited(tx) ? (
-                                    <>
-                                      <Check className="h-3 w-3 mr-1" />
-                          Creditado
-                                    </>
-                                  ) : (
-                                    <>
-                          <Plus className="h-3 w-3 mr-1" />
-                          OTC
-                                    </>
-                                  )}
-                              </Button>
-                              )}
-                        </td>
-                      )}
+                      <td className="p-3">
+                        {tx.type === 'FUNDING' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => handleCompensation(tx, e)}
+                            disabled={isRecordCompensated(tx)}
+                            className={cn(
+                              "h-7 px-2 text-xs transition-all",
+                              isRecordCompensated(tx)
+                                ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                : "bg-[rgba(255,140,0,0.1)] hover:bg-[rgba(255,140,0,0.2)] text-[#ff8c00] border-[rgba(255,140,0,0.4)] hover:border-[rgba(255,140,0,0.6)]"
+                            )}
+                            title={isRecordCompensated(tx) ? "Já compensado" : "Realizar compensação"}
+                          >
+                            {isRecordCompensated(tx) ? (
+                              <>
+                                <Check className="h-3 w-3 mr-1" />
+                                Compensado
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Compensar
+                              </>
+                            )}
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                     
                     {/* Linha expandida com detalhes */}
-                    {expandedRow === tx.id && !bulkMode && (
+                    {expandedRow === tx.id && (
                       <tr className="bg-muted/5 dark:bg-muted/5 border-b border-border/50">
                         <td colSpan={7} className="p-0">
                           <div className="p-6 space-y-4">
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-sm font-semibold text-[#9333ea]">Detalhes da Transação</h4>
                               <Badge variant="outline" className="text-xs">ID: {tx.id}</Badge>
-                      </div>
+                            </div>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                               {/* Coluna 1 */}
                               <div className="space-y-3">
-                      <div>
+                                <div>
                                   <label className="text-xs font-medium text-muted-foreground uppercase">Transaction ID</label>
                                   <div className="flex items-center gap-2 mt-1">
                                     <p className="text-sm font-mono">{tx.transactionId}</p>
@@ -1309,17 +1191,17 @@ export default function ExtractTabIpRevyOtc() {
                                     >
                                       <Copy className="h-3 w-3" />
                                     </Button>
-                      </div>
-                        </div>
+                                  </div>
+                                </div>
                                 
-                        <div>
+                                <div>
                                   <label className="text-xs font-medium text-muted-foreground uppercase">End-to-End ID</label>
                                   <div className="flex items-center gap-2 mt-1">
                                     <p className="text-sm font-mono break-all">{tx.endToEndId || '-'}</p>
                                     {tx.endToEndId && (
-                        <Button
+                                      <Button
                                         variant="ghost"
-                          size="sm"
+                                        size="sm"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           navigator.clipboard.writeText(tx.endToEndId);
@@ -1328,19 +1210,19 @@ export default function ExtractTabIpRevyOtc() {
                                         className="h-6 w-6 p-0 flex-shrink-0"
                                       >
                                         <Copy className="h-3 w-3" />
-                        </Button>
-                        )}
-                      </div>
-              </div>
-
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                                
                                 {tx.reconciliationId && (
                                   <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">Reconciliation ID</label>
                                     <div className="flex items-center gap-2 mt-1">
                                       <p className="text-sm font-mono">{tx.reconciliationId}</p>
-                  <Button
+                                      <Button
                                         variant="ghost"
-                    size="sm"
+                                        size="sm"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           navigator.clipboard.writeText(tx.reconciliationId);
@@ -1349,51 +1231,51 @@ export default function ExtractTabIpRevyOtc() {
                                         className="h-6 w-6 p-0"
                                       >
                                         <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
+                                      </Button>
+                                    </div>
+                                  </div>
                                 )}
                                 
-            <div>
+                                <div>
                                   <label className="text-xs font-medium text-muted-foreground uppercase">Método</label>
                                   <p className="text-sm mt-1">{tx.methodName || tx.method}</p>
-            </div>
-          </div>
+                                </div>
+                              </div>
                               
                               {/* Coluna 2 */}
                               <div className="space-y-3">
                                 <div>
                                   <label className="text-xs font-medium text-muted-foreground uppercase">Moeda</label>
                                   <p className="text-sm mt-1">{tx.currency}</p>
-              </div>
+                                </div>
                                 
                                 <div>
                                   <label className="text-xs font-medium text-muted-foreground uppercase">Taxa</label>
                                   <p className="text-sm mt-1">{formatCurrency(tx.fee)}</p>
-              </div>
+                                </div>
                                 
                                 {tx.payerTaxId && (
                                   <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">CPF/CNPJ do Pagador</label>
                                     <p className="text-sm mt-1 font-mono">{tx.payerTaxId}</p>
-              </div>
+                                  </div>
                                 )}
                                 
                                 {tx.payerBankName && (
                                   <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">Banco do Pagador</label>
                                     <p className="text-sm mt-1">🏦 {tx.payerBankName}</p>
-            </div>
+                                  </div>
                                 )}
-          </div>
-
+                              </div>
+                              
                               {/* Coluna 3 */}
                               <div className="space-y-3">
                                 <div>
                                   <label className="text-xs font-medium text-muted-foreground uppercase">Criado em</label>
                                   <p className="text-sm mt-1">{formatDate(tx.createdAt)}</p>
-          </div>
-
+                                </div>
+                                
                                 {tx.receivedAt && (
                                   <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">Recebido em</label>
@@ -1405,18 +1287,18 @@ export default function ExtractTabIpRevyOtc() {
                                   <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">Atualizado em</label>
                                     <p className="text-sm mt-1">{formatDate(tx.updatedAt)}</p>
-          </div>
+                                  </div>
                                 )}
                                 
                                 {tx.isReversal && tx.originEndToEndId && (
                                   <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">End-to-End Original (Estorno)</label>
                                     <p className="text-sm mt-1 font-mono">{tx.originEndToEndId}</p>
-                </div>
+                                  </div>
                                 )}
-                </div>
-                </div>
-                </div>
+                              </div>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -1424,50 +1306,45 @@ export default function ExtractTabIpRevyOtc() {
                   ))}
                 </tbody>
               </table>
-                </div>
+                  </div>
 
             {/* Paginação */}
             <div className="flex items-center justify-between p-4 border-t bg-muted/20">
               <div className="text-sm text-muted-foreground">
                 Mostrando {pagination.offset + 1} - {Math.min(pagination.offset + pagination.limit, pagination.total)} de {pagination.total}
                 </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={handlePreviousPage}
                   disabled={pagination.offset === 0}
                 >
                   <ChevronLeft className="h-4 w-4" />
-                    </Button>
+                </Button>
                 <span className="text-sm px-2">
                   {pagination.current_page} / {pagination.total_pages}
                 </span>
-                  <Button
-                    variant="outline"
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={handleNextPage}
                   disabled={!pagination.has_more}
                 >
                   <ChevronRight className="h-4 w-4" />
-                  </Button>
-            </div>
+                </Button>
+              </div>
             </div>
           </>
         )}
           </Card>
 
       {/* Modais */}
-      <CreditExtractToOTCModal
-        isOpen={creditOTCModalOpen}
-        onClose={handleCloseCreditOTCModal}
-        extractRecord={selectedExtractRecord}
-      />
-
-      <BulkCreditOTCModal
-        isOpen={bulkOTCModalOpen}
-        onClose={handleCloseBulkOTCModal}
-        transactions={getSelectedTransactionsData()}
+      {/* ✅ Modal Compensação Inteligente - EXATAMENTE o mesmo do Bitso TCR */}
+      <CompensationModalInteligente
+        isOpen={compensationModalOpen}
+        onClose={handleCloseCompensationModal}
+        extractRecord={selectedCompensationRecord}
       />
     </div>
   );

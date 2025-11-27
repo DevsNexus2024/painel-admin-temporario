@@ -88,12 +88,14 @@ export interface CorpXTransactionsResponse {
 }
 
 export interface CorpXTransactionsParams {
-  accountId?: string;
+  accountId?: string | number; // ID numérico da API ou string para compatibilidade
   transactionType?: 'C' | 'D';
   startDate?: string;
   endDate?: string;
   minAmount?: number;
   maxAmount?: number;
+  exactAmount?: number; // Valor exato (ignora minAmount e maxAmount quando informado)
+  endToEnd?: string; // Busca por endToEnd específico (ignora search quando informado)
   search?: string;
   pixStatus?: string;
   pixType?: string;

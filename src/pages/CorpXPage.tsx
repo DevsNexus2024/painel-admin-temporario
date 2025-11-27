@@ -1208,7 +1208,7 @@ function PixKeysTabCorpX() {
   );
 }
 
-// Componente para seleção da conta CORPX
+// Componente para seleção da conta CORPX - Layout moderno
 function AccountSelector() {
   const { selectedAccount, setSelectedAccount } = useCorpX();
 
@@ -1238,69 +1238,80 @@ function AccountSelector() {
   };
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Building2 className="h-5 w-5" />
-          Seleção da Conta CORPX
-        </CardTitle>
-        <CardDescription>
-          Selecione a conta que deseja consultar
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="account-select">Conta</Label>
-            <Select value={selectedAccount.id} onValueChange={handleAccountChange}>
-              <SelectTrigger id="account-select">
-                <SelectValue placeholder="Selecione uma conta" />
-              </SelectTrigger>
-              <SelectContent>
-                {CORPX_ACCOUNTS.map((account) => (
-                  <SelectItem key={account.id} value={account.id} disabled={!account.available}>
-                    <div className="flex flex-col">
-                      <span className="font-medium">
-                        {account.razaoSocial}
-                        {!account.available && (
-                          <span className="text-xs text-red-500 ml-2">Indisponível</span>
-                        )}
-                      </span>
-                      {account.id !== 'ALL' && (
-                        <span className="text-sm text-muted-foreground font-mono">
-                          {formatCNPJ(account.cnpj)}
-                        </span>
-                      )}
-                      {account.id === 'ALL' && (
-                        <span className="text-sm text-muted-foreground">Consolidado de todas as contas</span>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+    <Card className="p-4 lg:p-6 bg-background border border-[rgba(255,255,255,0.1)] shadow-lg">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-purple-500/10">
+            <Building2 className="h-5 w-5 text-purple-600" />
           </div>
-          
-          {/* Informações da conta selecionada */}
-          <div className="p-3 bg-muted/50 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-sm">{selectedAccount.razaoSocial}</p>
-                {selectedAccount.id === 'ALL' ? (
-                  <p className="text-xs text-muted-foreground">Exibindo extrato consolidado de todas as contas</p>
-                ) : (
-                  <p className="text-xs text-muted-foreground font-mono">
-                    CNPJ: {formatCNPJ(selectedAccount.cnpj)}
-                  </p>
-                )}
-              </div>
-              <Badge variant="secondary" className="text-xs">
-                {selectedAccount.id === 'ALL' ? 'Consolidado' : selectedAccount.available ? 'Ativa' : 'Indisponível'}
-              </Badge>
-            </div>
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">Conta CORPX</h3>
+            <p className="text-sm text-muted-foreground">Selecione a conta para consultar</p>
           </div>
         </div>
-      </CardContent>
+        
+        <div className="w-full lg:w-auto lg:min-w-[400px]">
+          <Select value={selectedAccount.id} onValueChange={handleAccountChange}>
+            <SelectTrigger className="h-12 bg-background border-2 focus:border-purple-500">
+              <div className="flex items-center gap-2 w-full">
+                <Building2 className="h-4 w-4 text-purple-600" />
+                <div className="flex-1 text-left">
+                  <div className="font-medium">{selectedAccount.razaoSocial}</div>
+                  {selectedAccount.id !== 'ALL' && (
+                    <div className="text-xs text-muted-foreground font-mono">
+                      {formatCNPJ(selectedAccount.cnpj)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              {CORPX_ACCOUNTS.map((account) => (
+                <SelectItem key={account.id} value={account.id} disabled={!account.available}>
+                  <div className="flex items-center gap-3 w-full">
+                    <div className={`p-1.5 rounded-lg ${
+                      account.id === 'ALL' 
+                        ? 'bg-purple-500/10' 
+                        : account.available 
+                        ? 'bg-green-500/10' 
+                        : 'bg-red-500/10'
+                    }`}>
+                      <Building2 className={`h-4 w-4 ${
+                        account.id === 'ALL' 
+                          ? 'text-purple-600' 
+                          : account.available 
+                          ? 'text-green-600' 
+                          : 'text-red-600'
+                      }`} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{account.razaoSocial}</span>
+                        {!account.available && (
+                          <Badge variant="destructive" className="text-xs">Indisponível</Badge>
+                        )}
+                        {account.id === 'ALL' && (
+                          <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs">Consolidado</Badge>
+                        )}
+                      </div>
+                      {account.id !== 'ALL' && (
+                        <div className="text-sm text-muted-foreground font-mono mt-0.5">
+                          {formatCNPJ(account.cnpj)}
+                        </div>
+                      )}
+                      {account.id === 'ALL' && (
+                        <div className="text-sm text-muted-foreground mt-0.5">
+                          Todas as contas CORPX
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
     </Card>
   );
 }
@@ -1317,54 +1328,47 @@ function CorpXContent() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="w-full min-h-screen bg-background">
+      {/* Top Bar com Saldos */}
       <TopBarCorpX />
       
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
+      {/* Conteúdo Principal */}
+      <div className="container mx-auto px-4 py-6 space-y-6">
         {/* Seleção da Conta */}
         <AccountSelector />
-        {/* Layout Principal - Tabs no Topo */}
+        
         <Tabs defaultValue="extract" className="w-full">
-          <div className="flex items-center justify-between mb-6">
-            <TabsList className="grid grid-cols-3 w-fit bg-muted/30 p-1 h-auto">
-              <TabsTrigger 
-                value="extract" 
-                className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-3 px-6 font-medium transition-all duration-200 flex items-center gap-2"
-              >
-                <FileText className="h-4 w-4" />
-                <span className="text-sm">Extrato</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="actions" 
-                className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-3 px-6 font-medium transition-all duration-200 flex items-center gap-2"
-              >
-                <SendHorizontal className="h-4 w-4" />
-                <span className="text-sm">Ações PIX</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="keys" 
-                className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-3 px-6 font-medium transition-all duration-200 flex items-center gap-2"
-              >
-                <Key className="h-4 w-4" />
-                <span className="text-sm">Chaves PIX</span>
-                <Badge variant="secondary" className="ml-2 text-xs px-2 py-0">0</Badge>
-              </TabsTrigger>
-            </TabsList>
-          </div>
+          <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsTrigger value="extract" className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Extrato
+            </TabsTrigger>
+            <TabsTrigger value="pix" className="flex items-center gap-2">
+              <SendHorizontal className="h-4 w-4" />
+              Ações PIX
+            </TabsTrigger>
+          </TabsList>
 
-          {/* Extrato - Largura Total */}
-          <TabsContent value="extract" className="mt-0">
+          {/* ABA: Extrato */}
+          <TabsContent value="extract">
             <ExtractTabCorpX />
           </TabsContent>
 
-          {/* Ações PIX - Layout Mais Largo */}
-          <TabsContent value="actions" className="mt-0">
-            <PixActionsTabCorpX />
-          </TabsContent>
-
-          {/* Chaves PIX - Layout Vertical */}
-          <TabsContent value="keys" className="mt-0">
-            <PixKeysTabCorpX />
+          {/* ABA: Ações PIX */}
+          <TabsContent value="pix">
+            <div className="space-y-6">
+              {/* Ações PIX */}
+              <PixActionsTabCorpX />
+              
+              {/* Chaves PIX */}
+              <div className="mt-8">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Key className="h-5 w-5" />
+                  Chaves PIX
+                </h3>
+                <PixKeysTabCorpX />
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

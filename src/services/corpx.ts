@@ -370,8 +370,8 @@ export async function listarTransacoesCorpX(params: CorpXTransactionsParams = {}
     const url = new URL(`${baseUrlTrimmed}${CORPX_CONFIG.endpoints.listarTransacoes}`);
     const query = url.searchParams;
 
-    if (params.accountId) {
-      query.append('accountId', params.accountId);
+    if (params.accountId !== undefined && params.accountId !== null) {
+      query.append('accountId', String(params.accountId));
     }
     if (params.transactionType) {
       query.append('transactionType', params.transactionType);
@@ -382,14 +382,25 @@ export async function listarTransacoesCorpX(params: CorpXTransactionsParams = {}
     if (params.endDate) {
       query.append('endDate', params.endDate);
     }
-    if (typeof params.minAmount === 'number') {
-      query.append('minAmount', params.minAmount.toString());
+    
+    // ✅ Prioridade: exactAmount ignora minAmount e maxAmount
+    if (typeof params.exactAmount === 'number' && params.exactAmount > 0) {
+      query.append('exactAmount', params.exactAmount.toString());
+    } else {
+      // Só adicionar minAmount e maxAmount se exactAmount não foi informado
+      if (typeof params.minAmount === 'number') {
+        query.append('minAmount', params.minAmount.toString());
+      }
+      if (typeof params.maxAmount === 'number') {
+        query.append('maxAmount', params.maxAmount.toString());
+      }
     }
-    if (typeof params.maxAmount === 'number') {
-      query.append('maxAmount', params.maxAmount.toString());
-    }
-    if (params.search) {
-      query.append('search', params.search);
+    
+    // ✅ Prioridade: endToEnd ignora search
+    if (params.endToEnd && params.endToEnd.trim() !== '') {
+      query.append('endToEnd', params.endToEnd.trim());
+    } else if (params.search && params.search.trim() !== '') {
+      query.append('search', params.search.trim());
     }
     if (params.pixStatus) {
       query.append('pixStatus', params.pixStatus);
