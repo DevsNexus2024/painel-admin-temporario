@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import path from "path";
+import react from "@vitejs/plugin-react-swc";
 import { excludeFilesPlugin } from "./vite-plugin-exclude-files";
 
 // https://vitejs.dev/config/
@@ -48,6 +49,7 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
   },
   plugins: [
+    react(), // Plugin React necessário para processar JSX
     // 🔒 Excluir arquivos .md e .json do build
     excludeFilesPlugin(),
     // 🔒 Plugin temporariamente desabilitado para debug
