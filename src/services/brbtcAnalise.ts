@@ -59,7 +59,7 @@ interface CryptoDeposit {
 /**
  * 💸 Saque de Criptomoeda
  */
-interface CryptoWithdraw {
+export interface CryptoWithdraw {
   id: number;
   amount: string;
   coin: string;
@@ -76,7 +76,7 @@ interface CryptoWithdraw {
 /**
  * 📈 Trade/Negociação
  */
-interface Trade {
+export interface Trade {
   transactionId: number;
   status: string;
   amount: string;
@@ -94,7 +94,7 @@ interface Trade {
 /**
  * 💵 Depósito Fiat (BRL)
  */
-interface FiatDeposit {
+export interface FiatDeposit {
   id: number;
   value: string;
   coin: string;
@@ -107,7 +107,7 @@ interface FiatDeposit {
 /**
  * 💴 Saque Fiat (BRL)
  */
-interface FiatWithdraw {
+export interface FiatWithdraw {
   id: number;
   value: string;
   coin: string;
@@ -123,7 +123,7 @@ interface FiatWithdraw {
 /**
  * 🔄 Depósito Interno (Transferência)
  */
-interface InternalDeposit {
+export interface InternalDeposit {
   id: number;
   amount: string; // ✅ CORREÇÃO: Campo real é 'amount', não 'value'
   coin: string;
@@ -137,7 +137,7 @@ interface InternalDeposit {
 }
 
 // ✅ NOVA INTERFACE: Saques Internos (transferências enviadas)
-interface InternalWithdraw {
+export interface InternalWithdraw {
   id: number;
   amount: string;
   coin: string;

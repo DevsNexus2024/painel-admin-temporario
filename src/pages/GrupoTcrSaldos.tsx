@@ -21,9 +21,12 @@ import {
   ShieldCheck,
   Activity,
   Users,
-  Zap
+  Zap,
+  FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import BrbtcExtratoModal from '@/components/BrbtcExtratoModal';
 
 // Cache para evitar múltiplas chamadas à API
 let usersCacheData: UsuarioSaldo[] | null = null;
@@ -31,6 +34,7 @@ let usersCacheTimestamp: number = 0;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
 
 export default function GrupoTcrSaldos() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [allUsers, setAllUsers] = useState<UsuarioSaldo[]>([]);
   const [list, setList] = useState<UsuarioSaldo[]>([]);
@@ -41,6 +45,15 @@ export default function GrupoTcrSaldos() {
   const [isLoadingAll, setIsLoadingAll] = useState(false);
   const [ordenacao, setOrdenacao] = useState<'nome' | 'brl_asc' | 'brl_desc' | 'usdt_asc' | 'usdt_desc'>('nome');
   const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
+  const [extratoModalOpen, setExtratoModalOpen] = useState(false);
+  const [selectedUserForExtrato, setSelectedUserForExtrato] = useState<UsuarioSaldo | null>(null);
+
+  // Verificação case-insensitive do email
+  const canViewExtrato = useMemo(() => {
+    if (!user?.email) return false;
+    const emailLower = user.email.toLowerCase();
+    return emailLower === 'adm@tcr.finance' || emailLower === 'alexandre@tcr.finance';
+  }, [user?.email]);
 
   const loadAllUsers = async (forceRefresh = false) => {
     const now = Date.now();
@@ -393,6 +406,11 @@ export default function GrupoTcrSaldos() {
                 checkingId={checkingId}
                 onConferir={onConferir}
                 index={index}
+                canViewExtrato={canViewExtrato}
+                onOpenExtrato={() => {
+                  setSelectedUserForExtrato(user);
+                  setExtratoModalOpen(true);
+                }}
               />
             ))}
           </div>
@@ -415,6 +433,21 @@ export default function GrupoTcrSaldos() {
             </div>
           </div>
         </div>
+
+        {/* Modal de Extrato */}
+        {selectedUserForExtrato && (
+          <BrbtcExtratoModal
+            isOpen={extratoModalOpen}
+            onClose={() => {
+              setExtratoModalOpen(false);
+              setSelectedUserForExtrato(null);
+            }}
+            userId={selectedUserForExtrato.id_usuario}
+            userName={selectedUserForExtrato.nome}
+            userBrbtcId={selectedUserForExtrato.id_brasil_bitcoin}
+            allUsers={allUsers}
+          />
+        )}
       </div>
     </div>
   );
@@ -426,13 +459,17 @@ function UserCard({
   comparacao, 
   checkingId, 
   onConferir,
-  index 
+  index,
+  canViewExtrato,
+  onOpenExtrato
 }: { 
   user: UsuarioSaldo;
   comparacao?: SaldosComparacao;
   checkingId: string | null;
   onConferir: (u: UsuarioSaldo) => void;
   index: number;
+  canViewExtrato: boolean;
+  onOpenExtrato: () => void;
 }) {
   const hasDiff = comparacao && (comparacao.brl.diferenca !== 0 || comparacao.usdt.diferenca !== 0);
   const isChecked = !!comparacao;
@@ -619,16 +656,31 @@ function UserCard({
               <Wallet className="w-3.5 h-3.5" />
               <span className="money-font truncate max-w-[140px]">{user.id_brasil_bitcoin}</span>
             </div>
-            {isChecked && (
-              <button 
-                onClick={() => onConferir(user)}
-                disabled={isChecking}
-                className="text-xs text-gray-500 hover:text-[#FF7A3D] transition-colors flex items-center gap-1.5 font-medium"
-              >
-                <RefreshCw className={cn("w-3.5 h-3.5", isChecking && "animate-spin")} />
-                Recheck
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {/* Botão de Extrato BRBTC - sempre visível para admins quando houver id_brasil_bitcoin */}
+              {canViewExtrato && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onOpenExtrato}
+                  className="h-8 px-3 text-xs font-semibold bg-gradient-to-r from-blue-500/10 to-blue-600/10 hover:from-blue-500/20 hover:to-blue-600/20 text-blue-400 border-blue-500/30 hover:border-blue-500/50 shadow-md shadow-blue-500/10 transition-all hover:scale-105"
+                  title="Ver extrato completo Brasil Bitcoin"
+                >
+                  <FileText className="w-3.5 h-3.5 mr-1.5" />
+                  Extrato BRBTC
+                </Button>
+              )}
+              {isChecked && (
+                <button 
+                  onClick={() => onConferir(user)}
+                  disabled={isChecking}
+                  className="text-xs text-gray-500 hover:text-[#FF7A3D] transition-colors flex items-center gap-1.5 font-medium"
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", isChecking && "animate-spin")} />
+                  Recheck
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
