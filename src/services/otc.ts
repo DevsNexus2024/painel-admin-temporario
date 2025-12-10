@@ -112,6 +112,11 @@ export class OTCService {
     if (params.dateTo) {
       searchParams.append('dateTo', params.dateTo);
     }
+    // ✅ NÃO enviar operationType=conversion para API (filtrar no frontend)
+    // Apenas enviar withdrawal e credit para API
+    if (params.operationType && params.operationType !== 'conversion') {
+      searchParams.append('operationType', params.operationType);
+    }
     
     // Por padrão, ocultar operações de reversão para clientes
     // Admins podem passar hideReversals: false se necessário

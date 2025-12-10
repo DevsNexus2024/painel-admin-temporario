@@ -272,11 +272,19 @@ export const pixAuditService = new PixAuditService();
 // ===================================
 
 /**
- * Formata valor em centavos para reais
+ * Formata valor monetário para exibição em reais (BRL)
+ * O pixValue já vem em reais do backend (ex: "108.6" = R$ 108,60)
+ * Não precisa converter de centavos - apenas formata o valor
  */
 export function formatCurrency(value: string | number | null): string {
   if (value === null || value === undefined) return 'N/A';
+  
+  // Converte string para número - o valor já está em reais
   const numValue = typeof value === 'string' ? parseFloat(value) : value;
+  
+  if (isNaN(numValue)) return 'N/A';
+  
+  // Formata diretamente - backend já retorna em reais
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',

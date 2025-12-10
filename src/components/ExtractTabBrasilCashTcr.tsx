@@ -116,10 +116,10 @@ export default function ExtractTabBrasilCashTcr() {
         typeFilterApi = methodTypeFilter;
       }
       
-      // Converter valor específico para centavos (API espera em centavos)
+      // Valor específico - backend já espera em reais
       let amountFilter: number | undefined;
       if (specificAmount) {
-        amountFilter = Math.round(parseFloat(specificAmount) * 100);
+        amountFilter = parseFloat(specificAmount);
       }
       
       const filters: BrasilCashTransactionFilters = {
@@ -239,10 +239,10 @@ export default function ExtractTabBrasilCashTcr() {
         typeFilterApi = methodTypeFilter;
       }
       
-      // Converter valor específico para centavos
+      // Valor específico - backend já espera em reais
       let amountFilter: number | undefined;
       if (specificAmount) {
-        amountFilter = Math.round(parseFloat(specificAmount) * 100);
+        amountFilter = parseFloat(specificAmount);
       }
       
       // Buscar TODAS as transações com os filtros aplicados
@@ -432,7 +432,7 @@ export default function ExtractTabBrasilCashTcr() {
         
         let amountFilter: number | undefined;
         if (specificAmount) {
-          amountFilter = Math.round(parseFloat(specificAmount) * 100);
+          amountFilter = parseFloat(specificAmount);
         }
         
         const filters: BrasilCashTransactionFilters = {
@@ -735,10 +735,10 @@ export default function ExtractTabBrasilCashTcr() {
         typeFilterApi = methodTypeFilter;
       }
       
-      // Converter valor específico para centavos
+      // Valor específico - backend já espera em reais
       let amountFilter: number | undefined;
       if (specificAmount) {
-        amountFilter = Math.round(parseFloat(specificAmount) * 100);
+        amountFilter = parseFloat(specificAmount);
       }
       
       const filters: BrasilCashTransactionFilters = {

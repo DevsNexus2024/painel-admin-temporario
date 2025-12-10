@@ -10,7 +10,7 @@ export type OperationType = 'credit' | 'debit' | 'convert';
 export type CurrencyType = 'BRL' | 'USD';
 
 // Tipos de transações
-export type TransactionType = 'deposit' | 'withdrawal' | 'manual_credit' | 'manual_debit' | 'manual_adjustment';
+export type TransactionType = 'deposit' | 'withdrawal' | 'manual_credit' | 'manual_debit' | 'manual_adjustment' | 'conversion';
 
 // Status de transação
 export type TransactionStatus = 'pending' | 'processed' | 'failed' | 'cancelled';
@@ -266,6 +266,7 @@ export interface OTCStatementParams {
   dateFrom?: string;
   dateTo?: string;
   hideReversals?: boolean; // Ocultar operações de reversão (default: true)
+  operationType?: 'conversion' | 'withdrawal' | 'credit'; // Filtro por tipo de operação
 }
 
 // Interface para parâmetros de operações

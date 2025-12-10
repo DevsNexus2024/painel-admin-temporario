@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Filter, RefreshCw, Download, RotateCcw, AlertTriangle, DollarSign, Clock, ArrowUpDown, Plus } from 'lucide-react';
+import { ArrowLeft, FileText, Filter, RefreshCw, Download, RotateCcw, AlertTriangle, DollarSign, Clock, ArrowUpDown, Plus, ArrowRightLeft } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useOTCStatement } from '@/hooks/useOTCStatement';
 import { otcService } from '@/services/otc';
-import { OTCTransaction, OTCBalanceHistory } from '@/types/otc';
+import { OTCTransaction, OTCBalanceHistory, TransactionType, TransactionStatus } from '@/types/otc';
 import { formatTimestamp, formatOTCTimestamp } from '@/utils/date';
 import { toast } from 'sonner';
 import OTCOperationModal from '@/components/otc/OTCOperationModal';
@@ -35,10 +35,11 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
   const [activeTab, setActiveTab] = useState<string>('transactions');
   const [filters, setFilters] = useState({
     page: 1,
-    limit: 10000, // Limite alto para admins verem todas as transações
+    limit: 1000, // Limite padrão de 1000 registros
     dateFrom: '',
     dateTo: '',
-    hideReversals: false // Admins podem ver operações de reversão
+    hideReversals: false, // Admins podem ver operações de reversão
+    operationType: undefined as 'conversion' | 'withdrawal' | 'credit' | undefined
   });
 
   // Estados para filtros adicionais
@@ -353,10 +354,11 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
   const clearAllFilters = () => {
     setFilters({
       page: 1,
-      limit: 10000, // Limite alto para admins
+      limit: 1000, // Limite padrão
       dateFrom: '',
       dateTo: '',
-      hideReversals: false
+      hideReversals: false,
+      operationType: undefined
     });
     setShowOnlyToday(false);
     setSearchName('');
@@ -429,11 +431,191 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
     }
   }, [filters.dateFrom, filters.dateTo, clientId, showOnlyToday, searchDate]);
 
+  // Função para buscar valor USD da transação no histórico (movida para antes do useMemo)
+  const getUsdValueFromHistory = (transactionId: number | string, manualOperationId?: number): number | null => {
+    if (!statement?.historico_saldo) return null;
+    
+    // ✅ PRIORIDADE: Usar manual_operation.id se disponível (é o ID correto no histórico)
+    let numericId: number;
+    if (manualOperationId !== undefined) {
+      numericId = manualOperationId;
+    } else if (typeof transactionId === 'string' && transactionId.startsWith('conv_')) {
+      // Converter "conv_35368" -> 35368
+      numericId = parseInt(transactionId.replace('conv_', ''), 10);
+    } else {
+      numericId = typeof transactionId === 'string' ? parseInt(transactionId, 10) : transactionId;
+    }
+    
+    // Buscar qualquer registro do histórico para esta transação (mesmo com valor 0)
+    const historyRecord = statement.historico_saldo.find(
+      h => h.transaction_id === numericId || 
+           String(h.transaction_id) === String(transactionId) ||
+           (manualOperationId !== undefined && h.transaction_id === manualOperationId)
+    );
+    
+    // Retornar o valor USD (pode ser 0, null ou um valor)
+    return historyRecord?.usd_amount_change !== undefined ? historyRecord.usd_amount_change : null;
+  };
+
   // Filtrar e ordenar transações
   const filteredAndSortedTransactions = useMemo(() => {
-    if (!statement?.transacoes) return [];
+    // ✅ CONSTRUIR TRANSAÇÕES A PARTIR DO HISTÓRICO quando necessário
+    // Quando o filtro de withdrawal está ativo e não há transações, usar histórico
+    let transactions = statement?.transacoes || [];
+    
+    // ✅ CONSTRUIR TRANSAÇÕES A PARTIR DO HISTÓRICO quando filtro de withdrawal está ativo
+    // Se o filtro de withdrawal está ativo e não há transações, construir do histórico
+    if (filters.operationType === 'withdrawal' && (!transactions || transactions.length === 0) && statement?.historico_saldo) {
+      transactions = statement.historico_saldo
+        .filter(history => {
+          // Filtrar apenas saques (manual_debit com SAQUE na descrição ou withdrawal)
+          const isWithdrawal = history.operation_type === 'withdrawal' || 
+                              (history.operation_type === 'manual_debit' && 
+                               history.description?.toUpperCase().includes('SAQUE'));
+          return isWithdrawal;
+        })
+        .map(history => {
+          // Determinar se é saque USD (tem movimento USD mas não tem movimento BRL)
+          const isUsdWithdrawal = history.usd_amount_change !== 0 && history.amount_change === 0;
+          
+          return {
+            id: history.transaction_id || history.id,
+            type: (history.operation_type === 'withdrawal' ? 'withdrawal' : 'manual_debit') as TransactionType,
+            amount: history.amount_change || 0, // Para saques USD, será 0
+            date: history.created_at,
+            status: 'processed' as TransactionStatus,
+            payer_name: null,
+            payer_document: null,
+            bmp_identifier: null,
+            notes: history.description || '',
+            processed_by: (history as any).created_by || null,
+            is_conversion: false,
+            description: history.description || '',
+            manual_operation: history.operation_type === 'manual_debit' ? {
+              id: history.transaction_id || history.id,
+              operation_type: 'debit',
+              description: history.description || '',
+              is_reversed_or_reversal: false
+            } : null
+          } as OTCTransaction;
+        });
+    }
+    
+    if (!transactions || transactions.length === 0) return [];
 
-    let filtered = [...statement.transacoes];
+    let filtered = [...transactions];
+    
+    // ✅ FILTRO POR TIPO DE OPERAÇÃO (FRONTEND)
+    // Aplicar filtro de conversão no frontend (não enviar para API)
+    if (filters.operationType === 'conversion') {
+      // Filtrar apenas conversões reais (excluir débitos USD puros e conversões vazias)
+      filtered = filtered.filter(transaction => {
+        // Verificar se é conversão
+        const isConversion = transaction.is_conversion === true || 
+                             transaction.type === 'conversion' ||
+                             transaction.notes?.toLowerCase().includes('conversão');
+        
+        if (!isConversion) {
+          return false; // Não é conversão, excluir
+        }
+        
+        // ✅ EXCLUIR DÉBITOS USD PUROS (não são conversões)
+        // Débitos USD são operações com amount = 0, movimento USD negativo, e contêm "SAQUE" nas notes
+        const manualOpId = transaction.manual_operation?.id;
+        const usdValue = getUsdValueFromHistory(transaction.id, manualOpId);
+        const notesLower = transaction.notes?.toLowerCase() || '';
+        
+        // Se contém "SAQUE" nas notes, é débito USD puro (não conversão)
+        if (notesLower.includes('saque') && !notesLower.includes('conversão')) {
+          return false; // É débito USD puro (saque), excluir
+        }
+        
+        // Se é manual_debit ou manual_adjustment com amount = 0 e movimento USD negativo
+        // mas SEM "Conversão" nas notes e SEM is_conversion = true
+        if ((transaction.type === 'manual_debit' || transaction.type === 'manual_adjustment') && 
+            transaction.amount === 0) {
+          
+          // Se não tem "Conversão" nas notes e não é is_conversion, é débito USD puro
+          if (!notesLower.includes('conversão') &&
+              !transaction.is_conversion &&
+              transaction.type !== 'conversion') {
+            return false; // É débito USD puro, excluir
+          }
+          
+          // Se tem movimento USD negativo e não tem "Conversão" explícita, é débito USD
+          if (usdValue !== null && usdValue < 0 && 
+              !notesLower.includes('conversão') &&
+              !notesLower.includes('conversão brl→usd')) {
+            return false; // É débito USD puro, excluir
+          }
+        }
+        
+        // ✅ EXCLUIR CONVERSÕES COM VALOR 0 E SEM MOVIMENTO USD
+        if (transaction.amount === 0) {
+          const hasUsdMovement = usdValue !== null && usdValue !== 0;
+          
+          // Se não tem movimento USD, é conversão vazia, excluir
+          if (!hasUsdMovement) {
+            return false;
+          }
+        }
+        
+        return true; // É conversão válida
+      });
+    } else if (filters.operationType === 'withdrawal') {
+      // Filtrar apenas saques (já pode ter vindo filtrado da API, mas garantir)
+      filtered = filtered.filter(transaction => {
+        const isWithdrawal = transaction.type === 'withdrawal' ||
+                            (transaction.type === 'manual_debit' && 
+                             !transaction.notes?.toLowerCase().includes('conversão'));
+        return isWithdrawal;
+      });
+    } else if (filters.operationType === 'credit') {
+      // Filtrar apenas créditos/depósitos
+      filtered = filtered.filter(transaction => {
+        const isCredit = transaction.type === 'deposit' ||
+                        transaction.type === 'manual_credit' ||
+                        (transaction.type === 'manual_adjustment' && transaction.amount > 0);
+        return isCredit;
+      });
+    }
+    
+    // ✅ OCULTAR CONVERSÕES COM VALOR 0 (sem movimento USD)
+    // MAS NÃO OCULTAR quando o filtro operationType=conversion está ativo
+    filtered = filtered.filter(transaction => {
+      // Se o filtro de conversão está ativo, mostrar todas as conversões (já filtradas acima)
+      if (filters.operationType === 'conversion') {
+        return true; // Mostrar todas as conversões quando filtro está ativo
+      }
+      
+      // Verificar se é conversão (is_conversion === true, type === 'conversion' ou notes contém "Conversão")
+      const isConversion = transaction.is_conversion === true || 
+                           transaction.type === 'conversion' ||
+                           transaction.notes?.toLowerCase().includes('conversão');
+      
+      // Se não é conversão, manter
+      if (!isConversion) {
+        return true;
+      }
+      
+      // Se é conversão, verificar se tem amount === 0
+      if (transaction.amount !== 0) {
+        return true; // Conversão com valor BRL, manter
+      }
+      
+      // Se é conversão com amount === 0, verificar se tem movimento USD
+      const manualOpId = transaction.manual_operation?.id;
+      const usdValue = getUsdValueFromHistory(transaction.id, manualOpId);
+      const hasUsdMovement = usdValue !== null && usdValue !== 0;
+      
+      // Se não tem movimento USD, ocultar (conversão vazia)
+      if (!hasUsdMovement) {
+        return false;
+      }
+      
+      // Tem movimento USD, manter
+      return true;
+    });
     
     // Debug: Verificar se manual_operation está vindo nas transações
 
@@ -512,7 +694,7 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
     });
 
     return filtered;
-  }, [statement?.transacoes, searchName, searchValue]);
+  }, [statement?.transacoes, searchName, searchValue, statement?.historico_saldo]);
 
   // Filtrar histórico de saldo
   const filteredBalanceHistory = useMemo(() => {
@@ -631,23 +813,26 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
     setReversalModalOpen(true);
   };
 
-  // Função para buscar valor USD da transação no histórico
-  const getUsdValueFromHistory = (transactionId: number): number | null => {
-    if (!statement?.historico_saldo) return null;
-    
-    const historyRecord = statement.historico_saldo.find(
-      h => h.transaction_id === transactionId && h.usd_amount_change !== 0
-    );
-    
-    return historyRecord?.usd_amount_change || null;
-  };
-
   // ✅ FUNÇÃO PARA BUSCAR VALOR BRL REAL DA CONVERSÃO
-  const getBrlValueFromHistory = (transactionId: number): number | null => {
+  const getBrlValueFromHistory = (transactionId: number | string, manualOperationId?: number): number | null => {
     if (!statement?.historico_saldo) return null;
     
+    // ✅ PRIORIDADE: Usar manual_operation.id se disponível (é o ID correto no histórico)
+    let numericId: number;
+    if (manualOperationId !== undefined) {
+      numericId = manualOperationId;
+    } else if (typeof transactionId === 'string' && transactionId.startsWith('conv_')) {
+      // Converter "conv_35368" -> 35368
+      numericId = parseInt(transactionId.replace('conv_', ''), 10);
+    } else {
+      numericId = typeof transactionId === 'string' ? parseInt(transactionId, 10) : transactionId;
+    }
+    
     const historyRecord = statement.historico_saldo.find(
-      h => h.transaction_id === transactionId && h.amount_change !== 0
+      h => (h.transaction_id === numericId || 
+            String(h.transaction_id) === String(transactionId) ||
+            (manualOperationId !== undefined && h.transaction_id === manualOperationId)) && 
+           h.amount_change !== 0
     );
     
     return historyRecord?.amount_change || null;
@@ -685,6 +870,8 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
           return <DollarSign className="w-4 h-4 text-orange-600" />;
         case 'manual_adjustment':
           return <DollarSign className="w-4 h-4 text-purple-600" />;
+        case 'conversion':
+          return <ArrowRightLeft className="w-4 h-4 text-purple-600" />;
         default:
           return <FileText className="w-4 h-4 text-gray-600" />;
       }
@@ -700,6 +887,19 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
           return 'Crédito Manual';
         case 'manual_debit':
           return 'Débito Manual';
+        case 'conversion':
+          // ✅ CONVERSÃO - Verificar se tem movimento USD
+          const usdValue = getUsdValueFromHistory(transaction.id);
+          if (transaction.notes?.includes('Conversão BRL→USD')) {
+            return 'Conversão BRL→USD';
+          }
+          if (transaction.notes?.includes('ESTORNO - Conversão USD→BRL')) {
+            return 'Estorno Conversão USD→BRL';
+          }
+          if (usdValue !== null && usdValue !== 0) {
+            return usdValue > 0 ? 'Conversão (Crédito USD)' : 'Conversão (Débito USD)';
+          }
+          return 'Conversão';
         case 'manual_adjustment':
           // ✅ DETECTAR CONVERSÕES ESPECIFICAMENTE
           if (transaction.notes?.includes('Conversão BRL→USD')) {
@@ -712,9 +912,22 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
           }
           
           // ✅ DETECTAR OPERAÇÕES USD (amount = 0 mas tem movimento USD)
-          const usdValue = getUsdValueFromHistory(transaction.id);
-          if (transaction.amount === 0 && usdValue !== null) {
-            return usdValue > 0 ? 'Crédito USD' : 'Débito USD';
+          // Mas NÃO mostrar "Conversão" se for saque USD
+          const manualOpIdAdj = transaction.manual_operation?.id;
+          const usdValueAdj = getUsdValueFromHistory(transaction.id, manualOpIdAdj);
+          const notesLowerAdj = transaction.notes?.toLowerCase() || '';
+          
+          if (transaction.amount === 0 && usdValueAdj !== null) {
+            // Se contém "SAQUE" nas notes, é saque USD (não conversão)
+            if (notesLowerAdj.includes('saque') && !notesLowerAdj.includes('conversão')) {
+              return 'Débito USD';
+            }
+            // Se não é conversão real, mostrar apenas Crédito/Débito USD
+            if (!transaction.is_conversion && !notesLowerAdj.includes('conversão')) {
+              return usdValueAdj > 0 ? 'Crédito USD' : 'Débito USD';
+            }
+            // Se é conversão, mostrar como conversão
+            return usdValueAdj > 0 ? 'Conversão (Crédito USD)' : 'Conversão (Débito USD)';
           }
           
           return transaction.amount > 0 ? 'Crédito Manual' : 'Débito Manual';
@@ -739,7 +952,8 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
     };
 
     // ✅ LÓGICA CORRIGIDA PARA CONVERSÕES
-    const isConversion = transaction.notes?.includes('Conversão BRL→USD');
+    const isConversionType = transaction.type === 'conversion' || transaction.is_conversion === true;
+    const isConversion = transaction.notes?.includes('Conversão BRL→USD') || isConversionType;
     const isConversionReversal = transaction.notes?.includes('ESTORNO - Conversão USD→BRL');
     const isCredit = !isConversion && !isConversionReversal && (
       transaction.type === 'deposit' || 
@@ -758,7 +972,7 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
               </div>
               <div className="text-sm text-muted-foreground">
                 {/* Usar mesma lógica do cliente: diferenciar operações manuais vs outras */}
-                {(['manual_credit', 'manual_debit', 'manual_adjustment'].includes(transaction.type)) 
+                {(['manual_credit', 'manual_debit', 'manual_adjustment', 'conversion'].includes(transaction.type)) 
                   ? formatTimestamp(transaction.date, 'dd/MM/yy HH:mm')
                   : formatOTCTimestamp(transaction.date, 'dd/MM/yy HH:mm')
                 }
@@ -770,14 +984,53 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
         <TableCell className="text-right">
           <div className="space-y-1">
             {(() => {
-              const usdValue = getUsdValueFromHistory(transaction.id);
-              const isUsdOperation = transaction.notes?.toLowerCase().includes('usd') || transaction.notes?.includes('Conversão BRL→USD') || transaction.notes?.includes('ESTORNO - Conversão USD→BRL');
-              const isConversion = transaction.notes?.includes('Conversão BRL→USD');
+              // ✅ Usar manual_operation.id se disponível para buscar no histórico (mais preciso)
+              const manualOpId = transaction.manual_operation?.id;
+              const usdValue = getUsdValueFromHistory(transaction.id, manualOpId);
+              const notesLower = transaction.notes?.toLowerCase() || '';
+              
+              // ✅ DETECTAR SE É CONVERSÃO REAL (não saque USD)
+              const isRealConversion = transaction.type === 'conversion' || 
+                                      (transaction.is_conversion === true && 
+                                       !notesLower.includes('saque') &&
+                                       (notesLower.includes('conversão') || 
+                                        notesLower.includes('conversão brl→usd')));
+              
+              const isUsdOperation = transaction.notes?.toLowerCase().includes('usd') || 
+                                   transaction.notes?.includes('Conversão BRL→USD') || 
+                                   transaction.notes?.includes('ESTORNO - Conversão USD→BRL') ||
+                                   isRealConversion;
+              const isConversion = transaction.notes?.includes('Conversão BRL→USD') || isRealConversion;
               const isConversionReversal = transaction.notes?.includes('ESTORNO - Conversão USD→BRL');
+              
+              // ✅ CONVERSÃO DO TIPO "conversion" (nova estrutura da API)
+              // Apenas se for conversão REAL (não saque USD)
+              if (isRealConversion) {
+                const usdValueConv = getUsdValueFromHistory(transaction.id, manualOpId);
+                const brlValueConv = getBrlValueFromHistory(transaction.id, manualOpId);
+                // Se tem movimento USD, mostrar conversão
+                if (usdValueConv !== null && usdValueConv !== 0) {
+                  return (
+                    <>
+                      {brlValueConv !== null && brlValueConv !== 0 && (
+                        <div className="text-red-600 font-semibold">
+                          -R$ {Math.abs(brlValueConv).toFixed(2)}
+                        </div>
+                      )}
+                      <div className={`font-semibold ${usdValueConv >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {usdValueConv >= 0 ? '+' : ''}$ {Math.abs(usdValueConv).toFixed(2)}
+                      </div>
+                      <div className="text-xs text-white">
+                        Conversão
+                      </div>
+                    </>
+                  );
+                }
+              }
               
               // ✅ ESTORNO DE CONVERSÃO USD → BRL
               if (isConversionReversal && usdValue !== null) {
-                const brlValue = getBrlValueFromHistory(transaction.id);
+                const brlValue = getBrlValueFromHistory(transaction.id, manualOpId);
                 return (
                   <>
                     <div className="text-green-600 font-semibold">
@@ -795,7 +1048,7 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
               
               // ✅ CONVERSÃO BRL → USD
               if (isConversion && usdValue !== null) {
-                const brlValue = getBrlValueFromHistory(transaction.id);
+                const brlValue = getBrlValueFromHistory(transaction.id, manualOpId);
                 return (
                   <>
                     <div className="text-red-600 font-semibold">
@@ -811,8 +1064,9 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                 );
               }
               
-              // ✅ OPERAÇÃO USD PURA (operação manual USD)
-              if (isUsdOperation && transaction.amount === 0 && usdValue !== null) {
+              // ✅ OPERAÇÃO USD PURA (operação manual USD - saques USD)
+              // Se não é conversão real e tem movimento USD, é saque USD
+              if (!isRealConversion && isUsdOperation && transaction.amount === 0 && usdValue !== null) {
                 return (
                   <>
                     <div className={`font-semibold ${usdValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -860,10 +1114,48 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
         {/* Saldo Anterior */}
         <TableCell className="text-right">
           {(() => {
-            const historyRecord = statement?.historico_saldo?.find(h => h.transaction_id === transaction.id);
-            const usdValue = getUsdValueFromHistory(transaction.id);
-            const isUsdOperation = transaction.notes?.toLowerCase().includes('usd') || transaction.notes?.includes('Conversão BRL→USD') || transaction.notes?.includes('ESTORNO - Conversão USD→BRL');
-            const isUsdOnly = isUsdOperation && transaction.amount === 0 && usdValue !== null;
+            // ✅ Usar manual_operation.id se disponível para buscar no histórico (mais preciso)
+            const manualOpId = transaction.manual_operation?.id;
+            const searchId: number | string = (manualOpId !== undefined ? manualOpId : transaction.id) as number | string;
+            
+            // Converter ID para número se necessário
+            let numericSearchId: number;
+            if (typeof searchId === 'string' && searchId.startsWith('conv_')) {
+              numericSearchId = parseInt(searchId.replace('conv_', ''), 10);
+            } else {
+              numericSearchId = typeof searchId === 'string' ? parseInt(searchId, 10) : searchId;
+            }
+            
+            const historyRecord = statement?.historico_saldo?.find(
+              h => h.transaction_id === numericSearchId || 
+                   h.transaction_id === searchId ||
+                   String(h.transaction_id) === String(transaction.id)
+            );
+            const usdValue = getUsdValueFromHistory(transaction.id, manualOpId);
+            const isUsdOperation = transaction.notes?.toLowerCase().includes('usd') || 
+                                 transaction.notes?.includes('Conversão BRL→USD') || 
+                                 transaction.notes?.includes('ESTORNO - Conversão USD→BRL') ||
+                                 transaction.type === 'conversion' ||
+                                 transaction.is_conversion === true;
+            const isConversion = transaction.notes?.includes('Conversão BRL→USD') || 
+                               transaction.notes?.includes('ESTORNO - Conversão USD→BRL') ||
+                               transaction.type === 'conversion' ||
+                               transaction.is_conversion === true;
+            const isUsdOnly = isUsdOperation && transaction.amount === 0 && usdValue !== null && !isConversion;
+            
+            // ✅ CONVERSÕES: Sempre mostrar BRL + USD
+            if (isConversion && historyRecord) {
+              return (
+                <div className="space-y-1">
+                  <div className="text-sm">
+                    {otcService.formatCurrency(historyRecord?.balance_before || 0)}
+                  </div>
+                  <div className="text-xs text-blue-600">
+                    $ {historyRecord?.usd_balance_before?.toFixed(2) || '0.00'}
+                  </div>
+                </div>
+              );
+            }
             
             if (isUsdOnly) {
               return (
@@ -895,10 +1187,48 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
         {/* Saldo Posterior */}
         <TableCell className="text-right">
           {(() => {
-            const historyRecord = statement?.historico_saldo?.find(h => h.transaction_id === transaction.id);
-            const usdValue = getUsdValueFromHistory(transaction.id);
-            const isUsdOperation = transaction.notes?.toLowerCase().includes('usd') || transaction.notes?.includes('Conversão BRL→USD') || transaction.notes?.includes('ESTORNO - Conversão USD→BRL');
-            const isUsdOnly = isUsdOperation && transaction.amount === 0 && usdValue !== null;
+            // ✅ Usar manual_operation.id se disponível para buscar no histórico (mais preciso)
+            const manualOpId = transaction.manual_operation?.id;
+            const searchId: number | string = (manualOpId !== undefined ? manualOpId : transaction.id) as number | string;
+            
+            // Converter ID para número se necessário
+            let numericSearchId: number;
+            if (typeof searchId === 'string' && searchId.startsWith('conv_')) {
+              numericSearchId = parseInt(searchId.replace('conv_', ''), 10);
+            } else {
+              numericSearchId = typeof searchId === 'string' ? parseInt(searchId, 10) : searchId;
+            }
+            
+            const historyRecord = statement?.historico_saldo?.find(
+              h => h.transaction_id === numericSearchId || 
+                   h.transaction_id === searchId ||
+                   String(h.transaction_id) === String(transaction.id)
+            );
+            const usdValue = getUsdValueFromHistory(transaction.id, manualOpId);
+            const isUsdOperation = transaction.notes?.toLowerCase().includes('usd') || 
+                                 transaction.notes?.includes('Conversão BRL→USD') || 
+                                 transaction.notes?.includes('ESTORNO - Conversão USD→BRL') ||
+                                 transaction.type === 'conversion' ||
+                                 transaction.is_conversion === true;
+            const isConversion = transaction.notes?.includes('Conversão BRL→USD') || 
+                               transaction.notes?.includes('ESTORNO - Conversão USD→BRL') ||
+                               transaction.type === 'conversion' ||
+                               transaction.is_conversion === true;
+            const isUsdOnly = isUsdOperation && transaction.amount === 0 && usdValue !== null && !isConversion;
+            
+            // ✅ CONVERSÕES: Sempre mostrar BRL + USD
+            if (isConversion && historyRecord) {
+              return (
+                <div className="space-y-1">
+                  <div className="text-sm">
+                    {otcService.formatCurrency(historyRecord?.balance_after || 0)}
+                  </div>
+                  <div className="text-xs text-blue-600">
+                    $ {historyRecord?.usd_balance_after?.toFixed(2) || '0.00'}
+                  </div>
+                </div>
+              );
+            }
             
             if (isUsdOnly) {
               return (
@@ -948,9 +1278,14 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                 {transaction.notes}
               </div>
             )}
+            {transaction.processed_by && (
+              <div className="text-xs text-muted-foreground">
+                <strong>Processado por:</strong> {transaction.processed_by}
+              </div>
+            )}
             
             {/* Botão de estorno para operações manuais */}
-            {['manual_credit', 'manual_debit', 'manual_adjustment'].includes(transaction.type) && 
+            {(['manual_credit', 'manual_debit', 'manual_adjustment', 'conversion'].includes(transaction.type)) && 
              transaction.manual_operation?.id && 
              !(transaction.manual_operation as any)?.is_reversed_or_reversal && (
               <div className="pt-2">
@@ -1230,7 +1565,7 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
           </div>
 
           {/* Filtros principais */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div>
               <Label htmlFor="searchName">Buscar por nome</Label>
               <Input
@@ -1277,6 +1612,27 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
               </div>
             </div>
             <div>
+              <Label htmlFor="operationType">Tipo de Operação</Label>
+              <Select
+                value={filters.operationType || 'all'}
+                onValueChange={(value) => updateFilters({ operationType: value === 'all' ? undefined : value as 'conversion' | 'withdrawal' | 'credit' })}
+              >
+                <SelectTrigger id="operationType">
+                  <SelectValue placeholder="Todos os tipos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os tipos</SelectItem>
+                  <SelectItem value="conversion">Conversões</SelectItem>
+                  <SelectItem value="withdrawal">Saques</SelectItem>
+                  <SelectItem value="credit">Créditos/Depósitos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Segunda linha de filtros */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
               <Label htmlFor="dateFrom">Data Inicial</Label>
               <Input
                 id="dateFrom"
@@ -1294,7 +1650,23 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                 onChange={(e) => handleDateToChange(e.target.value)}
               />
             </div>
-
+            <div>
+              <Label htmlFor="limit">Limite de Registros</Label>
+              <Select
+                value={filters.limit.toString()}
+                onValueChange={(value) => updateFilters({ limit: parseInt(value) })}
+              >
+                <SelectTrigger id="limit">
+                  <SelectValue placeholder="Selecione o limite" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1000">1.000 registros</SelectItem>
+                  <SelectItem value="2000">2.000 registros</SelectItem>
+                  <SelectItem value="5000">5.000 registros</SelectItem>
+                  <SelectItem value="10000">10.000 registros</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* Botões de ação */}
