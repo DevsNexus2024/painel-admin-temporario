@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, 
   User,
@@ -69,20 +69,41 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
     }
   };
 
-  // Resetar formulário e verificar duplicação quando modal abrir/fechar
+  // Resetar formulário e verificar duplicação somente quando:
+  // - abrir o modal OU
+  // - mudar a transação (id/código), e não a cada render/referência nova do objeto.
+  const lastRecordKeyRef = useRef<string | null>(null);
+  const wasOpenRef = useRef<boolean>(false);
+
+  const recordKey = useMemo(() => {
+    if (!extractRecord) return null;
+    const id = (extractRecord as any).id ?? '';
+    const code = (extractRecord as any).code ?? '';
+    return `${id}-${code}`;
+  }, [extractRecord]);
+
   useEffect(() => {
     if (isOpen && extractRecord) {
-      setSelectedClient(null);
-      setCustomDescription(generateDefaultDescription(extractRecord));
-      setClientSearchValue('');
-      setErrors({});
-      setShowConfirmation(false);
-      setDuplicateInfo(null);
-      setVerificationResult({ status: null, message: '' });
-      
-      // 🚨 VERIFICAR DUPLICAÇÃO AUTOMATICAMENTE
-      checkForDuplicate();
-    } else if (!isOpen) {
+      const isFirstOpen = !wasOpenRef.current;
+      const recordChanged = recordKey && recordKey !== lastRecordKeyRef.current;
+
+      if (isFirstOpen || recordChanged) {
+        lastRecordKeyRef.current = recordKey;
+        setSelectedClient(null);
+        setCustomDescription(generateDefaultDescription(extractRecord));
+        setClientSearchValue('');
+        setErrors({});
+        setShowConfirmation(false);
+        setDuplicateInfo(null);
+        setVerificationResult({ status: null, message: '' });
+
+        // 🚨 VERIFICAR DUPLICAÇÃO AUTOMATICAMENTE
+        checkForDuplicate();
+      }
+    }
+
+    if (!isOpen && wasOpenRef.current) {
+      lastRecordKeyRef.current = null;
       setSelectedClient(null);
       setCustomDescription('');
       setClientSearchValue('');
@@ -91,7 +112,10 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
       setDuplicateInfo(null);
       setVerificationResult({ status: null, message: '' });
     }
-  }, [isOpen, extractRecord]);
+
+    wasOpenRef.current = isOpen;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, recordKey]);
 
   // 🆕 FUNÇÃO PARA DETECTAR PROVIDER CORRETAMENTE
   const detectProvider = (): { provider: string; codigo: string } => {
