@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import MainLayout from "./components/layout/MainLayout";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -116,67 +117,69 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <Routes>
-              {/* Rota pública de autenticação UNIFICADA */}
-              <Route path="/login" element={<Login />} />
-              {/* Redirect da rota antiga para a nova (compatibilidade) */}
-              <Route path="/login-cliente" element={<Navigate to="/login" replace />} />
-              {/* REGISTRO DESBLOQUEADO TEMPORARIAMENTE */}
-              <Route path="/register" element={<Register />} />
-              {/* ✅ TEMPORÁRIO - Reset de senha BaaS v2 */}
-              <Route path="/reset-password" element={<ResetPassword />} />
-              
-              {/* Rota específica para extrato do cliente (sem sidebar) */}
-              <Route path="/client-statement" element={
-                <ProtectedRoute redirectTo="/login">
-                  <ClientStatement />
-                </ProtectedRoute>
-              } />
-              
-              {/* Rota específica para extrato de funcionário OTC (sem sidebar) */}
-              <Route path="/employee-statement" element={
-                <ProtectedRoute requireEmployee={true} redirectTo="/login">
-                  <EmployeeStatement />
-                </ProtectedRoute>
-              } />
-              
-              {/* Rotas protegidas - ADMIN APENAS */}
-              <Route element={
-                <ProtectedRoute>
-                  <MainLayout />
-                </ProtectedRoute>
-              }>
-                <Route path="/" element={<Index />} />
-                <Route path="/extrato_tcr" element={<ExtratoTcr />} />
-                <Route path="/compensacao-depositos" element={<CompensacaoDepositos />} />
-                <Route path="/grupo-tcr/saldos" element={<GrupoTcrSaldos />} />
-                <Route path="/grupo-tcr/tcr" element={<TcrPage />} />
-                <Route path="/grupo-tcr/corpx-ttf" element={<CorpXTTFPage />} />
-                <Route path="/bmp-531" element={<Bmp531Page />} />
-                <Route path="/corpx" element={<CorpXPage />} />
-                <Route path="/pagamentos" element={<PaymentsPage />} />
-                <Route path="/cotacoes" element={<Cotacoes />} />
-                <Route path="/bot-cotacao" element={<BotCotacao />} />
-                <Route path="/otc" element={<OTCClients />} />
-                <Route path="/otc/negociar" element={<OTCNegociar />} />
-                <Route path="/otc/admin-statement/:clientId" element={<AdminClientStatement />} />
-                <Route path="/bitso" element={<BitsoPage />} />
-                <Route path="/bitso-tcr" element={<BitsoTcrPage />} />
-                <Route path="/bitso-api" element={<BitsoApiPage />} />
-                <Route path="/brasilcash-tcr" element={<BrasilCashTcrPage />} />
-                <Route path="/ip-revy-otc" element={<IpRevyOtcPage />} />
-                <Route path="/ip-revy-tcr" element={<IpRevyTcrPage />} />
-                <Route path="/auditoria-depositos" element={<AuditoriaDepositosPage />} />
-                <Route path="/contas-organizacoes" element={<ContasOrganizacoesLayout />} />
-                <Route path="/suporte" element={<SupportPage />} />
-                <Route path="/contas-organizacoes/organizacao/:id" element={<OrganizacaoDetailsPage />} />
-                <Route path="/contas-organizacoes/conta/:id" element={<ContaDetailsPage />} />
-                <Route path="/analise-usuario/:id" element={<AnaliseUsuario />} />
-              </Route>
-              
-              {/* Rota 404 */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                {/* Rota pública de autenticação UNIFICADA */}
+                <Route path="/login" element={<Login />} />
+                {/* Redirect da rota antiga para a nova (compatibilidade) */}
+                <Route path="/login-cliente" element={<Navigate to="/login" replace />} />
+                {/* REGISTRO DESBLOQUEADO TEMPORARIAMENTE */}
+                <Route path="/register" element={<Register />} />
+                {/* ✅ TEMPORÁRIO - Reset de senha BaaS v2 */}
+                <Route path="/reset-password" element={<ResetPassword />} />
+                
+                {/* Rota específica para extrato do cliente (sem sidebar) */}
+                <Route path="/client-statement" element={
+                  <ProtectedRoute redirectTo="/login">
+                    <ClientStatement />
+                  </ProtectedRoute>
+                } />
+                
+                {/* Rota específica para extrato de funcionário OTC (sem sidebar) */}
+                <Route path="/employee-statement" element={
+                  <ProtectedRoute requireEmployee={true} redirectTo="/login">
+                    <EmployeeStatement />
+                  </ProtectedRoute>
+                } />
+                
+                {/* Rotas protegidas - ADMIN APENAS */}
+                <Route element={
+                  <ProtectedRoute>
+                    <MainLayout />
+                  </ProtectedRoute>
+                }>
+                  <Route path="/" element={<Index />} />
+                  <Route path="/extrato_tcr" element={<ExtratoTcr />} />
+                  <Route path="/compensacao-depositos" element={<CompensacaoDepositos />} />
+                  <Route path="/grupo-tcr/saldos" element={<GrupoTcrSaldos />} />
+                  <Route path="/grupo-tcr/tcr" element={<TcrPage />} />
+                  <Route path="/grupo-tcr/corpx-ttf" element={<CorpXTTFPage />} />
+                  <Route path="/bmp-531" element={<Bmp531Page />} />
+                  <Route path="/corpx" element={<CorpXPage />} />
+                  <Route path="/pagamentos" element={<PaymentsPage />} />
+                  <Route path="/cotacoes" element={<Cotacoes />} />
+                  <Route path="/bot-cotacao" element={<BotCotacao />} />
+                  <Route path="/otc" element={<OTCClients />} />
+                  <Route path="/otc/negociar" element={<OTCNegociar />} />
+                  <Route path="/otc/admin-statement/:clientId" element={<AdminClientStatement />} />
+                  <Route path="/bitso" element={<BitsoPage />} />
+                  <Route path="/bitso-tcr" element={<BitsoTcrPage />} />
+                  <Route path="/bitso-api" element={<BitsoApiPage />} />
+                  <Route path="/brasilcash-tcr" element={<BrasilCashTcrPage />} />
+                  <Route path="/ip-revy-otc" element={<IpRevyOtcPage />} />
+                  <Route path="/ip-revy-tcr" element={<IpRevyTcrPage />} />
+                  <Route path="/auditoria-depositos" element={<AuditoriaDepositosPage />} />
+                  <Route path="/contas-organizacoes" element={<ContasOrganizacoesLayout />} />
+                  <Route path="/suporte" element={<SupportPage />} />
+                  <Route path="/contas-organizacoes/organizacao/:id" element={<OrganizacaoDetailsPage />} />
+                  <Route path="/contas-organizacoes/conta/:id" element={<ContaDetailsPage />} />
+                  <Route path="/analise-usuario/:id" element={<AnaliseUsuario />} />
+                </Route>
+                
+                {/* Rota 404 */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </ErrorBoundary>
           </BrowserRouter>
         </AuthProvider>
       </BankingSystemInitializer>

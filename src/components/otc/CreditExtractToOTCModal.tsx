@@ -16,7 +16,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
 import { useOTCClients } from '@/hooks/useOTCClients';
@@ -676,68 +675,82 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-full p-0">
-                      <Command shouldFilter={false}>
-                        <CommandInput 
-                          placeholder="Buscar cliente..." 
-                          value={clientSearchValue}
-                          onValueChange={setClientSearchValue}
-                        />
-                        <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
-                        <CommandGroup className="max-h-64 overflow-y-auto">
+                      {/* NOTE(P0): removido cmdk/Command aqui porque em produção estava causando "undefined is not iterable" */}
+                      <div className="p-2">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Buscar cliente..."
+                            value={clientSearchValue}
+                            onChange={(e) => setClientSearchValue(e.target.value)}
+                            className="pl-10"
+                          />
+                        </div>
+
+                        <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-border">
                           {(() => {
-                            // Garantir que filteredClients seja sempre um array válido
-                            const validClients = Array.isArray(filteredClients) 
-                              ? filteredClients.filter(client => 
-                                  client && 
-                                  typeof client === 'object' && 
-                                  client.id && 
-                                  client.name
+                            const validClients = Array.isArray(filteredClients)
+                              ? filteredClients.filter(
+                                  (client) =>
+                                    client &&
+                                    typeof client === 'object' &&
+                                    client.id !== undefined &&
+                                    client.id !== null &&
+                                    Boolean(client.name)
                                 )
                               : [];
-                            
-                            if (validClients.length === 0) {
+
+                            if (loadingClients) {
                               return (
-                                <CommandItem disabled key="no-clients">
-                                  <span className="text-muted-foreground">
-                                    {loadingClients ? 'Carregando clientes...' : 'Nenhum cliente disponível'}
-                                  </span>
-                                </CommandItem>
+                                <div className="p-3 text-sm text-muted-foreground">
+                                  Carregando clientes...
+                                </div>
                               );
                             }
-                            
-                            return validClients.map((client) => (
-                              <CommandItem
-                                key={client.id}
-                                value={`${client.name || ''}-${client.document || ''}`}
-                                onSelect={() => {
-                                  setSelectedClient(client);
-                                  setOpenClientSelect(false);
-                                  setClientSearchValue('');
-                                  if (errors.client) {
-                                    setErrors(prev => ({ ...prev, client: '' }));
-                                  }
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    selectedClient?.id === client.id ? "opacity-100" : "opacity-0"
-                                  )}
-                                />
-                                <div className="flex-1">
-                                  <div className="font-medium">{client.name}</div>
-                                  <div className="text-sm text-muted-foreground">
-                                    {client.document} • {client.pix_key}
-                                    <Badge variant="outline" className="ml-2 text-xs">
-                                      {formatCurrency(client.current_balance || 0)}
-                                    </Badge>
-                                  </div>
+
+                            if (validClients.length === 0) {
+                              return (
+                                <div className="p-3 text-sm text-muted-foreground">
+                                  Nenhum cliente encontrado.
                                 </div>
-                              </CommandItem>
-                            ));
+                              );
+                            }
+
+                            return validClients.map((client) => {
+                              const isSelected = selectedClient?.id === client.id;
+                              return (
+                                <button
+                                  key={client.id}
+                                  type="button"
+                                  className={cn(
+                                    "w-full px-3 py-2 text-left flex items-start gap-2 hover:bg-accent transition-colors",
+                                    isSelected && "bg-accent/50"
+                                  )}
+                                  onClick={() => {
+                                    setSelectedClient(client);
+                                    setOpenClientSelect(false);
+                                    setClientSearchValue('');
+                                    if (errors.client) {
+                                      setErrors((prev) => ({ ...prev, client: '' }));
+                                    }
+                                  }}
+                                >
+                                  <Check className={cn("mt-0.5 h-4 w-4", isSelected ? "opacity-100" : "opacity-0")} />
+                                  <div className="flex-1">
+                                    <div className="font-medium leading-5">{client.name}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {client.document} • {client.pix_key}
+                                      <Badge variant="outline" className="ml-2 text-xs">
+                                        {formatCurrency(client.current_balance || 0)}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            });
                           })()}
-                        </CommandGroup>
-                      </Command>
+                        </div>
+                      </div>
                     </PopoverContent>
                   </Popover>
                   {errors.client && (

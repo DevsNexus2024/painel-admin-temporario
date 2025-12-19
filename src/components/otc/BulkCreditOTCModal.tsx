@@ -18,7 +18,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
@@ -99,11 +98,15 @@ const BulkCreditOTCModal: React.FC<BulkCreditOTCModalProps> = ({
     }
   };
 
-  // Filtrar clientes
-  const filteredClients = clients.filter(client =>
-    client.name.toLowerCase().includes(clientSearchValue.toLowerCase()) ||
-    client.document.toLowerCase().includes(clientSearchValue.toLowerCase())
-  );
+  // Filtrar clientes (defensivo: produção pode trazer itens inválidos)
+  const safeClients = Array.isArray(clients) ? clients : [];
+  const search = (clientSearchValue || '').toLowerCase().trim();
+  const filteredClients = safeClients.filter((client) => {
+    if (!client) return false;
+    const name = (client.name || '').toLowerCase();
+    const doc = (client.document || '').toLowerCase();
+    return name.includes(search) || doc.includes(search);
+  });
 
   // Validar formulário
   const validateForm = (): boolean => {
@@ -321,45 +324,54 @@ const BulkCreditOTCModal: React.FC<BulkCreditOTCModalProps> = ({
                         <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-full p-0" align="start">
-                      <Command>
-                        <CommandInput
+                    <PopoverContent className="w-full p-2" align="start">
+                      {/* NOTE(P0): removido cmdk/Command aqui porque em produção estava causando "undefined is not iterable" */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                        <Input
                           placeholder="Buscar cliente..."
                           value={clientSearchValue}
-                          onValueChange={setClientSearchValue}
+                          onChange={(e) => setClientSearchValue(e.target.value)}
+                          className="pl-10"
                         />
-                        <CommandEmpty>
-                          {loadingClients ? "Carregando..." : "Nenhum cliente encontrado"}
-                        </CommandEmpty>
-                        <CommandGroup className="max-h-64 overflow-y-auto">
-                          {filteredClients.map((client) => (
-                            <CommandItem
-                              key={client.id}
-                              value={`${client.name} ${client.document}`}
-                              onSelect={() => {
-                                setSelectedClient(client);
-                                setOpenClientSelect(false);
-                                setClientSearchValue('');
-                                setErrors(prev => ({ ...prev, client: '' }));
-                              }}
-                            >
-                              <div className="flex items-center gap-2 w-full">
-                                <User className="h-4 w-4" />
-                                <div className="flex-1">
-                                  <p className="font-medium">{client.name}</p>
-                                  <p className="text-sm text-muted-foreground">{client.document}</p>
-                                </div>
-                                <Check
+                      </div>
+
+                      <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-border">
+                        {loadingClients ? (
+                          <div className="p-3 text-sm text-muted-foreground">Carregando...</div>
+                        ) : filteredClients.length === 0 ? (
+                          <div className="p-3 text-sm text-muted-foreground">Nenhum cliente encontrado</div>
+                        ) : (
+                          filteredClients
+                            .filter((c) => c && c.id && c.name)
+                            .map((client) => {
+                              const isSelected = selectedClient?.id === client.id;
+                              return (
+                                <button
+                                  key={client.id}
+                                  type="button"
                                   className={cn(
-                                    "ml-auto h-4 w-4",
-                                    selectedClient?.id === client.id ? "opacity-100" : "opacity-0"
+                                    "w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-accent transition-colors",
+                                    isSelected && "bg-accent/50"
                                   )}
-                                />
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </Command>
+                                  onClick={() => {
+                                    setSelectedClient(client);
+                                    setOpenClientSelect(false);
+                                    setClientSearchValue('');
+                                    setErrors((prev) => ({ ...prev, client: '' }));
+                                  }}
+                                >
+                                  <User className="h-4 w-4" />
+                                  <div className="flex-1">
+                                    <p className="font-medium">{client.name}</p>
+                                    <p className="text-sm text-muted-foreground">{client.document}</p>
+                                  </div>
+                                  <Check className={cn("ml-auto h-4 w-4", isSelected ? "opacity-100" : "opacity-0")} />
+                                </button>
+                              );
+                            })
+                        )}
+                      </div>
                     </PopoverContent>
                   </Popover>
                   {errors.client && (
