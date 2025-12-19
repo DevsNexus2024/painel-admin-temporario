@@ -195,6 +195,22 @@ export default function ExtractTabCorpX() {
       transactions
         .map(convertCorpXToStandardFormat)
         .filter((tx): tx is NonNullable<ReturnType<typeof convertCorpXToStandardFormat>> => Boolean(tx) && !shouldHideTransaction(tx))
+        // 🚨 FILTRAR DEPÓSITOS DA TCR - Remover transações onde beneficiário é TCR (53.781.325/0001-15)
+        // Este modal é referente ao OTC, então depósitos da TCR não devem aparecer
+        .filter((tx) => {
+          if (!tx.beneficiaryDocument) return true;
+          
+          // Normalizar documento removendo formatação para comparação
+          const beneficiaryDocNormalized = tx.beneficiaryDocument.replace(/\D/g, '');
+          const tcrDocumentNormalized = '53781325000115'; // Documento da TCR sem formatação
+          
+          // Se o beneficiário for TCR, remover a transação
+          if (beneficiaryDocNormalized === tcrDocumentNormalized) {
+            return false;
+          }
+          
+          return true;
+        })
         .filter((tx) => {
           if (isAllAccountsParam || !sanitizedCnpjParam) {
             return true;
@@ -844,12 +860,36 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
   };
 
   const matchesSelectedAccount = React.useCallback((data: CorpXTransactionPayload['data']) => {
+    // 🚨 FILTRAR DEPÓSITOS DA TCR - Não mostrar transações onde beneficiário é TCR (53.781.325/0001-15)
+    // Este modal é referente ao OTC, então depósitos da TCR não devem aparecer
+    // O payload de tempo real pode não ter beneficiaryDocument diretamente, então verificamos pelo taxDocument da conta
+    // TCR tem conta CorpX com taxDocument = 53781325000115
+    const tcrDocumentNormalized = '53781325000115'; // Documento da TCR sem formatação
+    
+    // Verificar se a transação é para a conta da TCR
+    const payloadDocDigits = data.taxDocument?.replace(/\D/g, '') || '';
+    if (payloadDocDigits === tcrDocumentNormalized) {
+      // Se for depósito (C) para a conta da TCR, rejeitar
+      if (data.transactionType === 'C') {
+        return false;
+      }
+    }
+    
+    // Verificar também se há beneficiaryDocument no payload (pode estar em campos extras)
+    const beneficiaryDoc = (data as any).beneficiaryDocument || (data as any).beneficiary_document || '';
+    if (beneficiaryDoc) {
+      const beneficiaryDocNormalized = beneficiaryDoc.replace(/\D/g, '');
+      if (beneficiaryDocNormalized === tcrDocumentNormalized) {
+        return false;
+      }
+    }
+    
     const selectedDocDigits = selectedAccount.id === 'ALL' ? null : selectedAccount.cnpj.replace(/\D/g, '');
-    const payloadDocDigits = data.taxDocument?.replace(/\D/g, '') || null;
+    const payloadDocDigitsForMatch = data.taxDocument?.replace(/\D/g, '') || null;
 
     return (
       selectedAccount.id === 'ALL' ||
-      (!!selectedDocDigits && payloadDocDigits === selectedDocDigits) ||
+      (!!selectedDocDigits && payloadDocDigitsForMatch === selectedDocDigits) ||
       (!!data.corpxAccountId && data.corpxAccountId === selectedAccount.id)
     );
   }, [selectedAccount]);
