@@ -60,6 +60,15 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
     message: string;
   }>({ status: null, message: '' });
 
+  const handleSelectClient = (client: OTCClient) => {
+    setSelectedClient(client);
+    setOpenClientSelect(false);
+    setClientSearchValue('');
+    if (errors.client) {
+      setErrors((prev) => ({ ...prev, client: '' }));
+    }
+  };
+
   // Resetar formulário e verificar duplicação quando modal abrir/fechar
   useEffect(() => {
     if (isOpen && extractRecord) {
@@ -726,13 +735,12 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                                     "w-full px-3 py-2 text-left flex items-start gap-2 hover:bg-accent transition-colors",
                                     isSelected && "bg-accent/50"
                                   )}
-                                  onClick={() => {
-                                    setSelectedClient(client);
-                                    setOpenClientSelect(false);
-                                    setClientSearchValue('');
-                                    if (errors.client) {
-                                      setErrors((prev) => ({ ...prev, client: '' }));
-                                    }
+                                  onMouseDown={(e) => {
+                                    // IMPORTANT: em alguns cenários (Dialog + Popover em portal),
+                                    // o popover pode fechar no pointerdown e o onClick não dispara.
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleSelectClient(client);
                                   }}
                                 >
                                   <Check className={cn("mt-0.5 h-4 w-4", isSelected ? "opacity-100" : "opacity-0")} />

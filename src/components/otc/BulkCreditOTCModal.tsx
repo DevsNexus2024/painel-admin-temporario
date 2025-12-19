@@ -65,6 +65,13 @@ const BulkCreditOTCModal: React.FC<BulkCreditOTCModalProps> = ({
   const [results, setResults] = useState<BulkResult | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const handleSelectClient = (client: OTCClient) => {
+    setSelectedClient(client);
+    setOpenClientSelect(false);
+    setClientSearchValue('');
+    setErrors((prev) => ({ ...prev, client: '' }));
+  };
+
   // Resetar formulário quando modal abrir/fechar
   useEffect(() => {
     if (isOpen) {
@@ -354,11 +361,10 @@ const BulkCreditOTCModal: React.FC<BulkCreditOTCModalProps> = ({
                                     "w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-accent transition-colors",
                                     isSelected && "bg-accent/50"
                                   )}
-                                  onClick={() => {
-                                    setSelectedClient(client);
-                                    setOpenClientSelect(false);
-                                    setClientSearchValue('');
-                                    setErrors((prev) => ({ ...prev, client: '' }));
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleSelectClient(client);
                                   }}
                                 >
                                   <User className="h-4 w-4" />
