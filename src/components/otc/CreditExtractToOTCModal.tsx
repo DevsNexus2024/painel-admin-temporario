@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, 
   User,
@@ -272,17 +272,41 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
 
   // Filtrar clientes baseado na busca
   // Garantir que clients seja sempre um array para evitar erro "undefined is not iterable"
-  const searchTerm = (clientSearchValue || '').toLowerCase();
-  // Garantir que clients seja sempre um array válido antes de filtrar
-  const safeClients = Array.isArray(clients) ? clients : [];
-  const filteredClients = safeClients.filter(client => {
-    if (!client) return false;
-    return (
-      client.name?.toLowerCase().includes(searchTerm) ||
-      client.document?.toLowerCase().includes(searchTerm) ||
-      client.pix_key?.toLowerCase().includes(searchTerm)
+  const searchTerm = (clientSearchValue || '').toLowerCase().trim();
+  
+  // Garantir que clients seja sempre um array válido usando useMemo
+  const safeClients = useMemo(() => {
+    if (!clients) {
+      console.log('[CreditExtractToOTCModal] clients é null/undefined');
+      return [];
+    }
+    if (!Array.isArray(clients)) {
+      console.warn('[CreditExtractToOTCModal] clients não é um array:', typeof clients, clients);
+      return [];
+    }
+    // Filtrar apenas clientes válidos com id
+    return clients.filter(client => 
+      client && 
+      typeof client === 'object' && 
+      client.id !== undefined && 
+      client.id !== null
     );
-  });
+  }, [clients]);
+  
+  const filteredClients = useMemo(() => {
+    if (!searchTerm) return safeClients;
+    
+    return safeClients.filter(client => {
+      if (!client || !client.id) return false;
+      const name = (client.name || '').toLowerCase();
+      const document = (client.document || '').toLowerCase();
+      const pixKey = (client.pix_key || '').toLowerCase();
+      
+      return name.includes(searchTerm) || 
+             document.includes(searchTerm) || 
+             pixKey.includes(searchTerm);
+    });
+  }, [safeClients, searchTerm]);
 
   // Validar formulário
   const validateForm = (): boolean => {
@@ -652,7 +676,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-full p-0">
-                      <Command>
+                      <Command shouldFilter={false}>
                         <CommandInput 
                           placeholder="Buscar cliente..." 
                           value={clientSearchValue}
@@ -660,44 +684,58 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                         />
                         <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
                         <CommandGroup className="max-h-64 overflow-y-auto">
-                          {Array.isArray(filteredClients) && filteredClients.length > 0 ? (
-                            filteredClients
-                              .filter(client => client && client.id && client.name) // Filtrar clientes inválidos antes de renderizar
-                              .map((client) => (
-                                <CommandItem
-                                  key={client.id}
-                                  value={`${client.name || ''}-${client.document || ''}`}
-                                  onSelect={() => {
-                                    setSelectedClient(client);
-                                    setOpenClientSelect(false);
-                                    setClientSearchValue('');
-                                    if (errors.client) {
-                                      setErrors(prev => ({ ...prev, client: '' }));
-                                    }
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      selectedClient?.id === client.id ? "opacity-100" : "opacity-0"
-                                    )}
-                                  />
-                                  <div className="flex-1">
-                                    <div className="font-medium">{client.name}</div>
-                                    <div className="text-sm text-muted-foreground">
-                                      {client.document} • {client.pix_key}
-                                      <Badge variant="outline" className="ml-2 text-xs">
-                                        {formatCurrency(client.current_balance || 0)}
-                                      </Badge>
-                                    </div>
-                                  </div>
+                          {(() => {
+                            // Garantir que filteredClients seja sempre um array válido
+                            const validClients = Array.isArray(filteredClients) 
+                              ? filteredClients.filter(client => 
+                                  client && 
+                                  typeof client === 'object' && 
+                                  client.id && 
+                                  client.name
+                                )
+                              : [];
+                            
+                            if (validClients.length === 0) {
+                              return (
+                                <CommandItem disabled key="no-clients">
+                                  <span className="text-muted-foreground">
+                                    {loadingClients ? 'Carregando clientes...' : 'Nenhum cliente disponível'}
+                                  </span>
                                 </CommandItem>
-                              ))
-                          ) : (
-                            <CommandItem disabled>
-                              <span className="text-muted-foreground">Nenhum cliente disponível</span>
-                            </CommandItem>
-                          )}
+                              );
+                            }
+                            
+                            return validClients.map((client) => (
+                              <CommandItem
+                                key={client.id}
+                                value={`${client.name || ''}-${client.document || ''}`}
+                                onSelect={() => {
+                                  setSelectedClient(client);
+                                  setOpenClientSelect(false);
+                                  setClientSearchValue('');
+                                  if (errors.client) {
+                                    setErrors(prev => ({ ...prev, client: '' }));
+                                  }
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedClient?.id === client.id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                <div className="flex-1">
+                                  <div className="font-medium">{client.name}</div>
+                                  <div className="text-sm text-muted-foreground">
+                                    {client.document} • {client.pix_key}
+                                    <Badge variant="outline" className="ml-2 text-xs">
+                                      {formatCurrency(client.current_balance || 0)}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </CommandItem>
+                            ));
+                          })()}
                         </CommandGroup>
                       </Command>
                     </PopoverContent>
