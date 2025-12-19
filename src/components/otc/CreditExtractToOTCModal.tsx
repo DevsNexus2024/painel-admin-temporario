@@ -755,20 +755,40 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                                 <button
                                   key={client.id}
                                   type="button"
+                                  style={{
+                                    cursor: 'pointer',
+                                    pointerEvents: 'auto',
+                                    position: 'relative',
+                                    zIndex: 1
+                                  }}
                                   className={cn(
-                                    "w-full px-3 py-2 text-left flex items-start gap-2 hover:bg-accent transition-colors",
+                                    "w-full px-3 py-2 text-left flex items-start gap-2 cursor-pointer hover:bg-accent transition-colors",
                                     isSelected && "bg-accent/50"
                                   )}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = 'hsl(var(--accent))';
+                                    console.log('[CLIENT-SELECT] Mouse enter:', client.name);
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!isSelected) {
+                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                    }
+                                  }}
+                                  onClick={(e) => {
+                                    console.log('[CLIENT-SELECT] onClick:', client.name);
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleSelectClient(client);
+                                  }}
                                   onMouseDown={(e) => {
-                                    // IMPORTANT: em alguns cenários (Dialog + Popover em portal),
-                                    // o popover pode fechar no pointerdown e o onClick não dispara.
+                                    console.log('[CLIENT-SELECT] onMouseDown:', client.name);
                                     e.preventDefault();
                                     e.stopPropagation();
                                     handleSelectClient(client);
                                   }}
                                 >
                                   <Check className={cn("mt-0.5 h-4 w-4", isSelected ? "opacity-100" : "opacity-0")} />
-                                  <div className="flex-1">
+                                  <div className="flex-1" style={{ pointerEvents: 'none' }}>
                                     <div className="font-medium leading-5">{client.name}</div>
                                     <div className="text-sm text-muted-foreground">
                                       {client.document} • {client.pix_key}

@@ -357,18 +357,40 @@ const BulkCreditOTCModal: React.FC<BulkCreditOTCModalProps> = ({
                                 <button
                                   key={client.id}
                                   type="button"
+                                  style={{
+                                    cursor: 'pointer',
+                                    pointerEvents: 'auto',
+                                    position: 'relative',
+                                    zIndex: 1
+                                  }}
                                   className={cn(
-                                    "w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-accent transition-colors",
+                                    "w-full px-3 py-2 text-left flex items-center gap-2 cursor-pointer hover:bg-accent transition-colors",
                                     isSelected && "bg-accent/50"
                                   )}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = 'hsl(var(--accent))';
+                                    console.log('[BULK-CLIENT-SELECT] Mouse enter:', client.name);
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!isSelected) {
+                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                    }
+                                  }}
+                                  onClick={(e) => {
+                                    console.log('[BULK-CLIENT-SELECT] onClick:', client.name);
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleSelectClient(client);
+                                  }}
                                   onMouseDown={(e) => {
+                                    console.log('[BULK-CLIENT-SELECT] onMouseDown:', client.name);
                                     e.preventDefault();
                                     e.stopPropagation();
                                     handleSelectClient(client);
                                   }}
                                 >
                                   <User className="h-4 w-4" />
-                                  <div className="flex-1">
+                                  <div className="flex-1" style={{ pointerEvents: 'none' }}>
                                     <p className="font-medium">{client.name}</p>
                                     <p className="text-sm text-muted-foreground">{client.document}</p>
                                   </div>
