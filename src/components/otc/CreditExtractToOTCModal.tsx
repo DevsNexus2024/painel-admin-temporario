@@ -271,11 +271,16 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
   };
 
   // Filtrar clientes baseado na busca
-  const filteredClients = clients.filter(client =>
-    client.name.toLowerCase().includes(clientSearchValue.toLowerCase()) ||
-    client.document?.toLowerCase().includes(clientSearchValue.toLowerCase()) ||
-    client.pix_key?.toLowerCase().includes(clientSearchValue.toLowerCase())
-  );
+  // Garantir que clients seja sempre um array para evitar erro "undefined is not iterable"
+  const searchTerm = (clientSearchValue || '').toLowerCase();
+  const filteredClients = (Array.isArray(clients) ? clients : []).filter(client => {
+    if (!client) return false;
+    return (
+      client.name?.toLowerCase().includes(searchTerm) ||
+      client.document?.toLowerCase().includes(searchTerm) ||
+      client.pix_key?.toLowerCase().includes(searchTerm)
+    );
+  });
 
   // Validar formulário
   const validateForm = (): boolean => {
@@ -653,10 +658,15 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                         />
                         <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
                         <CommandGroup className="max-h-64 overflow-y-auto">
-                          {filteredClients.map((client) => (
+                          {filteredClients.map((client) => {
+                            // Garantir que client e suas propriedades existam antes de renderizar
+                            if (!client || !client.id || !client.name) {
+                              return null;
+                            }
+                            return (
                             <CommandItem
                               key={client.id}
-                              value={`${client.name}-${client.document}`}
+                              value={`${client.name || ''}-${client.document || ''}`}
                               onSelect={() => {
                                 setSelectedClient(client);
                                 setOpenClientSelect(false);
@@ -682,7 +692,8 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                                 </div>
                               </div>
                             </CommandItem>
-                          ))}
+                            );
+                          })}
                         </CommandGroup>
                       </Command>
                     </PopoverContent>
