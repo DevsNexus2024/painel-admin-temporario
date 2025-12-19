@@ -1,4 +1,3 @@
-import { authService } from './auth';
 import { UserRole, UserTypeResult } from '@/types/auth';
 
 // Mantém compatibilidade com código antigo
@@ -30,48 +29,43 @@ interface UserTypeAPIResponse {
  */
 export class UserTypeService {
   /**
+   * Resolve o tipo/role do usuário baseado em RBAC (roles do JWT /auth/me)
+   *
+   * Mapeamento:
+   * - PLATFORM:SUPER_ADMIN -> super_admin
+   * - PLATFORM:ADMIN       -> admin
+   * - PLATFORM:TCR_USER    -> tcr_user
+   * - PLATFORM:OTC_USER    -> otc_user
+   */
+  private resolveRoleFromPlatformRoles(platformRoles: string[] = []): UserRole {
+    if (platformRoles.includes('PLATFORM:SUPER_ADMIN')) return 'super_admin';
+    if (platformRoles.includes('PLATFORM:ADMIN')) return 'admin';
+    if (platformRoles.includes('PLATFORM:TCR_USER')) return 'tcr_user';
+    if (platformRoles.includes('PLATFORM:OTC_USER')) return 'otc_user';
+    return 'viewer';
+  }
+
+  /**
    * Verifica o tipo de usuário usando o endpoint do backend
    */
   async checkUserType(user: { id: string | number; email: string; name?: string }): Promise<UserTypeResult> {
     try {
+      const rolesFromProfile = (user as any)?.roles || [];
+      const resolvedRole = this.resolveRoleFromPlatformRoles(rolesFromProfile);
 
-      
-      // Fazer chamada para a API do backend
-      const response = await authService.getUserType();
-      
-
-      
-      if (response.sucesso && response.data) {
-        const { type, isAdmin, isOTCClient, isOTCEmployee, otcClient, hasOTCRole, otcAccess } = response.data;
-        
-
-        
-        return {
-          type,
-          isOTC: isOTCClient,
-          isAdmin,
-          isEmployee: isOTCEmployee,
-          otcClient,
-          hasOTCRole,
-          otcAccess,
-          permissions: [] // Será preenchido pelo AuthContext
-        };
-      } else {
-
-        return {
-          type: 'admin' as UserRole,
-          isOTC: false,
-          isAdmin: true,
-          permissions: [] // Será preenchido pelo AuthContext
-        };
-      }
-    } catch (error) {
-
-      // Em caso de erro, assumir como admin para não bloquear acesso
       return {
-        type: 'admin' as UserRole,
+        type: resolvedRole,
+        isOTC: resolvedRole === 'otc_user',
+        isAdmin: resolvedRole === 'admin' || resolvedRole === 'super_admin',
+        isEmployee: false,
+        permissions: [] // Será preenchido pelo AuthContext
+      };
+    } catch (error) {
+      // Em caso de erro, cair para viewer (fail-closed para UI)
+      return {
+        type: 'viewer' as UserRole,
         isOTC: false,
-        isAdmin: true,
+        isAdmin: false,
         permissions: [] // Será preenchido pelo AuthContext
       };
     }

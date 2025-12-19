@@ -37,7 +37,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   allowedRoles,
   requiredPermissions,
   anyPermissions,
-  showAccessDenied = true,
+  // UX: para este painel, quando o usuário não tem acesso, redirecionamos para a "home" dele
+  // (evita mostrar telas/rotas que ele não deveria nem ver).
+  showAccessDenied = false,
   customFallback
 }) => {
   const { isAuthenticated, isLoading, user, userType } = useAuth();
@@ -98,7 +100,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     const routeAccess = canAccessRoute(currentPath);
     
 
-    return true;
+    return routeAccess;
   };
 
   /**
@@ -128,6 +130,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     if (userType.isAdmin || userType.type === 'admin') {
 
       return '/';
+    }
+
+    // 4ª Prioridade: RBAC v2 (TCR/OTC)
+    if (userType.type === 'tcr_user') {
+      return '/grupo-tcr/tcr';
+    }
+
+    if (userType.type === 'otc_user') {
+      return '/otc';
     }
 
 
@@ -163,12 +174,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const hasAccess = checkRouteAccess();
   
   if (!hasAccess) {
-    // Se deve mostrar página de acesso negado
+    // Se deve mostrar página de acesso negado (opcional)
     if (showAccessDenied) {
-      if (customFallback) {
-        return <>{customFallback}</>;
-      }
-
+      if (customFallback) return <>{customFallback}</>;
       return (
         <AccessDenied
           title="Acesso Restrito"
@@ -181,9 +189,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       );
     }
 
-    // Caso contrário, redirecionar para rota apropriada
-    const redirectRoute = getRedirectRoute();
-    return <Navigate to={redirectRoute} replace />;
+    // Padrão: redirecionar para a rota inicial do usuário
+    return <Navigate to={getRedirectRoute()} replace />;
   }
 
   // Se estiver autenticado e autorizado, renderizar filhos

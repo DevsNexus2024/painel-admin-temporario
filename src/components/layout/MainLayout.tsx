@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
+import { useRouteGuard } from "@/hooks/useAuth";
 import { FEATURE_FLAGS } from "@/config/env";
 import { WithdrawalPinModal } from "@/components/otc/WithdrawalPinModal";
 import { useOTCPin } from "@/hooks/useOTCPin";
@@ -95,7 +96,36 @@ export default function MainLayout() {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [pinModalOpen, setPinModalOpen] = useState(false);
     const { user, logout } = useAuth();
+    const { canAccessRoute } = useRouteGuard();
     const { status: pinStatus } = useOTCPin();
+
+    const canShow = (path: string) => canAccessRoute(path);
+
+    const showGrupoTcr =
+      canShow("/grupo-tcr/saldos") ||
+      (FEATURE_FLAGS.ENABLE_EXTRATO_TCR && canShow("/extrato_tcr")) ||
+      (FEATURE_FLAGS.ENABLE_COMPENSACAO_DEPOSITOS && canShow("/compensacao-depositos")) ||
+      (FEATURE_FLAGS.ENABLE_BMP531_TCR && canShow("/bmp-531")) ||
+      canShow("/grupo-tcr/tcr") ||
+      (FEATURE_FLAGS.ENABLE_CORPX_TTF_TCR && canShow("/grupo-tcr/corpx-ttf")) ||
+      canShow("/analise-usuario/32") ||
+      canShow("/brasilcash-tcr") ||
+      canShow("/ip-revy-tcr") ||
+      canShow("/auditoria-depositos");
+
+    const showGrupoOtc =
+      canShow("/cotacoes") ||
+      canShow("/bot-cotacao") ||
+      canShow("/otc") ||
+      canShow("/otc/negociar") ||
+      canShow("/bitso") ||
+      canShow("/ip-revy-otc") ||
+      canShow("/corpx");
+
+    const showContasOrganizacoes =
+      canShow("/contas-organizacoes") ||
+      canShow("/bitso-api") ||
+      canShow("/suporte");
 
     // Debug: Log do status do PIN
     useEffect(() => {
@@ -222,6 +252,7 @@ export default function MainLayout() {
                             )}
 
                             {/* ========== GRUPO TCR ========== */}
+                            {showGrupoTcr && (
                             <div className="pb-2">
                                 {!isCollapsed && (
                                     <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -232,7 +263,7 @@ export default function MainLayout() {
                                     {/* 🚫 MENUS DEPRECIADOS - Desabilitados por padrão */}
                                     {/* Para reativar: Defina as variáveis no .env */}
                                     
-                                    {FEATURE_FLAGS.ENABLE_EXTRATO_TCR && (
+                                    {FEATURE_FLAGS.ENABLE_EXTRATO_TCR && canShow("/extrato_tcr") && (
                                         <SidebarLink
                                             to="/extrato_tcr"
                                             icon={<CreditCard className="h-4 w-4" />}
@@ -241,7 +272,7 @@ export default function MainLayout() {
                                         />
                                     )}
                                     
-                                    {FEATURE_FLAGS.ENABLE_COMPENSACAO_DEPOSITOS && (
+                                    {FEATURE_FLAGS.ENABLE_COMPENSACAO_DEPOSITOS && canShow("/compensacao-depositos") && (
                                         <SidebarLink
                                             to="/compensacao-depositos"
                                             icon={<ArrowDownToLine className="h-4 w-4" />}
@@ -251,14 +282,16 @@ export default function MainLayout() {
                                     )}
                                     
                                     {/* ✅ MENU ATIVO */}
-                                    <SidebarLink
-                                        to="/grupo-tcr/saldos"
-                                        icon={<ListChecks className="h-4 w-4" />}
-                                        label="Saldos & Conferência"
-                                        isCollapsed={isCollapsed}
-                                    />
+                                    {canShow("/grupo-tcr/saldos") && (
+                                      <SidebarLink
+                                          to="/grupo-tcr/saldos"
+                                          icon={<ListChecks className="h-4 w-4" />}
+                                          label="Saldos & Conferência"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
                                     
-                                    {FEATURE_FLAGS.ENABLE_BMP531_TCR && (
+                                    {FEATURE_FLAGS.ENABLE_BMP531_TCR && canShow("/bmp-531") && (
                                         <SidebarLink
                                             to="/bmp-531"
                                             icon={<CreditCard className="h-4 w-4" />}
@@ -268,14 +301,16 @@ export default function MainLayout() {
                                     )}
                                     
                                     {/* ✅ MENU ATIVO */}
-                                    <SidebarLink
-                                        to="/grupo-tcr/tcr"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="CorpX TCR"
-                                        isCollapsed={isCollapsed}
-                                    />
+                                    {canShow("/grupo-tcr/tcr") && (
+                                      <SidebarLink
+                                          to="/grupo-tcr/tcr"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="CorpX TCR"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
                                     
-                                    {FEATURE_FLAGS.ENABLE_CORPX_TTF_TCR && (
+                                    {FEATURE_FLAGS.ENABLE_CORPX_TTF_TCR && canShow("/grupo-tcr/corpx-ttf") && (
                                         <SidebarLink
                                             to="/grupo-tcr/corpx-ttf"
                                             icon={<CreditCard className="h-4 w-4" />}
@@ -285,42 +320,52 @@ export default function MainLayout() {
                                     )}
                                     
                                     {/* ✅ MENU ATIVO */}
-                                    <SidebarLink
-                                        to="/analise-usuario/32"
-                                        icon={<UserSearch className="h-4 w-4" />}
-                                        label="Análise de Usuário BRBTC"
-                                        isCollapsed={isCollapsed}
-                                    />
+                                    {canShow("/analise-usuario/32") && (
+                                      <SidebarLink
+                                          to="/analise-usuario/32"
+                                          icon={<UserSearch className="h-4 w-4" />}
+                                          label="Análise de Usuário BRBTC"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
                                     
                                     {/* ✅ MENU ATIVO */}
-                                    <SidebarLink
-                                        to="/brasilcash-tcr"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="BrasilCash <> TCR"
-                                        badge="NOVO"
-                                        isCollapsed={isCollapsed}
-                                    />
+                                    {canShow("/brasilcash-tcr") && (
+                                      <SidebarLink
+                                          to="/brasilcash-tcr"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="BrasilCash <> TCR"
+                                          badge="NOVO"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
                                     
                                     {/* ✅ MENU ATIVO */}
-                                    <SidebarLink
-                                        to="/ip-revy-tcr"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="IP Revy <> TCR"
-                                        badge="NOVO"
-                                        isCollapsed={isCollapsed}
-                                    />
+                                    {canShow("/ip-revy-tcr") && (
+                                      <SidebarLink
+                                          to="/ip-revy-tcr"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="IP Revy <> TCR"
+                                          badge="NOVO"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
                                     
                                     {/* ✅ MENU ATIVO - Auditoria de Depósitos */}
-                                    <SidebarLink
-                                        to="/auditoria-depositos"
-                                        icon={<FileSearch className="h-4 w-4" />}
-                                        label="Auditoria de Depósitos"
-                                        badge="NOVO"
-                                        isCollapsed={isCollapsed}
-                                    />
+                                    {canShow("/auditoria-depositos") && (
+                                      <SidebarLink
+                                          to="/auditoria-depositos"
+                                          icon={<FileSearch className="h-4 w-4" />}
+                                          label="Auditoria de Depósitos"
+                                          badge="NOVO"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
                                 </div>
                             </div>
+                            )}
 
+                            {showGrupoOtc && (
                             <div className="pb-2">
                                 {!isCollapsed && (
                                     <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -335,54 +380,70 @@ export default function MainLayout() {
                                         label="Gerenciador de Contas"
                                         isCollapsed={isCollapsed}
                                     /> */}
-                                    <SidebarLink
-                                        to="/cotacoes"
-                                        icon={<BarChart3 className="h-4 w-4" />}
-                                        label="Cotações em Tempo Real"
-                                        isCollapsed={isCollapsed}
-                                    />
-                                    <SidebarLink
-                                        to="/bot-cotacao"
-                                        icon={<Bot className="h-4 w-4" />}
-                                        label="Bot de Cotação"
-                                        isCollapsed={isCollapsed}
-                                    />
-                                    <SidebarLink
-                                        to="/otc"
-                                        icon={<Users className="h-4 w-4" />}
-                                        label="Clientes OTC"
-                                        isCollapsed={isCollapsed}
-                                    />
-                                    <SidebarLink
-                                        to="/otc/negociar"
-                                        icon={<TrendingUp className="h-4 w-4" />}
-                                        label="Negociar"
-                                        isCollapsed={isCollapsed}
-                                    />
-                                    <SidebarLink
-                                        to="/bitso"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="Bitso <> OTC"
-                                        badge="NOVO"
-                                        isCollapsed={isCollapsed}
-                                    />
-                                    <SidebarLink
-                                        to="/ip-revy-otc"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="IP Revy <> OTC"
-                                        badge="NOVO"
-                                        isCollapsed={isCollapsed}
-                                    />
-                                    <SidebarLink
-                                        to="/corpx"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="CORPX TTF"
-                                        isCollapsed={isCollapsed}
-                                    />
+                                    {canShow("/cotacoes") && (
+                                      <SidebarLink
+                                          to="/cotacoes"
+                                          icon={<BarChart3 className="h-4 w-4" />}
+                                          label="Cotações em Tempo Real"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+                                    {canShow("/bot-cotacao") && (
+                                      <SidebarLink
+                                          to="/bot-cotacao"
+                                          icon={<Bot className="h-4 w-4" />}
+                                          label="Bot de Cotação"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+                                    {canShow("/otc") && (
+                                      <SidebarLink
+                                          to="/otc"
+                                          icon={<Users className="h-4 w-4" />}
+                                          label="Clientes OTC"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+                                    {canShow("/otc/negociar") && (
+                                      <SidebarLink
+                                          to="/otc/negociar"
+                                          icon={<TrendingUp className="h-4 w-4" />}
+                                          label="Negociar"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+                                    {canShow("/bitso") && (
+                                      <SidebarLink
+                                          to="/bitso"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="Bitso <> OTC"
+                                          badge="NOVO"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+                                    {canShow("/ip-revy-otc") && (
+                                      <SidebarLink
+                                          to="/ip-revy-otc"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="IP Revy <> OTC"
+                                          badge="NOVO"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+                                    {canShow("/corpx") && (
+                                      <SidebarLink
+                                          to="/corpx"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="CORPX TTF"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
                                 </div>
                             </div>
+                            )}
 
                             {/* ========== GRUPO CONTAS E ORGANIZAÇÕES ========== */}
+                            {showContasOrganizacoes && (
                             <div className="pb-2">
                                 {!isCollapsed && (
                                     <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -390,29 +451,36 @@ export default function MainLayout() {
                                     </h3>
                                 )}
                                 <div className="space-y-1">
-                                    <SidebarLink
-                                        to="/contas-organizacoes"
-                                        icon={<Building2 className="h-4 w-4" />}
-                                        label="Contas e Organizações"
-                                        badge="NOVO"
-                                        isCollapsed={isCollapsed}
-                                    />
-                                    <SidebarLink
-                                        to="/bitso-api"
-                                        icon={<CreditCard className="h-4 w-4" />}
-                                        label="Bitso <> API"
-                                        badge="NOVO"
-                                        isCollapsed={isCollapsed}
-                                    />
-                                    <SidebarLink
-                                        to="/suporte"
-                                        icon={<HelpCircle className="h-4 w-4" />}
-                                        label="Suporte"
-                                        badge="NOVO"
-                                        isCollapsed={isCollapsed}
-                                    />
+                                    {canShow("/contas-organizacoes") && (
+                                      <SidebarLink
+                                          to="/contas-organizacoes"
+                                          icon={<Building2 className="h-4 w-4" />}
+                                          label="Contas e Organizações"
+                                          badge="NOVO"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+                                    {canShow("/bitso-api") && (
+                                      <SidebarLink
+                                          to="/bitso-api"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="Bitso <> API"
+                                          badge="NOVO"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+                                    {canShow("/suporte") && (
+                                      <SidebarLink
+                                          to="/suporte"
+                                          icon={<HelpCircle className="h-4 w-4" />}
+                                          label="Suporte"
+                                          badge="NOVO"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
                                 </div>
                             </div>
+                            )}
                         </nav>
                     </ScrollArea>
 

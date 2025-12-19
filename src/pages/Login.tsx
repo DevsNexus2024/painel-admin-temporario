@@ -75,6 +75,13 @@ const Login: React.FC = () => {
               const targetRoute = from === '/' || from === '/login' ? '/' : from;
               navigate(targetRoute, { replace: true });
             }
+            // 4ª Prioridade: RBAC v2 (TCR/OTC)
+            else if (userTypeResult.type === 'tcr_user') {
+              navigate('/grupo-tcr/tcr', { replace: true });
+            }
+            else if (userTypeResult.type === 'otc_user') {
+              navigate('/otc', { replace: true });
+            }
             // Fallback
             else {
 
@@ -229,6 +236,17 @@ const Login: React.FC = () => {
                   {errors.password && (
                     <p className="text-red-400 text-sm">{errors.password.message}</p>
                   )}
+                </div>
+
+                {/* Link para Reset de Senha */}
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/reset-password')}
+                    className="text-sm text-orange-400 hover:text-orange-300 transition-colors"
+                  >
+                    Esqueceu sua senha?
+                  </button>
                 </div>
 
                 {/* Botão de Login */}

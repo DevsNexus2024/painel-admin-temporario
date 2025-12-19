@@ -21,8 +21,9 @@ import {
   ArrowDownRight,
   Wallet
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
+import { usePermissions } from '@/hooks/useAuth';
 
 // Dados de exemplo para o dashboard
 const monthlyData = [
@@ -81,10 +82,20 @@ const recentActivity = [
 ];
 
 const Index = () => {
+  const { hasRole, hasAnyRole } = usePermissions();
   const [isLoading, setIsLoading] = useState(false);
   const [comparisonResults, setComparisonResults] = useState<ComparisonResult[]>([]);
   const [userEmail, setUserEmail] = useState<string>('');
   const [userId, setUserId] = useState<number>(0);
+
+  // ✅ Usuários não-admin não devem acessar o dashboard (home redireciona para a rota correta)
+  const isAdminDashboardUser = hasAnyRole(['super_admin', 'admin']);
+  if (!isAdminDashboardUser) {
+    if (hasRole('tcr_user')) return <Navigate to="/grupo-tcr/tcr" replace />;
+    if (hasRole('otc_user')) return <Navigate to="/otc" replace />;
+    // Fallback seguro: volta pro login
+    return <Navigate to="/login" replace />;
+  }
 
   const handleSearch = async (email: string, amount: string) => {
     setIsLoading(true);

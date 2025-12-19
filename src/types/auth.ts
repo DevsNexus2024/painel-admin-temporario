@@ -4,19 +4,31 @@
  */
 
 // ===== TIPOS DE USUÁRIO =====
-export type UserRole = 'admin' | 'otc_client' | 'otc_employee' | 'manager' | 'viewer';
+export type UserRole =
+  | 'super_admin'
+  | 'admin'
+  | 'tcr_user'
+  | 'otc_user'
+  // legados/compatibilidade
+  | 'otc_client'
+  | 'otc_employee'
+  | 'manager'
+  | 'viewer';
 
 export interface User {
   id: string | number;
   email: string;
   name?: string;
   role?: UserRole;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
   // Campos específicos do sistema
   is_admin?: boolean;
   document?: string;
   phone?: string;
+  // RBAC v2 (BaaS-W3Build)
+  roles?: string[];   // ex: ["PLATFORM:SUPER_ADMIN", "TENANT:OWNER:2"]
+  scopes?: string[];  // ex: ["*"]
 }
 
 // ===== PERMISSÕES DO SISTEMA =====
@@ -65,6 +77,37 @@ export type Permission =
 
 // ===== CONFIGURAÇÃO DE ROLES E PERMISSÕES =====
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
+  // Super Admin - Acesso total
+  super_admin: [
+    'admin.full_access',
+    'admin.user_management',
+    'admin.system_config',
+    'otc.view_clients',
+    'otc.create_clients',
+    'otc.edit_clients',
+    'otc.delete_clients',
+    'otc.view_operations',
+    'otc.create_operations',
+    'otc.reverse_operations',
+    'otc.view_stats',
+    'otc.manage_employees',
+    'pix.send',
+    'pix.receive',
+    'pix.view_keys',
+    'pix.create_keys',
+    'pix.delete_keys',
+    'pix.view_transactions',
+    'pix.create_qr',
+    'banking.view_balance',
+    'banking.view_statement',
+    'banking.transfer',
+    'banking.view_accounts',
+    'banking.manage_accounts',
+    'reports.view_financial',
+    'reports.export_data',
+    'reports.view_audit'
+  ],
+
   // Administrador - Acesso completo
   admin: [
     'admin.full_access',
@@ -94,6 +137,38 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view_financial',
     'reports.export_data',
     'reports.view_audit'
+  ],
+
+  // Usuário OTC (painel) - acesso aos módulos OTC
+  otc_user: [
+    'otc.view_clients',
+    'otc.create_clients',
+    'otc.edit_clients',
+    'otc.delete_clients',
+    'otc.view_operations',
+    'otc.create_operations',
+    'otc.reverse_operations',
+    'otc.view_stats',
+    'otc.manage_employees',
+    'pix.send',
+    'pix.receive',
+    'pix.view_keys',
+    'pix.create_keys',
+    'pix.delete_keys',
+    'pix.view_transactions',
+    'pix.create_qr',
+    'banking.view_balance',
+    'banking.view_statement',
+    'banking.transfer',
+    'reports.view_financial',
+  ],
+
+  // Usuário TCR - acesso limitado às telas TCR específicas
+  tcr_user: [
+    'banking.view_balance',
+    'banking.view_statement',
+    'reports.view_financial',
+    'reports.view_audit',
   ],
   
   // Cliente OTC - Acesso limitado ao próprio extrato
@@ -202,29 +277,43 @@ export interface RoutePermissions {
 
 // ===== CONFIGURAÇÃO DE ROTAS =====
 export const ROUTE_PERMISSIONS: Record<string, RoutePermissions> = {
-  // Rotas administrativas
-  '/': { allowedRoles: ['admin', 'manager'] },
-  '/admin': { requiredRole: 'admin' },
-  '/users': { requiredPermissions: ['admin.user_management'] },
-  
-  // Rotas OTC
-  '/otc': { requiredPermissions: ['otc.view_clients'] },
-  '/otc/clients': { requiredPermissions: ['otc.view_clients'] },
-  '/otc/operations': { requiredPermissions: ['otc.view_operations'] },
-  '/otc/stats': { requiredPermissions: ['otc.view_stats'] },
-  
-  // Rotas PIX
-  '/payments': { requiredPermissions: ['pix.view_transactions'] },
-  '/payments/send': { requiredPermissions: ['pix.send'] },
-  '/payments/qr': { requiredPermissions: ['pix.create_qr'] },
-  
-  // Rotas de funcionários
+  // ==================== SUPER ADMIN ONLY ====================
+  // Home: permitido para todos os usuários "de painel" autenticados.
+  // A página (`Index`) faz redirect para a melhor rota permitida quando não for admin.
+  '/': { allowedRoles: ['super_admin', 'admin', 'tcr_user', 'otc_user'] },
+  '/grupo-tcr/saldos': { allowedRoles: ['super_admin'] },
+  '/analise-usuario/:id': { allowedRoles: ['super_admin'] },
+  '/contas-organizacoes': { allowedRoles: ['super_admin'] },
+  '/contas-organizacoes/organizacao/:id': { allowedRoles: ['super_admin'] },
+  '/contas-organizacoes/conta/:id': { allowedRoles: ['super_admin'] },
+  '/bitso-api': { allowedRoles: ['super_admin'] },
+  '/suporte': { allowedRoles: ['super_admin'] },
+
+  // ==================== GRUPO TCR ====================
+  '/grupo-tcr/tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
+  '/brasilcash-tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
+  '/ip-revy-tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
+  '/auditoria-depositos': { allowedRoles: ['super_admin', 'tcr_user'] },
+
+  // (Feature-flagged hoje, mas protegidas)
+  '/grupo-tcr/corpx-ttf': { allowedRoles: ['super_admin'] },
+  '/bmp-531': { allowedRoles: ['super_admin'] },
+  '/extrato_tcr': { allowedRoles: ['super_admin'] },
+  '/compensacao-depositos': { allowedRoles: ['super_admin'] },
+
+  // ==================== GRUPO OTC ====================
+  '/cotacoes': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
+  '/bot-cotacao': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
+  '/otc': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
+  '/otc/negociar': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
+  '/otc/admin-statement/:clientId': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
+  '/bitso': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
+  '/ip-revy-otc': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
+  '/corpx': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
+
+  // Rotas de funcionários / cliente OTC (mantidas)
   '/employee-statement': { requiredRole: 'otc_employee' },
-  '/client-statement': { requiredRole: 'otc_client' },
-  
-  // Rotas de relatórios
-  '/reports': { requiredPermissions: ['reports.view_financial'] },
-  '/extrato': { requiredPermissions: ['banking.view_statement'] }
+  '/client-statement': { requiredRole: 'otc_client' }
 };
 
 // ===== UTILITÁRIOS =====

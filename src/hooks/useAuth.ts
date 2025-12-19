@@ -71,7 +71,7 @@ export const usePermissions = () => {
    * Verifica se é admin
    */
   const isAdmin = (): boolean => {
-    return hasRole('admin') || checkPermission('admin.full_access');
+    return hasRole('admin') || hasRole('super_admin') || checkPermission('admin.full_access');
   };
 
   /**
@@ -124,6 +124,34 @@ export const useRouteGuard = () => {
   const { isAuthenticated, isLoading } = useContext(AuthContext) || {};
   const { checkPermission, hasRole, hasAnyRole } = usePermissions();
 
+  const findRouteConfig = (currentPath: string) => {
+    // 1) Match exato
+    if (ROUTE_PERMISSIONS[currentPath]) {
+      return ROUTE_PERMISSIONS[currentPath];
+    }
+
+    // 2) Match por pattern com params (ex: /analise-usuario/:id)
+    for (const [pattern, config] of Object.entries(ROUTE_PERMISSIONS)) {
+      if (!pattern.includes(':')) continue;
+
+      // Construção de regex robusta:
+      // 1) Marca params (":id") antes de escapar
+      // 2) Escapa o restante do pattern
+      // 3) Substitui os marcadores por "[^/]+"
+      const PARAM_MARKER = '__ROUTE_PARAM__';
+      const withMarkers = pattern.replace(/:([^/]+)/g, PARAM_MARKER);
+      const escaped = withMarkers.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regexStr = '^' + escaped.split(PARAM_MARKER).join('[^/]+') + '$';
+
+      const regex = new RegExp(regexStr);
+      if (regex.test(currentPath)) {
+        return config;
+      }
+    }
+
+    return undefined;
+  };
+
   /**
    * Verifica se usuário pode acessar rota específica
    */
@@ -131,7 +159,7 @@ export const useRouteGuard = () => {
     if (isLoading) return false;
     if (!isAuthenticated) return false;
 
-    const routeConfig = ROUTE_PERMISSIONS[routePath];
+    const routeConfig = findRouteConfig(routePath);
     if (!routeConfig) return true; // Rota sem restrições
 
     // Verificar role específico
@@ -150,7 +178,7 @@ export const useRouteGuard = () => {
     }
 
     // Verificar flags específicas
-    if (routeConfig.requireAdmin && !hasRole('admin')) {
+    if (routeConfig.requireAdmin && !(hasRole('admin') || hasRole('super_admin'))) {
       return false;
     }
 

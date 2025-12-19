@@ -30,6 +30,7 @@ import OrganizacaoDetailsPage from "./pages/ContasOrganizacoes/OrganizacaoDetail
 import ContaDetailsPage from "./pages/ContasOrganizacoes/ContaDetailsPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIAMENTE
+import ResetPassword from "./pages/ResetPassword"; // ✅ TEMPORÁRIO - Reset de senha BaaS v2
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
 import OTCClients from "./pages/otc/OTCClients";
 import OTCNegociar from "./pages/otc/OTCNegociar";
@@ -122,6 +123,8 @@ const App = () => (
               <Route path="/login-cliente" element={<Navigate to="/login" replace />} />
               {/* REGISTRO DESBLOQUEADO TEMPORARIAMENTE */}
               <Route path="/register" element={<Register />} />
+              {/* ✅ TEMPORÁRIO - Reset de senha BaaS v2 */}
+              <Route path="/reset-password" element={<ResetPassword />} />
               
               {/* Rota específica para extrato do cliente (sem sidebar) */}
               <Route path="/client-statement" element={
@@ -139,7 +142,7 @@ const App = () => (
               
               {/* Rotas protegidas - ADMIN APENAS */}
               <Route element={
-                <ProtectedRoute requireAdmin={true}>
+                <ProtectedRoute>
                   <MainLayout />
                 </ProtectedRoute>
               }>

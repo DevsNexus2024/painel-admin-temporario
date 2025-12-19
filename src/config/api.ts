@@ -78,6 +78,7 @@ export const API_CONFIG = {
       SALDO: '/internal/account/saldo'
     },
     AUTH: {
+      // Auth do sistema legado
       LOGIN: '/api/auth/login',
       REGISTER: '/api/auth/register',
       PROFILE: '/api/auth/me',

@@ -13,8 +13,25 @@ export interface AuthResponse {
   };
 }
 
+// Resposta do BaaS-W3Build (/auth/login)
+interface TokenPairResponse {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
 // Classe de serviços de autenticação
 class AuthService {
+  /**
+   * Base URL do BaaS v2 APENAS para login (pedido do usuário).
+   * Todo o restante continua usando a base configurada do sistema legado.
+   */
+  private readonly BAAS_V2_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
+  private readonly BAAS_V2_LOGIN_PATH = '/auth/login';
+  private readonly BAAS_V2_PROFILE_PATH = '/auth/me';
+  private readonly BAAS_V2_FORGOT_PASSWORD_PATH = '/auth/forgot-password';
+  private readonly BAAS_V2_RESET_PASSWORD_PATH = '/auth/reset-password';
+
   /**
    * Registrar novo usuário
    */
@@ -25,17 +42,39 @@ class AuthService {
         body: JSON.stringify(data)
       });
 
-      const result: AuthResponse = await response.json();
+      const json: any = await response.json();
 
-      if (result.sucesso && result.data) {
-        // Salvar token e usuário
-        TOKEN_STORAGE.set(result.data.token);
-        USER_STORAGE.set(result.data.user);
-        
-        // Registrar atividade inicial do registro
+      // Novo contrato (BaaS-W3Build) -> tokens + /auth/me
+      if (json?.accessToken) {
+        const tokenPair = json as TokenPairResponse;
+        TOKEN_STORAGE.set(tokenPair.accessToken);
         LAST_ACTIVITY_STORAGE.set();
+
+        const profile = await this.getProfile();
+        if (profile.sucesso && profile.data) {
+          return {
+            sucesso: true,
+            mensagem: 'Registro realizado com sucesso',
+            data: {
+              user: profile.data,
+              token: tokenPair.accessToken,
+            },
+          };
+        }
+
+        return {
+          sucesso: false,
+          mensagem: profile.mensagem || 'Não foi possível carregar o perfil após registro.',
+        };
       }
 
+      // Contrato legado (mantido como fallback)
+      const result: AuthResponse = json as AuthResponse;
+      if (result.sucesso && result.data) {
+        TOKEN_STORAGE.set(result.data.token);
+        USER_STORAGE.set(result.data.user);
+        LAST_ACTIVITY_STORAGE.set();
+      }
       return result;
     } catch (error) {
       // console.error('Erro no registro:', error);
@@ -53,41 +92,72 @@ class AuthService {
     try {
       logger.info('[AUTH] Tentativa de login', { email: credentials.email });
 
-      const response = await createApiRequest(API_CONFIG.ENDPOINTS.AUTH.LOGIN, {
+      // ✅ Login deve ir para o BaaS v2, independentemente da base URL do legado
+      const response = await fetch(`${this.BAAS_V2_BASE_URL}${this.BAAS_V2_LOGIN_PATH}`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(credentials)
       });
 
-      const result: AuthResponse = await response.json();
+      const json: any = await response.json();
 
-      if (result.sucesso && result.data) {
-        // Validar token recebido
-        if (!this.isTokenValid(result.data.token)) {
+      // Novo contrato (BaaS-W3Build)
+      if (json?.accessToken) {
+        const tokenPair = json as TokenPairResponse;
+
+        if (!this.isTokenValid(tokenPair.accessToken)) {
           logger.error('[AUTH] Token recebido é inválido');
+          return { sucesso: false, mensagem: 'Token de autenticação inválido.' };
+        }
+
+        TOKEN_STORAGE.set(tokenPair.accessToken);
+        LAST_ACTIVITY_STORAGE.set();
+
+        const profile = await this.getProfile();
+        if (profile.sucesso && profile.data) {
+          logger.info('[AUTH] Login realizado com sucesso (RBAC)', {
+            userId: profile.data.id,
+            email: profile.data.email,
+            rolesCount: profile.data.roles?.length || 0,
+          });
           return {
-            sucesso: false,
-            mensagem: 'Token de autenticação inválido.'
+            sucesso: true,
+            mensagem: 'Login realizado com sucesso',
+            data: {
+              user: profile.data,
+              token: tokenPair.accessToken,
+            },
           };
         }
 
-        // Salvar token e usuário
-        TOKEN_STORAGE.set(result.data.token);
-        USER_STORAGE.set(result.data.user);
-        
-        // Registrar atividade inicial do login
-        LAST_ACTIVITY_STORAGE.set();
-
-        logger.info('[AUTH] Login realizado com sucesso', { 
-          userId: result.data.user.id,
-          email: result.data.user.email 
-        });
-      } else {
-        logger.warn('[AUTH] Login falhou', { 
-          email: credentials.email,
-          mensagem: result.mensagem 
-        });
+        return {
+          sucesso: false,
+          mensagem: profile.mensagem || 'Não foi possível carregar o perfil após login.',
+        };
       }
 
+      // Contrato legado (fallback)
+      const result: AuthResponse = json as AuthResponse;
+      if (result.sucesso && result.data) {
+        if (!this.isTokenValid(result.data.token)) {
+          logger.error('[AUTH] Token recebido é inválido');
+          return { sucesso: false, mensagem: 'Token de autenticação inválido.' };
+        }
+        TOKEN_STORAGE.set(result.data.token);
+        USER_STORAGE.set(result.data.user);
+        LAST_ACTIVITY_STORAGE.set();
+        logger.info('[AUTH] Login realizado com sucesso', {
+          userId: result.data.user.id,
+          email: result.data.user.email,
+        });
+      } else {
+        logger.warn('[AUTH] Login falhou', {
+          email: credentials.email,
+          mensagem: result.mensagem,
+        });
+      }
       return result;
     } catch (error) {
       logger.error('[AUTH] Erro no login:', error);
@@ -121,18 +191,40 @@ class AuthService {
    */
   async getProfile(): Promise<{ sucesso: boolean; data?: User; mensagem?: string }> {
     try {
-      const response = await createApiRequest(API_CONFIG.ENDPOINTS.AUTH.PROFILE, {
-        method: 'GET'
+      // ✅ Perfil precisa acompanhar o login no BaaS v2 (mesma origem do token)
+      const response = await fetch(`${this.BAAS_V2_BASE_URL}${this.BAAS_V2_PROFILE_PATH}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${TOKEN_STORAGE.get()}`,
+        },
       });
 
-      const result = await response.json();
+      const json: any = await response.json();
 
-      if (result.sucesso && result.data) {
-        // Atualizar dados do usuário no storage
-        USER_STORAGE.set(result.data);
+      // Novo contrato (BaaS-W3Build): {id,email,name,roles,scopes}
+      if (json?.id && json?.email && Array.isArray(json?.roles)) {
+        const user: User = {
+          id: json.id,
+          email: json.email,
+          name: json.name,
+          roles: json.roles,
+          scopes: json.scopes || [],
+        };
+
+        USER_STORAGE.set(user);
+        return { sucesso: true, data: user };
       }
 
-      return result;
+      // Contrato legado: {sucesso,data}
+      if (json?.sucesso) {
+        const result = json as { sucesso: boolean; data?: User; mensagem?: string };
+        if (result.sucesso && result.data) {
+          USER_STORAGE.set(result.data);
+        }
+        return result;
+      }
+
+      return { sucesso: false, mensagem: 'Resposta inválida ao buscar perfil' };
     } catch (error) {
       // console.error('Erro ao buscar perfil:', error);
       return {
@@ -156,6 +248,100 @@ class AuthService {
       return result;
     } catch (error) {
       // console.error('❌ AuthService: Erro ao buscar tipo do usuário:', error);
+      return {
+        sucesso: false,
+        mensagem: 'Erro de conexão. Tente novamente.'
+      };
+    }
+  }
+
+  /**
+   * Solicitar reset de senha (BaaS v2)
+   * TEMPORÁRIO - Será removido após migração completa
+   */
+  async forgotPassword(email: string): Promise<{ sucesso: boolean; mensagem: string; token?: string }> {
+    try {
+      logger.info('[AUTH] Solicitação de reset de senha', { email });
+
+      const response = await fetch(`${this.BAAS_V2_BASE_URL}${this.BAAS_V2_FORGOT_PASSWORD_PATH}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email })
+      });
+
+      const json: any = await response.json();
+
+      if (!response.ok) {
+        const errorMessage = json?.message || json?.error || `Erro HTTP ${response.status}`;
+        logger.warn('[AUTH] Erro ao solicitar reset de senha', {
+          email,
+          status: response.status,
+          error: errorMessage
+        });
+        return {
+          sucesso: false,
+          mensagem: errorMessage
+        };
+      }
+
+      // Sucesso - sempre retorna mensagem positiva (por segurança)
+      logger.info('[AUTH] Reset de senha solicitado com sucesso', { email });
+      
+      return {
+        sucesso: true,
+        mensagem: json?.message || 'Se o email estiver cadastrado, você receberá um link para resetar sua senha',
+        token: json?.token // Token retornado para construir link
+      };
+    } catch (error) {
+      logger.error('[AUTH] Erro ao solicitar reset de senha:', error);
+      return {
+        sucesso: false,
+        mensagem: 'Erro de conexão. Tente novamente.'
+      };
+    }
+  }
+
+  /**
+   * Resetar senha usando token (BaaS v2)
+   * TEMPORÁRIO - Será removido após migração completa
+   */
+  async resetPassword(token: string, newPassword: string): Promise<{ sucesso: boolean; mensagem: string }> {
+    try {
+      logger.info('[AUTH] Tentativa de reset de senha');
+
+      const response = await fetch(`${this.BAAS_V2_BASE_URL}${this.BAAS_V2_RESET_PASSWORD_PATH}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token, newPassword })
+      });
+
+      const json: any = await response.json();
+
+      if (!response.ok) {
+        const errorMessage = json?.message || json?.error || `Erro HTTP ${response.status}`;
+        logger.warn('[AUTH] Erro ao resetar senha', {
+          status: response.status,
+          error: errorMessage
+        });
+        return {
+          sucesso: false,
+          mensagem: errorMessage
+        };
+      }
+
+      // Sucesso
+      logger.info('[AUTH] Senha resetada com sucesso');
+      
+      return {
+        sucesso: true,
+        mensagem: json?.message || 'Senha resetada com sucesso. Faça login com sua nova senha.'
+      };
+    } catch (error) {
+      logger.error('[AUTH] Erro ao resetar senha:', error);
       return {
         sucesso: false,
         mensagem: 'Erro de conexão. Tente novamente.'
