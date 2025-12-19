@@ -287,12 +287,19 @@ class AuthService {
       }
 
       // Sucesso - sempre retorna mensagem positiva (por segurança)
-      logger.info('[AUTH] Reset de senha solicitado com sucesso', { email });
+      logger.info('[AUTH] Reset de senha solicitado com sucesso', { 
+        email,
+        hasToken: !!json?.token,
+        responseKeys: Object.keys(json || {})
+      });
+      
+      // O token pode vir em diferentes campos dependendo da resposta da API
+      const token = json?.token || json?.resetToken || json?.reset_token || json?.data?.token;
       
       return {
         sucesso: true,
         mensagem: json?.message || 'Se o email estiver cadastrado, você receberá um link para resetar sua senha',
-        token: json?.token // Token retornado para construir link
+        token: token // Token retornado para construir link (pode ser undefined se enviado por email)
       };
     } catch (error) {
       logger.error('[AUTH] Erro ao solicitar reset de senha:', error);

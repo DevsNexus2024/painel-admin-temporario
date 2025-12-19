@@ -273,7 +273,9 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
   // Filtrar clientes baseado na busca
   // Garantir que clients seja sempre um array para evitar erro "undefined is not iterable"
   const searchTerm = (clientSearchValue || '').toLowerCase();
-  const filteredClients = (Array.isArray(clients) ? clients : []).filter(client => {
+  // Garantir que clients seja sempre um array válido antes de filtrar
+  const safeClients = Array.isArray(clients) ? clients : [];
+  const filteredClients = safeClients.filter(client => {
     if (!client) return false;
     return (
       client.name?.toLowerCase().includes(searchTerm) ||
@@ -658,42 +660,44 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                         />
                         <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
                         <CommandGroup className="max-h-64 overflow-y-auto">
-                          {filteredClients.map((client) => {
-                            // Garantir que client e suas propriedades existam antes de renderizar
-                            if (!client || !client.id || !client.name) {
-                              return null;
-                            }
-                            return (
-                            <CommandItem
-                              key={client.id}
-                              value={`${client.name || ''}-${client.document || ''}`}
-                              onSelect={() => {
-                                setSelectedClient(client);
-                                setOpenClientSelect(false);
-                                setClientSearchValue('');
-                                if (errors.client) {
-                                  setErrors(prev => ({ ...prev, client: '' }));
-                                }
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  "mr-2 h-4 w-4",
-                                  selectedClient?.id === client.id ? "opacity-100" : "opacity-0"
-                                )}
-                              />
-                              <div className="flex-1">
-                                <div className="font-medium">{client.name}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {client.document} • {client.pix_key}
-                                  <Badge variant="outline" className="ml-2 text-xs">
-                                    {formatCurrency(client.current_balance || 0)}
-                                  </Badge>
-                                </div>
-                              </div>
+                          {Array.isArray(filteredClients) && filteredClients.length > 0 ? (
+                            filteredClients
+                              .filter(client => client && client.id && client.name) // Filtrar clientes inválidos antes de renderizar
+                              .map((client) => (
+                                <CommandItem
+                                  key={client.id}
+                                  value={`${client.name || ''}-${client.document || ''}`}
+                                  onSelect={() => {
+                                    setSelectedClient(client);
+                                    setOpenClientSelect(false);
+                                    setClientSearchValue('');
+                                    if (errors.client) {
+                                      setErrors(prev => ({ ...prev, client: '' }));
+                                    }
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      selectedClient?.id === client.id ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  <div className="flex-1">
+                                    <div className="font-medium">{client.name}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {client.document} • {client.pix_key}
+                                      <Badge variant="outline" className="ml-2 text-xs">
+                                        {formatCurrency(client.current_balance || 0)}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                </CommandItem>
+                              ))
+                          ) : (
+                            <CommandItem disabled>
+                              <span className="text-muted-foreground">Nenhum cliente disponível</span>
                             </CommandItem>
-                            );
-                          })}
+                          )}
                         </CommandGroup>
                       </Command>
                     </PopoverContent>

@@ -50,8 +50,18 @@ const ResetPassword: React.FC = () => {
   const [resetToken, setResetToken] = useState<string | null>(token);
   const [resetLink, setResetLink] = useState<string | null>(null);
 
+  // Verificar se há token na URL quando componente montar ou URL mudar
+  useEffect(() => {
+    const urlToken = searchParams.get('token');
+    if (urlToken && urlToken !== resetToken) {
+      console.log('[RESET-PASSWORD] Token encontrado na URL, avançando para etapa de reset');
+      setResetToken(urlToken);
+    }
+  }, [searchParams, resetToken]);
+
   // Se tiver token na URL, estamos na etapa de resetar senha
-  const isResetStep = !!resetToken;
+  // IMPORTANTE: Se já tiver token na URL, não mostrar formulário de email
+  const isResetStep = !!(resetToken || token);
 
   // Formulário para solicitar reset
   const forgotPasswordForm = useForm<ForgotPasswordFormData>({
@@ -67,25 +77,41 @@ const ResetPassword: React.FC = () => {
   const onForgotPasswordSubmit = async (data: ForgotPasswordFormData) => {
     setIsLoading(true);
     try {
+      console.log('[RESET-PASSWORD] Solicitando reset para:', data.email);
       const result = await authService.forgotPassword(data.email);
+      
+      console.log('[RESET-PASSWORD] Resposta do servidor:', {
+        sucesso: result.sucesso,
+        hasToken: !!result.token,
+        mensagem: result.mensagem
+      });
 
       if (result.sucesso) {
-        toast.success('Token de reset gerado com sucesso!');
-
-        // Se recebeu token, construir link de reset
+        // Se recebeu token na resposta, usar diretamente e avançar para tela de reset
         if (result.token) {
+          console.log('[RESET-PASSWORD] Token recebido na resposta, avançando para etapa de reset');
+          toast.success('Token de reset gerado com sucesso!');
           const link = `${window.location.origin}/reset-password?token=${result.token}`;
           setResetLink(link);
           setResetToken(result.token);
+          // Atualizar URL para incluir o token
+          navigate(`/reset-password?token=${result.token}`, { replace: true });
           // Limpar formulário de email ao mudar para etapa de reset
           forgotPasswordForm.reset();
         } else {
-          toast.info('Verifique seu email para o link de reset de senha.');
+          // Se não recebeu token, pode ser que o backend tenha enviado por email
+          // Neste caso, mostrar mensagem informativa
+          console.log('[RESET-PASSWORD] Token não retornado na resposta. Backend pode ter enviado por email.');
+          toast.info(result.mensagem || 'Verifique seu email para o link de reset de senha.');
+          
+          // Não avançar automaticamente - usuário precisa usar o link do email
+          // O token virá na URL quando o usuário clicar no link do email
         }
       } else {
         toast.error(result.mensagem || 'Erro ao solicitar reset de senha');
       }
     } catch (error) {
+      console.error('[RESET-PASSWORD] Erro ao solicitar reset:', error);
       toast.error('Erro de conexão. Tente novamente.');
     } finally {
       setIsLoading(false);
@@ -94,14 +120,17 @@ const ResetPassword: React.FC = () => {
 
   // Handler para resetar senha
   const onResetPasswordSubmit = async (data: ResetPasswordFormData) => {
-    if (!resetToken) {
+    // Usar token da URL se disponível, senão usar o token do estado
+    const tokenToUse = token || resetToken;
+    
+    if (!tokenToUse) {
       toast.error('Token de reset não encontrado');
       return;
     }
 
     setIsLoading(true);
     try {
-      const result = await authService.resetPassword(resetToken, data.newPassword);
+      const result = await authService.resetPassword(tokenToUse, data.newPassword);
 
       if (result.sucesso) {
         toast.success(result.mensagem || 'Senha resetada com sucesso!');

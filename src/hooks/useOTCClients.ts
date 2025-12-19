@@ -110,8 +110,8 @@ export function useOTCClients(params: OTCClientsParams = {}) {
   };
 
   return {
-    // Dados
-    clients: clientsData?.data?.clientes || [],
+    // Dados - Garantir que sempre retorne um array válido
+    clients: Array.isArray(clientsData?.data?.clientes) ? clientsData.data.clientes : [],
     statistics: clientsData?.data?.estatisticas || {
       total_clientes: 0,
       clientes_ativos: 0,
