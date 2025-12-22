@@ -238,17 +238,6 @@ const Login: React.FC = () => {
                   )}
                 </div>
 
-                {/* Link para Reset de Senha */}
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/reset-password')}
-                    className="text-sm text-orange-400 hover:text-orange-300 transition-colors"
-                  >
-                    Esqueceu sua senha?
-                  </button>
-                </div>
-
                 {/* Botão de Login */}
                 <Button
                   type="submit"

@@ -29,8 +29,6 @@ class AuthService {
   private readonly BAAS_V2_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
   private readonly BAAS_V2_LOGIN_PATH = '/auth/login';
   private readonly BAAS_V2_PROFILE_PATH = '/auth/me';
-  private readonly BAAS_V2_FORGOT_PASSWORD_PATH = '/auth/forgot-password';
-  private readonly BAAS_V2_RESET_PASSWORD_PATH = '/auth/reset-password';
 
   /**
    * Registrar novo usuário
@@ -248,107 +246,6 @@ class AuthService {
       return result;
     } catch (error) {
       // console.error('❌ AuthService: Erro ao buscar tipo do usuário:', error);
-      return {
-        sucesso: false,
-        mensagem: 'Erro de conexão. Tente novamente.'
-      };
-    }
-  }
-
-  /**
-   * Solicitar reset de senha (BaaS v2)
-   * TEMPORÁRIO - Será removido após migração completa
-   */
-  async forgotPassword(email: string): Promise<{ sucesso: boolean; mensagem: string; token?: string }> {
-    try {
-      logger.info('[AUTH] Solicitação de reset de senha', { email });
-
-      const response = await fetch(`${this.BAAS_V2_BASE_URL}${this.BAAS_V2_FORGOT_PASSWORD_PATH}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email })
-      });
-
-      const json: any = await response.json();
-
-      if (!response.ok) {
-        const errorMessage = json?.message || json?.error || `Erro HTTP ${response.status}`;
-        logger.warn('[AUTH] Erro ao solicitar reset de senha', {
-          email,
-          status: response.status,
-          error: errorMessage
-        });
-        return {
-          sucesso: false,
-          mensagem: errorMessage
-        };
-      }
-
-      // Sucesso - sempre retorna mensagem positiva (por segurança)
-      logger.info('[AUTH] Reset de senha solicitado com sucesso', { 
-        email,
-        hasToken: !!json?.token,
-        responseKeys: Object.keys(json || {})
-      });
-      
-      // O token pode vir em diferentes campos dependendo da resposta da API
-      const token = json?.token || json?.resetToken || json?.reset_token || json?.data?.token;
-      
-      return {
-        sucesso: true,
-        mensagem: json?.message || 'Se o email estiver cadastrado, você receberá um link para resetar sua senha',
-        token: token // Token retornado para construir link (pode ser undefined se enviado por email)
-      };
-    } catch (error) {
-      logger.error('[AUTH] Erro ao solicitar reset de senha:', error);
-      return {
-        sucesso: false,
-        mensagem: 'Erro de conexão. Tente novamente.'
-      };
-    }
-  }
-
-  /**
-   * Resetar senha usando token (BaaS v2)
-   * TEMPORÁRIO - Será removido após migração completa
-   */
-  async resetPassword(token: string, newPassword: string): Promise<{ sucesso: boolean; mensagem: string }> {
-    try {
-      logger.info('[AUTH] Tentativa de reset de senha');
-
-      const response = await fetch(`${this.BAAS_V2_BASE_URL}${this.BAAS_V2_RESET_PASSWORD_PATH}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token, newPassword })
-      });
-
-      const json: any = await response.json();
-
-      if (!response.ok) {
-        const errorMessage = json?.message || json?.error || `Erro HTTP ${response.status}`;
-        logger.warn('[AUTH] Erro ao resetar senha', {
-          status: response.status,
-          error: errorMessage
-        });
-        return {
-          sucesso: false,
-          mensagem: errorMessage
-        };
-      }
-
-      // Sucesso
-      logger.info('[AUTH] Senha resetada com sucesso');
-      
-      return {
-        sucesso: true,
-        mensagem: json?.message || 'Senha resetada com sucesso. Faça login com sua nova senha.'
-      };
-    } catch (error) {
-      logger.error('[AUTH] Erro ao resetar senha:', error);
       return {
         sucesso: false,
         mensagem: 'Erro de conexão. Tente novamente.'
