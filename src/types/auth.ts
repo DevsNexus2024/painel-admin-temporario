@@ -281,7 +281,7 @@ export const ROUTE_PERMISSIONS: Record<string, RoutePermissions> = {
   // Home: permitido para todos os usuários "de painel" autenticados.
   // A página (`Index`) faz redirect para a melhor rota permitida quando não for admin.
   '/': { allowedRoles: ['super_admin', 'admin', 'tcr_user', 'otc_user'] },
-  '/grupo-tcr/saldos': { allowedRoles: ['super_admin'] },
+  '/grupo-tcr/saldos': { allowedRoles: ['super_admin', 'admin'] },
   '/analise-usuario/:id': { allowedRoles: ['super_admin'] },
   '/contas-organizacoes': { allowedRoles: ['super_admin'] },
   '/contas-organizacoes/organizacao/:id': { allowedRoles: ['super_admin'] },
