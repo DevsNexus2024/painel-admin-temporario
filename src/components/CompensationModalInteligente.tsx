@@ -118,7 +118,8 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       quantia: quantia
     };
     
-    const success = await createCompensation(finalData);
+    // ✅ NOVO: Passar extractRecord para o serviço poder extrair endToEndId obrigatório
+    const success = await createCompensation(finalData, extractRecord);
     
     setIsLoading(false);
     
@@ -1212,21 +1213,6 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                 <CheckCircle className="h-4 w-4 mr-2" />
               )}
               {isLoadingBRBTC ? 'Processando...' : 'Compensação Saldo Real'}
-            </Button>
-          )}
-          
-          {activeTab === "manual" && (
-            <Button 
-              onClick={handleManualSubmit} 
-              disabled={isLoading || isLoadingBRBTC || !formData.id_usuario || !quantiaInput || parseFloat(quantiaInput) <= 0}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <CheckCircle className="h-4 w-4 mr-2" />
-              )}
-              {isLoading ? 'Processando...' : 'Compensação Saldo Visual'}
             </Button>
           )}
         </DialogFooter>

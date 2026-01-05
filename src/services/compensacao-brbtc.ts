@@ -14,32 +14,55 @@ import { TOKEN_STORAGE } from "@/config/api";
 
 // ============================== INTERFACES ==============================
 
+// ✅ NOVO: Interface atualizada conforme documentação COMPENSACAO_MANUAL_CENTRALIZADA.md
 export interface CompensacaoBRBTCRequest {
   valor_deposito: number;
   id_usuario: number;
-  id_transacao: string; // EndToEnd da transação PIX
+  id_transacao: string; // ⚠️ OBRIGATÓRIO: EndToEndId do PIX (usado para idempotência)
   data_hora_deposito: string; // ISO 8601 format
   nome_depositante: string;
   provider: string;
-  observacoes: string | null;
+  documento_depositante?: string; // Opcional: CPF/CNPJ do depositante (11-14 caracteres)
+  observacoes?: string; // Opcional
 }
 
+// ✅ NOVO: Interface de resposta atualizada conforme documentação
 export interface CompensacaoBRBTCResponse {
-  success: boolean;
-  message?: string;
-  data?: {
-    transaction_id?: string;
-    status?: string;
-    processed_at?: string;
+  sucesso: boolean;
+  mensagem: string;
+  dados?: {
+    id_compensacao?: number;
+    transfer_id?: string;
+    usuario_email?: string;
+    valor_compensado?: number;
+    provider?: string;
+    data_compensacao?: string;
+    reprocessamento?: boolean;
+    deposito?: {
+      criado: boolean;
+      atualizado: boolean;
+      id: number;
+    };
+    movimentacao?: {
+      criada: boolean;
+      atualizada: boolean;
+      id_movimentacao: number;
+      id_transacao: number;
+    };
+    admin_executor?: {
+      nome: string;
+      email: string;
+    };
   };
-  error?: string;
+  erro?: string;
 }
 
 // ============================== CONFIGURAÇÃO ==============================
 
+// ✅ RESTAURADO: Rota e autenticação originais
 const BRBTC_API_CONFIG = {
   baseUrl: 'https://vps80270.cloudpublic.com.br:8081',
-  endpoint: '/BRBTC/compensacao-manual'
+  endpoint: '/BRBTC/compensacao-manual' // Rota original
 };
 
 // ============================== UTILITÁRIOS ==============================
@@ -127,7 +150,7 @@ export const determinarProvider = (extractRecord: MovimentoExtrato): string => {
  * 
  * ⚠️ IMPORTANTE: Para BMP-531, o endtoend geralmente está em identificadorOperacao
  */
-const extrairEndToEnd = (extractRecord: MovimentoExtrato): string => {
+export const extrairEndToEnd = (extractRecord: MovimentoExtrato): string => {
   // 1. Tentar extrair dos dados originais da API (múltiplos campos possíveis)
   const endtoendOriginal = extractRecord._original?.idEndToEnd || 
                           extractRecord._original?.endToEndId ||
@@ -170,14 +193,20 @@ export const converterParaBRBTCRequest = (
   // Converter data para ISO 8601
   const dataHoraDeposito = new Date(extractRecord.dateTime).toISOString();
   
+  // ✅ NOVO: Incluir documento_depositante se disponível
+  const documentoDepositante = extractRecord.document?.replace(/\D/g, '') || undefined;
+  
   return {
     valor_deposito: Math.abs(extractRecord.value), // Sempre valor positivo
     id_usuario: idUsuario,
-    id_transacao: endtoend, // ✅ CORRIGIDO: Agora envia o EndToEnd correto
+    id_transacao: endtoend, // ⚠️ OBRIGATÓRIO: EndToEndId para idempotência
     data_hora_deposito: dataHoraDeposito,
     nome_depositante: extractRecord.client || 'Não informado',
     provider: provider,
-    observacoes: observacoes || null
+    documento_depositante: documentoDepositante && documentoDepositante.length >= 11 && documentoDepositante.length <= 14 
+      ? documentoDepositante 
+      : undefined,
+    observacoes: observacoes || undefined
   };
 };
 
@@ -205,6 +234,12 @@ export const realizarCompensacaoBRBTC = async (
       throw new Error('Não foi possível extrair o ID do usuário do registro');
     }
 
+    // ✅ NOVO: Validar que temos o id_transacao (endToEndId) obrigatório
+    const endtoend = extrairEndToEnd(extractRecord);
+    if (!endtoend || endtoend === extractRecord.id) {
+      throw new Error('EndToEndId (id_transacao) é obrigatório para compensação manual. Não foi possível extrair do registro.');
+    }
+    
     // Obter token JWT do usuário logado
     const token = TOKEN_STORAGE.get();
     if (!token) {
@@ -214,8 +249,11 @@ export const realizarCompensacaoBRBTC = async (
     // Preparar dados da requisição
     const requestData = converterParaBRBTCRequest(extractRecord, observacoes);
     
-    // Fazer requisição para API BRBTC
-    const response = await fetch(`${BRBTC_API_CONFIG.baseUrl}${BRBTC_API_CONFIG.endpoint}`, {
+    // ✅ RESTAURADO: Autenticação e rota originais
+    const url = `${BRBTC_API_CONFIG.baseUrl}${BRBTC_API_CONFIG.endpoint}`;
+    
+    // Fazer requisição para API BRBTC (autenticação original)
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -236,18 +274,19 @@ export const realizarCompensacaoBRBTC = async (
     }
     
     if (!response.ok) {
-      // Tentar extrair a mensagem de erro mais específica possível
+      // ✅ NOVO: Tratamento de erros conforme documentação (erros 409 para conflitos)
       let errorMessage = 'Erro desconhecido na API';
       
       if (responseData) {
-        // Verificar diferentes formatos de erro que a API pode retornar
-        errorMessage = responseData.error || 
+        // Verificar formato de resposta do novo endpoint
+        errorMessage = responseData.mensagem || 
+                     responseData.erro || 
+                     responseData.error || 
                      responseData.message || 
                      responseData.msg || 
                      responseData.detail || 
                      responseData.details ||
-                     (responseData.data && responseData.data.error) ||
-                     (responseData.data && responseData.data.message);
+                     `Erro HTTP ${response.status}: ${response.statusText}`;
         
         // Se ainda não encontrou uma mensagem específica, tentar extrair de arrays de erros
         if (!errorMessage && responseData.errors && Array.isArray(responseData.errors)) {
@@ -255,21 +294,43 @@ export const realizarCompensacaoBRBTC = async (
             typeof err === 'string' ? err : err.message || err.msg || JSON.stringify(err)
           ).join('; ');
         }
-        
-        // Se ainda não encontrou, usar o status HTTP
-        if (!errorMessage) {
-          errorMessage = `Erro HTTP ${response.status}: ${response.statusText}`;
-        }
       }
       
+      // ✅ NOVO: Tratamento específico para erros 409 (conflitos)
+      if (response.status === 409) {
+        // Erros 409 indicam que já foi processado ou não pode ser processado
+        throw new Error(errorMessage);
+      }
       
       throw new Error(errorMessage);
     }
     
+    // ✅ NOVO: Verificar resposta do novo formato
+    const responseFormatted = responseData as CompensacaoBRBTCResponse;
     
-    // Toast de sucesso
-    toast.success('Compensação BRBTC realizada com sucesso!', {
-      description: `Valor: R$ ${requestData.valor_deposito.toFixed(2)} | Usuário: ${requestData.id_usuario}`
+    if (!responseFormatted.sucesso) {
+      throw new Error(responseFormatted.mensagem || 'Compensação não foi bem-sucedida');
+    }
+    
+    // ✅ NOVO: Toast de sucesso mais informativo com detalhes da resposta
+    const depositoInfo = responseFormatted.dados?.deposito;
+    const movimentacaoInfo = responseFormatted.dados?.movimentacao;
+    
+    let description = `Valor: R$ ${requestData.valor_deposito.toFixed(2)} | Usuário: ${requestData.id_usuario}`;
+    if (depositoInfo?.criado) {
+      description += ` | Depósito criado (ID: ${depositoInfo.id})`;
+    } else if (depositoInfo?.atualizado) {
+      description += ` | Depósito atualizado (ID: ${depositoInfo.id})`;
+    }
+    if (movimentacaoInfo?.criada) {
+      description += ` | Movimentação criada`;
+    } else if (movimentacaoInfo?.atualizada) {
+      description += ` | Movimentação atualizada`;
+    }
+    
+    toast.success('Compensação realizada com sucesso!', {
+      description,
+      duration: 5000
     });
     
     return true;

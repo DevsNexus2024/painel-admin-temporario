@@ -27,31 +27,82 @@ export interface CompensationResponse {
 }
 
 /**
- * Serviço para consumir API de compensação de depósitos e movimentações
+ * ⚠️ ATUALIZADO: Serviço agora usa endpoint centralizado conforme COMPENSACAO_MANUAL_CENTRALIZADA.md
+ * 
+ * O endpoint /compensa_depositos_movimentacoes foi DEPRECATED.
+ * Agora usa /BRBTC/compensacao-manual que faz tudo automaticamente.
  */
+import { MovimentoExtrato } from './extrato';
+import { extrairEndToEnd, determinarProvider } from './compensacao-brbtc';
+
 export class CompensationService {
-  private static readonly API_URL = `${import.meta.env.X_DIAGNOSTICO_API_URL}/compensa_depositos_movimentacoes`;
+  // ✅ RESTAURADO: Rota e autenticação originais
+  private static readonly API_BASE_URL = 'https://vps80270.cloudpublic.com.br:8081';
+  private static readonly API_URL = '/BRBTC/compensacao-manual'; // Rota original
   private static readonly AUTH_HEADER = 'ISRVdeWTZ5jYFKJQytjH9ZylF1ZrwhTdrrdKY4uFqXm041XIL3aVjCwojSH1EeYbUOQjPx0aO';
 
   /**
-   * Criar compensação de depósito
+   * ✅ ATUALIZADO: Criar compensação usando endpoint centralizado
+   * 
+   * Converte CompensationData para o formato do novo endpoint /api/brbtc/compensacao-manual
+   * que faz tudo automaticamente (saldo real + movimentação visual + depósito)
+   * 
    * @param data Dados da compensação
+   * @param extractRecord Registro do extrato (opcional, usado para extrair endToEndId)
    * @returns Promise com resposta da API
    */
-  static async createCompensation(data: CompensationData): Promise<CompensationResponse> {
+  static async createCompensation(data: CompensationData, extractRecord?: MovimentoExtrato | null): Promise<CompensationResponse> {
     try {
-      console.log('[COMPENSATION] Enviando compensação manual:', {
-        url: this.API_URL,
-        data: { ...data, hash: data.hash }
+      // ✅ NOVO: Converter para formato do endpoint centralizado
+      // Precisamos do endToEndId (id_transacao) que é obrigatório
+      let idTransacao = data.hash || '';
+      
+      // Se não temos hash e temos extractRecord, tentar extrair endToEndId
+      if (!idTransacao && extractRecord) {
+        idTransacao = extrairEndToEnd(extractRecord);
+      }
+      
+      // Se ainda não temos, gerar um hash baseado nos dados
+      if (!idTransacao) {
+        // Gerar hash único baseado nos dados da compensação
+        idTransacao = `compensacao_manual_${data.id_usuario}_${data.quantia}_${Date.now()}`;
+      }
+      
+      // Determinar provider
+      const provider = extractRecord ? determinarProvider(extractRecord) : 'Brasil Bitcoin';
+      
+      // Converter data_movimentacao para ISO 8601
+      const dataHoraDeposito = data.data_movimentacao 
+        ? new Date(data.data_movimentacao).toISOString()
+        : new Date().toISOString();
+      
+      // ✅ NOVO: Payload do endpoint centralizado
+      const payload = {
+        valor_deposito: data.quantia,
+        id_usuario: data.id_usuario,
+        id_transacao: idTransacao, // ⚠️ OBRIGATÓRIO
+        data_hora_deposito: dataHoraDeposito,
+        nome_depositante: data.nome_depositante || 'Não informado',
+        provider: provider,
+        documento_depositante: data.documento_depositante?.replace(/\D/g, '') || undefined,
+        observacoes: `Compensação manual - Tipo: ${data.id_tipo_movimentacao}, Status: ${data.id_status}`
+      };
+      
+      const fullUrl = `${CompensationService.API_BASE_URL}${this.API_URL}`;
+      
+      console.log('[COMPENSATION] Enviando compensação manual (endpoint centralizado):', {
+        url: fullUrl,
+        payload
       });
 
-      const response = await fetch(this.API_URL, {
+      // ✅ RESTAURADO: Autenticação original com xPassRouteTCR
+      const response = await fetch(fullUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'xPassRouteTCR': this.AUTH_HEADER
+          'xPassRouteTCR': CompensationService.AUTH_HEADER
         },
-        body: JSON.stringify(data)
+        body: JSON.stringify(payload)
       });
 
       let responseData: any;
@@ -75,8 +126,9 @@ export class CompensationService {
         let errorMessage = 'Erro desconhecido na API';
         
         if (responseData) {
-          errorMessage = responseData.erro || 
-                       responseData.mensagem || 
+          // ✅ NOVO: Verificar formato de resposta do novo endpoint
+          errorMessage = responseData.mensagem || 
+                       responseData.erro || 
                        responseData.error || 
                        responseData.message || 
                        `Erro HTTP ${response.status}: ${response.statusText}`;
@@ -91,8 +143,24 @@ export class CompensationService {
         throw new Error(errorMessage);
       }
 
-      console.log('[COMPENSATION] Compensação manual realizada com sucesso:', responseData);
-      return responseData;
+      // ✅ NOVO: Adaptar resposta para formato esperado pelo componente
+      const responseFormatted = responseData as any;
+      
+      // Converter resposta do novo formato para formato antigo (compatibilidade)
+      const compensationResponse: CompensationResponse = {
+        mensagem: responseFormatted.mensagem || responseFormatted.message || 'Compensação realizada com sucesso',
+        response: responseFormatted.dados ? {
+          id_movimentacao: responseFormatted.dados.movimentacao?.id_movimentacao || 0,
+          id_transacao: responseFormatted.dados.movimentacao?.id_transacao || 0,
+          id_usuario: data.id_usuario,
+          quantia: data.quantia,
+          data_processamento: responseFormatted.dados.data_compensacao || new Date().toISOString()
+        } : undefined,
+        erro: responseFormatted.erro || responseFormatted.error
+      };
+      
+      console.log('[COMPENSATION] Compensação manual realizada com sucesso:', compensationResponse);
+      return compensationResponse;
 
     } catch (error) {
       console.error('[COMPENSATION] Erro na compensação manual:', error);
@@ -144,7 +212,7 @@ export class CompensationService {
  * Hook para facilitar o uso do serviço de compensação
  */
 export const useCompensation = () => {
-  const createCompensation = async (data: CompensationData): Promise<boolean> => {
+  const createCompensation = async (data: CompensationData, extractRecord?: MovimentoExtrato | null): Promise<boolean> => {
     try {
       // Validar dados
       const validation = CompensationService.validateCompensationData(data);
@@ -156,8 +224,8 @@ export const useCompensation = () => {
         return false;
       }
 
-      // Criar compensação
-      const response = await CompensationService.createCompensation(data);
+      // ✅ NOVO: Criar compensação usando endpoint centralizado (passa extractRecord para extrair endToEndId)
+      const response = await CompensationService.createCompensation(data, extractRecord);
       
       // Toast de sucesso removido - será mostrado pelo componente principal
       return true;
