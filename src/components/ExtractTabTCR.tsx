@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { CalendarWrapper } from "@/components/ui/calendar-wrapper";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -1461,7 +1462,7 @@ export default function ExtractTabTCR() {
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
+                          <CalendarWrapper
                             mode="single"
                             selected={syncStartDate || undefined}
                             onSelect={(date) => date && setSyncStartDate(date)}
@@ -1483,7 +1484,7 @@ export default function ExtractTabTCR() {
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
+                          <CalendarWrapper
                             mode="single"
                             selected={syncEndDate || undefined}
                             onSelect={(date) => date && setSyncEndDate(date)}
