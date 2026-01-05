@@ -90,6 +90,8 @@ export default function ExtractTabCorpX() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStartDate, setSyncStartDate] = useState<Date | null>(null);
   const [syncEndDate, setSyncEndDate] = useState<Date | null>(null);
+  const [startDatePopoverOpen, setStartDatePopoverOpen] = useState(false);
+  const [endDatePopoverOpen, setEndDatePopoverOpen] = useState(false);
   const [searchName, setSearchName] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [searchDescCliente, setSearchDescCliente] = useState("");
@@ -1315,7 +1317,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-card-foreground">Data inicial</label>
-                    <Popover>
+                    <Popover open={startDatePopoverOpen} onOpenChange={setStartDatePopoverOpen}>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
@@ -1331,7 +1333,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                         onInteractOutside={(e) => {
                           // Prevenir fechamento ao clicar dentro do calendário
                           const target = e.target as HTMLElement;
-                          if (target.closest('[role="gridcell"]') || target.closest('button.day')) {
+                          if (target.closest('[role="gridcell"]') || target.closest('button.day') || target.closest('[role="button"]')) {
                             e.preventDefault();
                           }
                         }}
@@ -1342,6 +1344,8 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           onSelect={(date) => {
                             if (date) {
                               setSyncStartDate(date);
+                              // Fechar popover após seleção
+                              setTimeout(() => setStartDatePopoverOpen(false), 100);
                             }
                           }}
                           initialFocus
@@ -1351,7 +1355,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-card-foreground">Data final</label>
-                    <Popover>
+                    <Popover open={endDatePopoverOpen} onOpenChange={setEndDatePopoverOpen}>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
@@ -1367,7 +1371,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                         onInteractOutside={(e) => {
                           // Prevenir fechamento ao clicar dentro do calendário
                           const target = e.target as HTMLElement;
-                          if (target.closest('[role="gridcell"]') || target.closest('button.day')) {
+                          if (target.closest('[role="gridcell"]') || target.closest('button.day') || target.closest('[role="button"]')) {
                             e.preventDefault();
                           }
                         }}
@@ -1378,6 +1382,8 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           onSelect={(date) => {
                             if (date) {
                               setSyncEndDate(date);
+                              // Fechar popover após seleção
+                              setTimeout(() => setEndDatePopoverOpen(false), 100);
                             }
                           }}
                           initialFocus

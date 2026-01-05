@@ -41,7 +41,7 @@ export interface BrasilCashTransaction {
   pix_id: string;
   end_to_end_id: string;
   status: 'pending' | 'processing' | 'paid' | 'refused';
-  amount: number; // em centavos
+  amount: number; // em reais
   currency?: string;
   type: 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode';
   method: 'cashin' | 'cashout';
@@ -128,7 +128,7 @@ export interface BrasilCashTransactionFilters {
   endToEndId?: string;
   startDate?: string; // YYYY-MM-DD
   endDate?: string;   // YYYY-MM-DD
-  amount?: number;    // em centavos
+  amount?: number;    // em reais
   status?: 'pending' | 'processing' | 'paid' | 'refused';
   method?: 'cashin' | 'cashout';
   type?: 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode';

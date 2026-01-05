@@ -18,29 +18,25 @@ function CustomDay(props: any) {
   const { date, displayMonth, onClick, ...buttonProps } = props;
   
   const handleMouseDown = (e: React.MouseEvent<HTMLButtonElement>) => {
-    // Prevenir comportamento padrão e parar propagação ANTES do Popover fechar
+    // CRÍTICO: Prevenir comportamento padrão e parar propagação
     e.preventDefault();
     e.stopPropagation();
     
-    // Chamar o onClick original diretamente SEM setTimeout
+    // Chamar o onClick original IMEDIATAMENTE
     if (onClick) {
-      // Criar um novo evento que não será bloqueado
-      const syntheticEvent = {
-        ...e,
-        currentTarget: e.currentTarget,
-        target: e.target,
-        preventDefault: () => {},
-        stopPropagation: () => {},
-      } as React.MouseEvent<HTMLButtonElement>;
-      
-      onClick(syntheticEvent);
+      // Usar requestAnimationFrame para garantir que o evento seja processado
+      requestAnimationFrame(() => {
+        onClick(e);
+      });
     }
   };
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    // Manter o onClick também como fallback
+    // Prevenir comportamento padrão
     e.preventDefault();
     e.stopPropagation();
+    
+    // Chamar onClick como fallback
     if (onClick) {
       onClick(e);
     }
@@ -53,7 +49,7 @@ function CustomDay(props: any) {
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onTouchStart={(e) => {
-        // Também suportar touch events para mobile
+        // Suportar touch events para mobile
         e.preventDefault();
         e.stopPropagation();
         if (onClick) {
@@ -61,9 +57,10 @@ function CustomDay(props: any) {
         }
       }}
       style={{
-        cursor: 'pointer',
-        pointerEvents: 'auto',
-        zIndex: 1,
+        cursor: 'pointer !important',
+        pointerEvents: 'auto !important',
+        zIndex: 10,
+        position: 'relative',
         WebkitTapHighlightColor: 'transparent',
         ...buttonProps.style,
       }}
