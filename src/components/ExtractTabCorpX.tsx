@@ -1325,11 +1325,25 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           {syncStartDate ? format(syncStartDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent 
+                        className="w-auto p-0" 
+                        align="start"
+                        onInteractOutside={(e) => {
+                          // Prevenir fechamento ao clicar dentro do calendário
+                          const target = e.target as HTMLElement;
+                          if (target.closest('[role="gridcell"]') || target.closest('button.day')) {
+                            e.preventDefault();
+                          }
+                        }}
+                      >
                         <CalendarWrapper
                           mode="single"
                           selected={syncStartDate || undefined}
-                          onSelect={(date) => date && setSyncStartDate(date)}
+                          onSelect={(date) => {
+                            if (date) {
+                              setSyncStartDate(date);
+                            }
+                          }}
                           initialFocus
                         />
                       </PopoverContent>
@@ -1347,11 +1361,25 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           {syncEndDate ? format(syncEndDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent 
+                        className="w-auto p-0" 
+                        align="start"
+                        onInteractOutside={(e) => {
+                          // Prevenir fechamento ao clicar dentro do calendário
+                          const target = e.target as HTMLElement;
+                          if (target.closest('[role="gridcell"]') || target.closest('button.day')) {
+                            e.preventDefault();
+                          }
+                        }}
+                      >
                         <CalendarWrapper
                           mode="single"
                           selected={syncEndDate || undefined}
-                          onSelect={(date) => date && setSyncEndDate(date)}
+                          onSelect={(date) => {
+                            if (date) {
+                              setSyncEndDate(date);
+                            }
+                          }}
                           initialFocus
                         />
                       </PopoverContent>

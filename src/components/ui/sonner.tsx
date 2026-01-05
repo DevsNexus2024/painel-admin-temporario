@@ -8,7 +8,15 @@ const Toaster = ({ ...props }: ToasterProps) => {
       theme="dark"
       position="top-right"
       className="toaster group"
+      maxVisible={1}
+      visibleToasts={1}
+      expand={false}
+      closeButton
+      richColors
+      gap={0}
+      offset={0}
       toastOptions={{
+        unstyled: false,
         classNames: {
           toast:
             "group toast group-[.toaster]:text-white group-[.toaster]:border-0 group-[.toaster]:shadow-2xl group-[.toaster]:backdrop-blur-xl group-[.toaster]:rounded-2xl group-[.toaster]:px-5 group-[.toaster]:py-4 group-[.toaster]:min-w-[380px] group-[.toaster]:relative group-[.toaster]:overflow-hidden",

@@ -124,14 +124,14 @@ export default function DiagnosticoDepositoSimplificado({ idDeposito, onRefresh 
       
       setDiagnostico(data.response);
       
-      toast.success("Diagnóstico simplificado realizado com sucesso", {
-        description: `Situação: ${data.response?.situacao} (${data.response?.confiabilidade_geral})`
-      });
+      // ✅ Toast removido - resultado do diagnóstico já é visível na interface
+      // Apenas mostrar toast se houver problemas críticos
       
     } catch (error) {
       console.error('Erro no diagnóstico simplificado:', error);
       toast.error("Erro ao executar diagnóstico", {
-        description: error instanceof Error ? error.message : 'Erro desconhecido'
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        duration: 5000
       });
     }
     setLoading(false);
@@ -524,7 +524,7 @@ export default function DiagnosticoDepositoSimplificado({ idDeposito, onRefresh 
                       acao={acao} 
                       diagnostico={diagnostico} 
                       onSuccess={() => {
-                        toast.success("Ação executada com sucesso!");
+                        // ✅ Toast removido - ação já tem feedback visual no botão
                         if (onRefresh) onRefresh();
                         // Executar novo diagnóstico automaticamente
                         setTimeout(() => executarDiagnostico(), 2000);

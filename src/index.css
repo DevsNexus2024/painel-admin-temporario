@@ -196,3 +196,33 @@ input[type="number"] {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: rgba(255, 122, 61, 0.5);
 }
+
+/* ✅ Garantir que apenas um toast apareça por vez - esconder todos os outros */
+[data-sonner-toaster] [data-sonner-toast]:not(:first-child),
+[data-sonner-toaster] [data-sonner-toast][data-index]:not([data-index="0"]) {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+/* ✅ Garantir que toasts colapsados não apareçam */
+[data-sonner-toaster] [data-sonner-toast][data-expanded="false"],
+[data-sonner-toaster] [data-sonner-toast][data-collapsed="true"] {
+  display: none !important;
+}
+
+/* ✅ Esconder container de toasts extras */
+[data-sonner-toaster] > div > div:not(:first-child),
+[data-sonner-toaster] > div > div[data-index]:not([data-index="0"]) {
+  display: none !important;
+}
+
+/* ✅ Garantir que apenas o primeiro toast seja visível */
+[data-sonner-toaster] [data-sonner-toast]:first-child {
+  display: flex !important;
+}

@@ -1017,32 +1017,23 @@ export default function ExtractTabTCR() {
       descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente
     };
     
-    // ✅ Buscar id_usuario automaticamente via endtoend
+    // ✅ Buscar id_usuario automaticamente via endtoend (silencioso - sem toast de loading)
     try {
-      toast.info('Buscando usuário...', {
-        description: 'Verificando endtoend da transação via API'
-      });
-      
       const resultado = await TCRVerificacaoService.verificarTransacaoTCR(transaction);
       
       if (resultado.encontrou && resultado.id_usuario) {
         // ✅ ENCONTROU! Modificar descCliente para incluir o ID do usuário
         extractRecord.descCliente = `Usuario ${resultado.id_usuario}; ${extractRecord.descCliente}`;
-        
-        toast.success(`Usuário encontrado: ID ${resultado.id_usuario}`, {
-          description: 'Abrindo modal com todas as funcionalidades'
-        });
-      } else {
-        // ❌ Não encontrou - mostrar aviso mas abrir modal mesmo assim
-        toast.warning('Usuário não encontrado automaticamente', {
-          description: 'Modal aberto - você pode informar o ID manualmente'
+        // ✅ Toast silencioso apenas se encontrou (feedback positivo mínimo)
+        toast.success(`Usuário ID ${resultado.id_usuario} identificado`, {
+          duration: 3000
         });
       }
+      // ✅ Não encontrou: não mostrar toast - o modal já indica que pode informar manualmente
     } catch (error) {
       console.error('[TCR-VERIFICACAO] Erro:', error);
-      toast.error('Erro na verificação automática', {
-        description: 'Modal aberto - você pode informar o ID manualmente'
-      });
+      // ✅ Apenas mostrar erro se for crítico - o modal permite entrada manual
+      // toast removido - erro não crítico, modal permite correção manual
     }
     
     // ✅ SEMPRE abrir o modal (com ou sem id_usuario encontrado)
@@ -1461,11 +1452,25 @@ export default function ExtractTabTCR() {
                             {syncStartDate ? format(syncStartDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
+                        <PopoverContent 
+                          className="w-auto p-0" 
+                          align="start"
+                          onInteractOutside={(e) => {
+                            // Prevenir fechamento ao clicar dentro do calendário
+                            const target = e.target as HTMLElement;
+                            if (target.closest('[role="gridcell"]') || target.closest('button.day')) {
+                              e.preventDefault();
+                            }
+                          }}
+                        >
                           <CalendarWrapper
                             mode="single"
                             selected={syncStartDate || undefined}
-                            onSelect={(date) => date && setSyncStartDate(date)}
+                            onSelect={(date) => {
+                              if (date) {
+                                setSyncStartDate(date);
+                              }
+                            }}
                             initialFocus
                           />
                         </PopoverContent>
@@ -1483,11 +1488,25 @@ export default function ExtractTabTCR() {
                             {syncEndDate ? format(syncEndDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
+                        <PopoverContent 
+                          className="w-auto p-0" 
+                          align="start"
+                          onInteractOutside={(e) => {
+                            // Prevenir fechamento ao clicar dentro do calendário
+                            const target = e.target as HTMLElement;
+                            if (target.closest('[role="gridcell"]') || target.closest('button.day')) {
+                              e.preventDefault();
+                            }
+                          }}
+                        >
                           <CalendarWrapper
                             mode="single"
                             selected={syncEndDate || undefined}
-                            onSelect={(date) => date && setSyncEndDate(date)}
+                            onSelect={(date) => {
+                              if (date) {
+                                setSyncEndDate(date);
+                              }
+                            }}
                             initialFocus
                           />
                         </PopoverContent>

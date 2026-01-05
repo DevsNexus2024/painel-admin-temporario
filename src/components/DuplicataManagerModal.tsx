@@ -113,13 +113,14 @@ export default function DuplicataManagerModal({
         return match ? parseInt(match[1], 10) : 0;
       };
       
-      // Lógica de análise contextual removida conforme solicitado
-      
-      if (response.dados?.length === 0) {
-        toast.info('Nenhuma duplicata encontrada para esta transação');
-      } else {
-        toast.success(`${response.dados.length} duplicata(s) encontrada(s)`);
+      // ✅ Toasts otimizados - apenas mostrar se houver muitas duplicatas
+      // Se não houver duplicatas ou for poucas, resultado já é visível na interface
+      if (response.dados?.length > 0 && response.dados.length >= 3) {
+        toast.success(`${response.dados.length} duplicatas encontradas`, {
+          duration: 3000
+        });
       }
+      // Se for 0, 1 ou 2 duplicatas, não mostrar toast - resultado já visível
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
@@ -156,7 +157,10 @@ export default function DuplicataManagerModal({
       // Callback opcional
       onDuplicataExcluida?.(duplicata.id);
       
-      toast.success(`Movimentação ${duplicata.id} excluída com sucesso!`);
+      // ✅ Toast mais conciso
+      toast.success('Duplicata excluída', {
+        duration: 3000
+      });
 
     } catch (error) {
       console.error('[DUPLICATA-MODAL] Erro ao excluir:', error);

@@ -1,5 +1,81 @@
-import { useEffect, useRef } from "react";
+import * as React from "react";
 import { Calendar, CalendarProps } from "./calendar";
+import { buttonVariants } from "./button";
+import { cn } from "@/lib/utils";
+
+/**
+ * ✅ Componente Day customizado para corrigir problemas de interação em produção
+ * 
+ * Quando o Calendar está dentro de um Popover dentro de um Dialog, os eventos de click
+ * podem ser bloqueados ou não disparar corretamente em produção.
+ * 
+ * Este componente Day customizado:
+ * - Usa onMouseDown com preventDefault/stopPropagation para garantir que o evento seja processado
+ * - Força estilos inline críticos (cursor, pointer-events, z-index)
+ * - Chama o onClick original após prevenir o comportamento padrão
+ */
+function CustomDay(props: any) {
+  const { date, displayMonth, onClick, ...buttonProps } = props;
+  
+  const handleMouseDown = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // Prevenir comportamento padrão e parar propagação ANTES do Popover fechar
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Chamar o onClick original diretamente SEM setTimeout
+    if (onClick) {
+      // Criar um novo evento que não será bloqueado
+      const syntheticEvent = {
+        ...e,
+        currentTarget: e.currentTarget,
+        target: e.target,
+        preventDefault: () => {},
+        stopPropagation: () => {},
+      } as React.MouseEvent<HTMLButtonElement>;
+      
+      onClick(syntheticEvent);
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // Manter o onClick também como fallback
+    e.preventDefault();
+    e.stopPropagation();
+    if (onClick) {
+      onClick(e);
+    }
+  };
+
+  return (
+    <button
+      {...buttonProps}
+      type="button"
+      onMouseDown={handleMouseDown}
+      onClick={handleClick}
+      onTouchStart={(e) => {
+        // Também suportar touch events para mobile
+        e.preventDefault();
+        e.stopPropagation();
+        if (onClick) {
+          onClick(e as any);
+        }
+      }}
+      style={{
+        cursor: 'pointer',
+        pointerEvents: 'auto',
+        zIndex: 1,
+        WebkitTapHighlightColor: 'transparent',
+        ...buttonProps.style,
+      }}
+      className={cn(
+        buttonVariants({ variant: "ghost" }),
+        "h-9 w-9 p-0 font-normal aria-selected:opacity-100",
+        "hover:bg-accent hover:text-accent-foreground",
+        buttonProps.className
+      )}
+    />
+  );
+}
 
 /**
  * ✅ CalendarWrapper - Componente wrapper para corrigir problemas de interação em produção
@@ -7,81 +83,19 @@ import { Calendar, CalendarProps } from "./calendar";
  * Quando o Calendar está dentro de um Popover dentro de um Dialog, os eventos de click
  * podem ser bloqueados ou não disparar corretamente em produção (minificação, otimizações).
  * 
- * Este wrapper:
- * - Adiciona handlers onMouseDown com preventDefault/stopPropagation
- * - Força estilos inline críticos (cursor, pointer-events, z-index)
- * - Usa MutationObserver para aplicar correções quando novos botões são renderizados
+ * Este wrapper usa um componente Day customizado que força os handlers corretos.
  */
 export function CalendarWrapper({ onSelect, selected, ...props }: CalendarProps) {
-  const calendarRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!calendarRef.current) return;
-
-    const fixDayButtons = () => {
-      // Selecionar todos os botões de dia do calendário
-      const dayButtons = calendarRef.current?.querySelectorAll(
-        'button[role="gridcell"], button[aria-label], button.day'
-      ) || [];
-      
-      dayButtons.forEach((button) => {
-        const btn = button as HTMLButtonElement;
-        
-        // Pular se já foi processado (evitar duplicação)
-        if (btn.dataset.calendarFixed === 'true') return;
-        
-        // Forçar estilos inline críticos com !important
-        btn.style.setProperty('cursor', 'pointer', 'important');
-        btn.style.setProperty('pointer-events', 'auto', 'important');
-        btn.style.setProperty('z-index', '1', 'important');
-        
-        // Marcar como processado
-        btn.dataset.calendarFixed = 'true';
-        
-        // Adicionar handler onMouseDown como fallback
-        const handleMouseDown = (e: MouseEvent) => {
-          e.preventDefault();
-          e.stopPropagation();
-          
-          // Disparar click após um pequeno delay para garantir que o estado seja atualizado
-          setTimeout(() => {
-            btn.click();
-          }, 0);
-        };
-
-        // Remover listener anterior se existir (evitar duplicação)
-        btn.removeEventListener('mousedown', handleMouseDown);
-        btn.addEventListener('mousedown', handleMouseDown, { capture: true });
-      });
-    };
-
-    // Executar imediatamente
-    fixDayButtons();
-
-    // Observer para quando o calendário navegar entre meses (novos botões são renderizados)
-    const observer = new MutationObserver(() => {
-      fixDayButtons();
-    });
-
-    observer.observe(calendarRef.current, { 
-      childList: true, 
-      subtree: true,
-      attributes: false
-    });
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [selected]); // Re-executar quando a data selecionada mudar ou quando o componente montar
-
   return (
-    <div ref={calendarRef} style={{ position: 'relative' }}>
-      <Calendar
-        {...props}
-        selected={selected}
-        onSelect={onSelect}
-      />
-    </div>
+    <Calendar
+      {...props}
+      selected={selected}
+      onSelect={onSelect}
+      components={{
+        Day: CustomDay,
+        ...props.components,
+      }}
+    />
   );
 }
 

@@ -123,8 +123,10 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     setIsLoading(false);
     
     if (success) {
-      toast.success("Compensação Saldo Visual realizada com sucesso!", {
-        description: `Valor: ${formatCurrency(quantia)} creditado para usuário ${formData.id_usuario}. Modal permanece aberto para outras ações.`
+      // ✅ Toast mais conciso e informativo
+      toast.success("Compensação realizada", {
+        description: `${formatCurrency(quantia)} creditado para usuário ${formData.id_usuario}`,
+        duration: 4000
       });
       // Não fechar o modal automaticamente, deixar o usuário decidir
     }
@@ -180,17 +182,15 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
 
       console.log('[CONFERIR-SALDO] Comparação realizada:', comparacao);
 
-      // 4. Feedback para o usuário
+      // 4. Feedback para o usuário (apenas se houver diferenças - OK não precisa de toast)
       const brlMsg = comparacao.brl.diferenca === 0 ? 'BRL OK' : `BRL diferença ${comparacao.brl.diferenca}`;
       const usdtMsg = comparacao.usdt.diferenca === 0 ? 'USDT OK' : `USDT diferença ${comparacao.usdt.diferenca}`;
       
-      if (comparacao.brl.diferenca === 0 && comparacao.usdt.diferenca === 0) {
-        toast.success('Conferência OK!', { 
-          description: `Usuário ${idUsuarioExtraido}: Todos os saldos estão corretos` 
-        });
-      } else {
+      // ✅ Apenas mostrar toast se houver diferenças (OK já é visível na interface)
+      if (comparacao.brl.diferenca !== 0 || comparacao.usdt.diferenca !== 0) {
         toast.warning('Diferenças encontradas', { 
-          description: `Usuário ${idUsuarioExtraido}: ${brlMsg} | ${usdtMsg}` 
+          description: `Usuário ${idUsuarioExtraido}: ${brlMsg} | ${usdtMsg}`,
+          duration: 5000
         });
       }
 
@@ -341,20 +341,25 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       console.log('[DEPOSITOS-INTERNOS] Depósitos mapeados:', depositos);
       console.log('[DEPOSITOS-INTERNOS] Total de depósitos encontrados:', depositos.length);
 
-      // Feedback para o usuário
+      // ✅ Feedback silencioso - apenas mostrar toast se houver problemas ou muitos resultados
       if (Array.isArray(depositos)) {
         if (depositos.length > 0) {
-          toast.success(`${depositos.length} depósito(s) interno(s) encontrado(s)`, {
-            description: `Usuário ${idUsuarioExtraido}: Dados carregados com sucesso`
-          });
-        } else {
-          toast.info('Nenhum depósito interno encontrado', {
-            description: `Usuário ${idUsuarioExtraido}: Sem registros na faixa consultada`
-          });
+          // ✅ Apenas mostrar toast se encontrar muitos depósitos (informação útil)
+          // Se for poucos, o resultado já é visível na interface
+          if (depositos.length >= 10) {
+            toast.success(`${depositos.length} depósitos encontrados`, {
+              description: `Usuário ${idUsuarioExtraido}`,
+              duration: 3000
+            });
+          }
+          // Se for menos de 10, não mostrar toast - resultado já visível
         }
+        // ✅ Não encontrou: não mostrar toast - resultado já visível na interface
       } else {
+        // ✅ Apenas erros de estrutura mostram toast
         toast.warning('Estrutura de dados inesperada', {
-          description: `Usuário ${idUsuarioExtraido}: Dados recebidos mas em formato não reconhecido`
+          description: `Usuário ${idUsuarioExtraido}: Formato não reconhecido`,
+          duration: 5000
         });
       }
 
@@ -407,10 +412,8 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
   };
 
   const handleDiagnosticoSuccess = () => {
-    // Recarregar o extrato se necessário
-    toast.success("Operação concluída", {
-      description: "O extrato será atualizado automaticamente"
-    });
+    // ✅ Removido toast - operação já tem feedback visual no componente de diagnóstico
+    // Recarregar o extrato se necessário (silencioso)
   };
 
   const formatCurrency = (value: number) => {
@@ -534,15 +537,14 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     const id = parseInt(idUsuarioManual, 10);
     if (isNaN(id) || id <= 0) {
       toast.error('ID inválido', {
-        description: 'Informe um número válido maior que zero'
+        description: 'Informe um número válido maior que zero',
+        duration: 4000
       });
       return;
     }
     
     setUsarIdManual(true);
-    toast.success(`ID ${id} confirmado`, {
-      description: 'Agora todas as funcionalidades estão disponíveis'
-    });
+    // ✅ Toast removido - confirmação já é visível na interface (campo fica habilitado)
   };
   
   // Função para abrir modal de duplicatas
@@ -555,7 +557,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
   
   // Função para fechar modal de duplicatas
   const handleDuplicataExcluida = () => {
-    toast.success("Duplicata excluída com sucesso!");
+    // ✅ Toast removido - exclusão já tem feedback no modal de duplicatas
     // Opcional: recarregar dados ou notificar componente pai
   };
 
@@ -565,7 +567,8 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     
     if (!idUsuario) {
       toast.error('ID do usuário necessário', {
-        description: 'Informe o ID do usuário para acessar a análise detalhada'
+        description: 'Informe o ID do usuário para acessar a análise detalhada',
+        duration: 4000
       });
       return;
     }
@@ -574,9 +577,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     const url = `/analise-usuario/${idUsuario}`;
     window.open(url, '_blank');
     
-    toast.success('Abrindo análise detalhada...', {
-      description: `Redirecionando para análise do usuário ${idUsuario}`
-    });
+    // ✅ Toast removido - abertura de nova aba já é feedback suficiente
   };
 
   // ✨ NOVA FUNÇÃO: Compensação BRBTC
@@ -618,9 +619,10 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
     const sucesso = await executarCompensacaoBRBTC(extractRecordComId);
     
     if (sucesso) {
-        // Não fechar o modal automaticamente, deixar o usuário decidir
-        toast.success('Compensação Saldo Real realizada com sucesso!', {
-          description: 'Modal permanece aberto para outras ações'
+        // ✅ Toast mais conciso
+        toast.success('Compensação realizada', {
+          description: 'Saldo Real creditado com sucesso',
+          duration: 4000
         });
     }
       setShowConfirmModal(false);
