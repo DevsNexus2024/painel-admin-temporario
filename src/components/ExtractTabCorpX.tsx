@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
+import { CalendarWrapper } from "@/components/ui/calendar-wrapper";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -1108,11 +1108,10 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0 rounded-xl bg-popover" align="start">
-                  <Calendar
+                  <CalendarWrapper
                     mode="single"
                     selected={dateFrom}
                     onSelect={setDateFrom}
-                    initialFocus
                   />
                 </PopoverContent>
               </Popover>
@@ -1132,11 +1131,10 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0 rounded-xl bg-popover" align="start">
-                  <Calendar
+                  <CalendarWrapper
                     mode="single"
                     selected={dateTo}
                     onSelect={setDateTo}
-                    initialFocus
                   />
                 </PopoverContent>
               </Popover>
@@ -1314,7 +1312,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-card-foreground">Data inicial</label>
-                    <Popover>
+                    <Popover modal>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
@@ -1324,8 +1322,8 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           {syncStartDate ? format(syncStartDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
+                      <PopoverContent className="w-auto p-0 z-[100]" align="start">
+                        <CalendarWrapper
                           mode="single"
                           selected={syncStartDate || undefined}
                           onSelect={(date) => {
@@ -1333,15 +1331,13 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                               setSyncStartDate(date);
                             }
                           }}
-                          locale={ptBR}
-                          initialFocus
                         />
                       </PopoverContent>
                     </Popover>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-card-foreground">Data final</label>
-                    <Popover>
+                    <Popover modal>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
@@ -1351,8 +1347,8 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           {syncEndDate ? format(syncEndDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
+                      <PopoverContent className="w-auto p-0 z-[100]" align="start">
+                        <CalendarWrapper
                           mode="single"
                           selected={syncEndDate || undefined}
                           onSelect={(date) => {
@@ -1360,8 +1356,6 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                               setSyncEndDate(date);
                             }
                           }}
-                          locale={ptBR}
-                          initialFocus
                         />
                       </PopoverContent>
                     </Popover>

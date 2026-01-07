@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
+import { CalendarWrapper } from "@/components/ui/calendar-wrapper";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -1305,7 +1305,7 @@ export default function ExtractTabTCR() {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
-                  <Calendar
+                  <CalendarWrapper
                     mode="single"
                     selected={dateRange.from}
                     onSelect={(date) => {
@@ -1341,7 +1341,7 @@ export default function ExtractTabTCR() {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
-                  <Calendar
+                  <CalendarWrapper
                     mode="single"
                     selected={dateRange.to}
                     onSelect={(date) => {
@@ -1350,7 +1350,6 @@ export default function ExtractTabTCR() {
                         setDateTo(date);
                       }
                     }}
-                    locale={ptBR}
                   />
                 </PopoverContent>
               </Popover>
@@ -1441,7 +1440,7 @@ export default function ExtractTabTCR() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-card-foreground">Data inicial</label>
-                      <Popover>
+                      <Popover modal>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
@@ -1451,8 +1450,8 @@ export default function ExtractTabTCR() {
                             {syncStartDate ? format(syncStartDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
+                        <PopoverContent className="w-auto p-0 z-[100]" align="start">
+                          <CalendarWrapper
                             mode="single"
                             selected={syncStartDate || undefined}
                             onSelect={(date) => {
@@ -1460,15 +1459,13 @@ export default function ExtractTabTCR() {
                                 setSyncStartDate(date);
                               }
                             }}
-                            locale={ptBR}
-                            initialFocus
                           />
                         </PopoverContent>
                       </Popover>
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-card-foreground">Data final</label>
-                      <Popover>
+                      <Popover modal>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
@@ -1478,8 +1475,8 @@ export default function ExtractTabTCR() {
                             {syncEndDate ? format(syncEndDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
+                        <PopoverContent className="w-auto p-0 z-[100]" align="start">
+                          <CalendarWrapper
                             mode="single"
                             selected={syncEndDate || undefined}
                             onSelect={(date) => {
@@ -1487,8 +1484,6 @@ export default function ExtractTabTCR() {
                                 setSyncEndDate(date);
                               }
                             }}
-                            locale={ptBR}
-                            initialFocus
                           />
                         </PopoverContent>
                       </Popover>
