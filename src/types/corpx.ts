@@ -137,14 +137,36 @@ export interface CorpXPixKeysResponse {
 }
 
 export interface CorpXCreatePixKeyRequest {
-  tax_document: string;
-  tipo: 1 | 2 | 3 | 4 | 5; // 1=CPF, 2=CNPJ, 3=Celular, 4=Email, 5=Aleatória
-  key?: string; // Opcional - só para tipos 3 e 4
+  tax_document: string; // CPF/CNPJ do titular (apenas números)
+  tipo: string; // "1"=CPF, "2"=CNPJ, "3"=Celular, "4"=Email, "5"=Aleatória
+  key?: string; // Opcional para todos os tipos
+  otp?: string; // Opcional - Código OTP para validação
+  otp_code?: string; // Opcional - Código OTP alternativo (compatibilidade)
+}
+
+// ✅ NOVO: Interface para enviar OTP
+export interface CorpXEnviarOtpPixRequest {
+  tax_document: string; // CPF/CNPJ do titular (apenas números)
+  key: string; // Chave para a qual enviar OTP (celular ou email)
+}
+
+export interface CorpXEnviarOtpPixResponse {
+  erro: boolean;
+  message: string;
+  details?: string;
+  data?: any;
 }
 
 export interface CorpXCreatePixKeyResponse {
   erro: boolean;
   message: string;
+  details?: string; // ✅ NOVO: Detalhes do erro (se houver)
+  data?: { // ✅ NOVO: Dados da chave criada
+    key?: string;
+    tipo?: string;
+    tax_document?: string;
+  };
+  apiResponse?: any; // ✅ NOVO: Resposta completa da API (para debug)
 }
 
 export interface CorpXDeletePixKeyRequest {

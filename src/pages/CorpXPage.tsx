@@ -501,44 +501,115 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
   const { selectedAccount, taxDocument } = useCorpX();
   const [tipoChave, setTipoChave] = React.useState<string>("");
   const [valorChave, setValorChave] = React.useState<string>("");
+  const [otp, setOtp] = React.useState<string>(""); // ✅ NOVO: Campo OTP opcional
   const [isCreating, setIsCreating] = React.useState(false);
+  const [isSendingOtp, setIsSendingOtp] = React.useState(false); // ✅ NOVO: Estado para envio de OTP
+  const [otpSent, setOtpSent] = React.useState(false); // ✅ NOVO: Flag para indicar que OTP foi enviado
 
   // ✅ Resetar formulário
   const resetarFormulario = () => {
     setTipoChave("");
     setValorChave("");
+    setOtp("");
+    setOtpSent(false); // ✅ NOVO: Resetar flag de OTP enviado
   };
 
-  // ✅ Validar entrada baseada no tipo
+  // ✅ Validar entrada baseada no tipo (conforme nova documentação)
   const validarChave = (tipo: string, valor: string): string | null => {
-    if (tipo === "5") return null; // Chave aleatória não precisa validação
+    // Tipos 1 e 2 não precisam de campo key (usam tax_document)
+    // Tipos 3, 4 e 5 podem ter key opcional
+    if (tipo === "1" || tipo === "2") {
+      return null; // CPF/CNPJ não precisa de campo key
+    }
 
+    // Se não forneceu valor, está ok (opcional para tipos 3, 4, 5)
     if (!valor.trim()) {
-      return "Valor da chave é obrigatório";
+      return null; // Campo opcional
     }
 
     switch (tipo) {
-      case "1": // CPF
-        if (!/^\d{11}$/.test(valor.replace(/\D/g, ''))) {
-          return "CPF deve ter 11 dígitos";
-        }
-        break;
-      case "2": // CNPJ
-        if (!/^\d{14}$/.test(valor.replace(/\D/g, ''))) {
-          return "CNPJ deve ter 14 dígitos";
-        }
-        break;
       case "3": // Celular
-        // ✅ REMOVIDO: Validação restritiva de formato
-        // Aceita qualquer formato de celular
+        // Formato esperado: 55dd9xxxxxxxx (sem +)
+        // Remover + se fornecido
+        const celularLimpo = valor.replace(/^\+/, '').replace(/\D/g, '');
+        if (celularLimpo.length < 10) {
+          return "Número de celular inválido";
+        }
         break;
       case "4": // Email
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)) {
           return "Email inválido";
         }
         break;
+      case "5": // Aleatória
+        // Pode ter valor opcional ou deixar vazio para API gerar
+        break;
     }
     return null;
+  };
+
+  // ✅ NOVO: Enviar OTP para tipos 3 e 4
+  const enviarOtp = async () => {
+    try {
+      if (!tipoChave || (tipoChave !== "3" && tipoChave !== "4")) {
+        toast.error("OTP é necessário apenas para chaves do tipo Celular ou Email");
+        return;
+      }
+
+      if (!valorChave.trim()) {
+        toast.error("Informe o valor da chave antes de enviar OTP");
+        return;
+      }
+
+      // Validar entrada
+      const erroValidacao = validarChave(tipoChave, valorChave);
+      if (erroValidacao) {
+        toast.error(erroValidacao);
+        return;
+      }
+
+      setIsSendingOtp(true);
+
+      const cnpj = taxDocument.replace(/\D/g, '');
+      let chaveFormatada = valorChave.trim();
+      
+      // Para celular: remover + se fornecido
+      if (tipoChave === "3") {
+        chaveFormatada = chaveFormatada.replace(/^\+/, '');
+      }
+
+      const { enviarOtpPixCorpX } = await import('@/services/corpx');
+      
+      const resultado = await enviarOtpPixCorpX({
+        tax_document: cnpj,
+        key: chaveFormatada
+      });
+
+      if (resultado && !resultado.erro) {
+        toast.success("OTP enviado com sucesso!", {
+          description: tipoChave === "3" 
+            ? "Verifique o código recebido por SMS" 
+            : "Verifique o código recebido por email",
+          duration: 5000
+        });
+        setOtpSent(true);
+      } else {
+        const mensagemErro = resultado?.details || resultado?.message || "Erro ao enviar OTP";
+        toast.error("Erro ao enviar OTP", {
+          description: mensagemErro,
+          duration: 5000
+        });
+      }
+
+    } catch (err: any) {
+      const mensagemErro = err.message || "Erro ao enviar OTP";
+      toast.error("Erro ao enviar OTP", {
+        description: mensagemErro,
+        duration: 5000
+      });
+    } finally {
+      setIsSendingOtp(false);
+    }
   };
 
   // ✅ Criar chave PIX
@@ -564,40 +635,84 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
 
       const { criarChavePixCorpX } = await import('@/services/corpx');
       
-      // ✅ Montar dados da requisição
+      // ✅ NOVO: Montar dados da requisição conforme nova documentação
       const dadosRequisicao: any = {
         tax_document: cnpj,
-        tipo: parseInt(tipoChave)
+        tipo: tipoChave // ✅ String, não número ("1", "2", "3", "4", "5")
       };
 
-      // Adicionar key apenas se necessário (sem formatação)
-      if (tipoChave !== "5" && valorChave.trim()) {
-        dadosRequisicao.key = valorChave.replace(/\D/g, ''); // Remove formatação da chave
+      // ✅ NOVO: Adicionar key apenas para tipos 3, 4, 5 (opcional)
+      // Tipos 1 e 2 não precisam de key (usam tax_document automaticamente)
+      if ((tipoChave === "3" || tipoChave === "4" || tipoChave === "5") && valorChave.trim()) {
+        let chaveFormatada = valorChave.trim();
+        
+        // Para celular (tipo 3): remover + se fornecido, formato esperado: 55dd9xxxxxxxx
+        if (tipoChave === "3") {
+          chaveFormatada = chaveFormatada.replace(/^\+/, '');
+        }
+        
+        dadosRequisicao.key = chaveFormatada;
       }
 
+      // ✅ NOVO: Adicionar OTP se fornecido (opcional para todos os tipos)
+      if (otp.trim()) {
+        dadosRequisicao.otp = otp.trim();
+      }
 
       const resultado = await criarChavePixCorpX(dadosRequisicao);
 
 
+      // ✅ NOVO: Tratamento de resposta conforme nova documentação
       if (resultado && !resultado.erro) {
+        const chaveCriada = resultado.data?.key || 'Chave criada';
         toast.success("Chave PIX criada com sucesso!", {
-          description: resultado.message || "Nova chave registrada na conta",
-          duration: 3000
+          description: resultado.message || `Chave: ${chaveCriada}`,
+          duration: 4000
         });
         
         resetarFormulario();
         onChaveCriada(); // Recarregar lista de chaves
       } else {
-        toast.error("Erro ao criar chave PIX", {
-          description: resultado?.message || "Tente novamente",
-          duration: 4000
-        });
+        // ✅ NOVO: Tratamento de erros específicos conforme documentação
+        const mensagemErro = resultado?.details || resultado?.message || "Tente novamente";
+        const codigoErro = (resultado as any)?.code;
+        
+        // ✅ NOVO: Tratamento especial para erro starkinfra_internal_server_error
+        if (mensagemErro.includes('starkinfra_internal_server_error') || codigoErro === 'SI00001') {
+          if (tipoChave === "5") {
+            toast.error("Erro temporário da API CorpX", {
+              description: "Tente novamente após alguns segundos. Se o problema persistir, verifique se o documento está habilitado para criar chaves PIX.",
+              duration: 7000
+            });
+          } else if (tipoChave === "3" || tipoChave === "4") {
+            toast.error("OTP necessário", {
+              description: "Para criar chaves do tipo Celular ou Email, é necessário enviar OTP primeiro. Clique em 'Enviar OTP' antes de criar a chave.",
+              duration: 7000
+            });
+          } else {
+            toast.error("Erro ao criar chave PIX", {
+              description: mensagemErro,
+              duration: 5000
+            });
+          }
+        } else {
+          toast.error("Erro ao criar chave PIX", {
+            description: mensagemErro,
+            duration: 5000
+          });
+        }
       }
 
     } catch (err: any) {
+      // ✅ NOVO: Tratamento de erro melhorado
+      const mensagemErro = err.response?.data?.details || 
+                          err.response?.data?.message || 
+                          err.message || 
+                          "Verifique os dados e tente novamente";
+      
       toast.error("Erro ao criar chave PIX", {
-        description: err.message || "Verifique os dados e tente novamente",
-        duration: 4000
+        description: mensagemErro,
+        duration: 5000
       });
     } finally {
       setIsCreating(false);
@@ -616,14 +731,14 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
     return tipos[tipo as keyof typeof tipos];
   };
 
-  // ✅ Obter placeholder baseado no tipo
+  // ✅ Obter placeholder baseado no tipo (atualizado conforme documentação)
   const getPlaceholder = (tipo: string) => {
     const placeholders = {
-      "1": "000.000.000-00",
-      "2": "00.000.000/0000-00",
-      "3": "+554399991234",
-      "4": "seuemail@exemplo.com",
-      "5": "Será gerada automaticamente"
+      "1": "Não necessário (usa CPF do titular)",
+      "2": "Não necessário (usa CNPJ do titular)",
+      "3": "5511999887766 (opcional - formato: 55dd9xxxxxxxx)",
+      "4": "usuario@exemplo.com.br (opcional)",
+      "5": "Opcional - deixe vazio para gerar automaticamente"
     };
     return placeholders[tipo as keyof typeof placeholders];
   };
@@ -662,7 +777,11 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
         {/* Seletor de tipo */}
         <div className="space-y-2">
           <Label htmlFor="tipo-chave">Tipo da Chave PIX</Label>
-          <Select value={tipoChave} onValueChange={setTipoChave}>
+          <Select value={tipoChave} onValueChange={(value) => {
+            setTipoChave(value);
+            setOtpSent(false); // ✅ Resetar flag quando tipo mudar
+            setOtp(""); // ✅ Limpar OTP quando tipo mudar
+          }}>
             <SelectTrigger>
               <SelectValue placeholder="Selecione o tipo..." />
             </SelectTrigger>
@@ -701,20 +820,120 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
           </Select>
         </div>
 
-        {/* Campo de valor (se necessário) */}
-        {tipoChave && tipoChave !== "5" && (
+        {/* Informação para tipos CPF/CNPJ */}
+        {(tipoChave === "1" || tipoChave === "2") && (
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-700">
+              <span className="font-medium">Chave {getLabelTipoChave(tipoChave)}:</span> Será usada automaticamente o {tipoChave === "1" ? "CPF" : "CNPJ"} do titular da conta ({taxDocument.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}).
+            </p>
+          </div>
+        )}
+
+        {/* Campo de valor (opcional para tipos 3, 4, 5) */}
+        {tipoChave && tipoChave !== "1" && tipoChave !== "2" && (
           <div className="space-y-2">
             <Label htmlFor="valor-chave">
-              Valor da Chave {getLabelTipoChave(tipoChave)}
+              Valor da Chave {getLabelTipoChave(tipoChave)} <span className="text-muted-foreground text-xs">(opcional)</span>
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="valor-chave"
+                type="text"
+                value={valorChave}
+                onChange={(e) => {
+                  setValorChave(e.target.value);
+                  setOtpSent(false); // Resetar flag quando valor mudar
+                }}
+                placeholder={getPlaceholder(tipoChave)}
+                disabled={isCreating || isSendingOtp}
+                className="flex-1"
+              />
+              {/* ✅ NOVO: Botão para enviar OTP (apenas para tipos 3 e 4) */}
+              {(tipoChave === "3" || tipoChave === "4") && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={enviarOtp}
+                  disabled={!valorChave.trim() || isSendingOtp || isCreating}
+                  className="whitespace-nowrap"
+                >
+                  {isSendingOtp ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Enviando...
+                    </>
+                  ) : otpSent ? (
+                    <>
+                      <Check className="h-4 w-4 mr-2 text-green-600" />
+                      OTP Enviado
+                    </>
+                  ) : (
+                    <>
+                      <SendHorizontal className="h-4 w-4 mr-2" />
+                      Enviar OTP
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+            {tipoChave === "3" && (
+              <p className="text-xs text-muted-foreground">
+                Formato: 55dd9xxxxxxxx (sem +). Exemplo: 5511999887766
+              </p>
+            )}
+            {tipoChave === "5" && (
+              <p className="text-xs text-muted-foreground">
+                Deixe vazio para gerar automaticamente uma chave aleatória (UUID)
+              </p>
+            )}
+            {/* ✅ NOVO: Aviso sobre OTP para tipos 3 e 4 */}
+            {(tipoChave === "3" || tipoChave === "4") && !otpSent && (
+              <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-xs text-yellow-700">
+                  <AlertCircle className="h-3 w-3 inline mr-1" />
+                  <strong>Importante:</strong> Para criar chaves do tipo {tipoChave === "3" ? "Celular" : "Email"}, é recomendado enviar OTP primeiro. Clique em "Enviar OTP" após informar o valor da chave.
+                </p>
+              </div>
+            )}
+            {otpSent && (
+              <div className="p-2 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-xs text-green-700">
+                  <Check className="h-3 w-3 inline mr-1" />
+                  OTP enviado! Verifique o código recebido por {tipoChave === "3" ? "SMS" : "email"} e informe abaixo antes de criar a chave.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ✅ NOVO: Campo OTP opcional */}
+        {(tipoChave === "3" || tipoChave === "4" || tipoChave === "5" || otp.trim()) && (
+          <div className="space-y-2">
+            <Label htmlFor="otp">
+              Código OTP 
+              {(tipoChave === "3" || tipoChave === "4") && otpSent && (
+                <span className="text-green-600 text-xs ml-1">(obrigatório)</span>
+              )}
+              {(!otpSent || tipoChave === "5") && (
+                <span className="text-muted-foreground text-xs">(opcional)</span>
+              )}
             </Label>
             <Input
-              id="valor-chave"
+              id="otp"
               type="text"
-              value={valorChave}
-              onChange={(e) => setValorChave(e.target.value)}
-              placeholder={getPlaceholder(tipoChave)}
-              disabled={isCreating}
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} // ✅ Apenas números
+              placeholder={otpSent ? "Digite o código OTP recebido" : "Digite o código OTP se necessário"}
+              disabled={isCreating || isSendingOtp}
+              maxLength={6}
+              className={otpSent && !otp.trim() ? "border-yellow-300 focus:border-yellow-500" : ""}
             />
+            <p className="text-xs text-muted-foreground">
+              {otpSent 
+                ? `Código de validação enviado por ${tipoChave === "3" ? "SMS" : "email"}. Verifique sua ${tipoChave === "3" ? "mensagem" : "caixa de entrada"}.`
+                : "Código de validação enviado por SMS ou email (se aplicável)"
+              }
+            </p>
           </div>
         )}
 

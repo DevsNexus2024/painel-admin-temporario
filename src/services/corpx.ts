@@ -7,6 +7,8 @@ import type {
   CorpXPixKeysResponse,
   CorpXCreatePixKeyRequest,
   CorpXCreatePixKeyResponse,
+  CorpXEnviarOtpPixRequest, // ✅ NOVO
+  CorpXEnviarOtpPixResponse, // ✅ NOVO
   CorpXDeletePixKeyRequest,
   CorpXPixTransferRequest,
   CorpXPixTransferResponse,
@@ -41,6 +43,7 @@ const CORPX_CONFIG = {
     // 🔑 CHAVES PIX (rotas corretas do backend)
     listarChavesPix: '/api/corpx/pix/chaves',
     criarChavePix: '/api/corpx/pix/chave',
+    enviarOtpPix: '/api/corpx/pix/chave/otp', // ✅ NOVO: Endpoint para enviar OTP
     cancelarChavePix: '/api/corpx/pix/chave',
     
     // 💸 TRANSFERÊNCIAS PIX (rotas corretas do backend)
@@ -639,9 +642,24 @@ export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysRe
  * Criar Chave PIX
  * Endpoint: POST /api/corpx/pix/chave
  */
+/**
+ * ✅ ATUALIZADO: Criar chave PIX conforme nova documentação
+ * Endpoint: POST /api/corpx/pix/chave
+ * 
+ * Parâmetros:
+ * - tax_document: CPF/CNPJ (apenas números)
+ * - tipo: "1" (CPF), "2" (CNPJ), "3" (Celular), "4" (Email), "5" (Aleatória)
+ * - key: Opcional para todos os tipos
+ * - otp: Opcional - Código OTP para validação
+ */
 export async function criarChavePixCorpX(dados: CorpXCreatePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
   try {
-    //console.log('[CORPX-PIX-CRIAR] Criando chave PIX...', dados);
+    console.log('[CORPX-PIX-CRIAR] Criando chave PIX...', { 
+      tax_document: dados.tax_document, 
+      tipo: dados.tipo,
+      hasKey: !!dados.key,
+      hasOtp: !!dados.otp
+    });
     
     // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
@@ -661,32 +679,141 @@ export async function criarChavePixCorpX(dados: CorpXCreatePixKeyRequest): Promi
       body: JSON.stringify(dados)
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
     const responseData = await response.json();
-    //console.log('[CORPX-PIX-CRIAR] Resposta recebida:', responseData);
+    console.log('[CORPX-PIX-CRIAR] Resposta recebida:', responseData);
     
-    // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as CorpXBackendResponse<any>;
-    
-    if (backendResponse.error === false) {
-      return {
-        erro: false,
-        message: backendResponse.message
-      } as CorpXCreatePixKeyResponse;
-    } else {
-      console.error('[CORPX-PIX-CRIAR] Erro na resposta:', backendResponse.message);
+    // ✅ NOVO: Tratamento de erros conforme nova documentação
+    if (!response.ok) {
+      // Erro 400, 401, 403, 429, 500
+      const errorResponse = responseData as {
+        error: boolean;
+        message: string;
+        details?: string;
+        apiResponse?: any;
+      };
+      
       return {
         erro: true,
-        message: backendResponse.message
+        message: errorResponse.message || `Erro HTTP ${response.status}`,
+        details: errorResponse.details || errorResponse.message,
+        apiResponse: errorResponse.apiResponse || responseData
+      } as CorpXCreatePixKeyResponse;
+    }
+    
+    // ✅ NOVO: Resposta de sucesso (200)
+    const successResponse = responseData as {
+      error: false;
+      message: string;
+      data?: {
+        key?: string;
+        tipo?: string;
+        tax_document?: string;
+      };
+    };
+    
+    if (successResponse.error === false) {
+      return {
+        erro: false,
+        message: successResponse.message || 'Chave PIX criada com sucesso',
+        data: successResponse.data
+      } as CorpXCreatePixKeyResponse;
+    } else {
+      // Caso inesperado: resposta ok mas com error: true
+      console.error('[CORPX-PIX-CRIAR] Erro na resposta:', successResponse.message);
+      return {
+        erro: true,
+        message: successResponse.message || 'Erro desconhecido',
+        details: successResponse.message
       } as CorpXCreatePixKeyResponse;
     }
     
   } catch (error: any) {
-    console.error('[CORPX-PIX-CRIAR] Erro ao criar chave:', error.response?.data);
-    return null;
+    console.error('[CORPX-PIX-CRIAR] Erro ao criar chave:', error);
+    
+    // ✅ NOVO: Tratamento de erro de rede ou parsing
+    return {
+      erro: true,
+      message: 'Erro ao criar chave PIX',
+      details: error.message || 'Erro de conexão. Tente novamente.'
+    } as CorpXCreatePixKeyResponse;
+  }
+}
+
+/**
+ * ✅ NOVO: Enviar OTP para validação de chave PIX
+ * Endpoint: PUT /api/corpx/pix/chave/otp
+ * 
+ * Necessário para tipos 3 (Celular) e 4 (Email) antes de criar a chave
+ */
+export async function enviarOtpPixCorpX(dados: CorpXEnviarOtpPixRequest): Promise<CorpXEnviarOtpPixResponse | null> {
+  try {
+    console.log('[CORPX-PIX-OTP] Enviando OTP...', { 
+      tax_document: dados.tax_document, 
+      key: dados.key ? '***' : undefined
+    });
+    
+    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const userToken = TOKEN_STORAGE.get();
+    
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+    
+    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.enviarOtpPix}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`
+      },
+      body: JSON.stringify(dados)
+    });
+
+    const responseData = await response.json();
+    console.log('[CORPX-PIX-OTP] Resposta recebida:', responseData);
+    
+    if (!response.ok) {
+      const errorResponse = responseData as {
+        error: boolean;
+        message: string;
+        details?: string;
+      };
+      
+      return {
+        erro: true,
+        message: errorResponse.message || `Erro HTTP ${response.status}`,
+        details: errorResponse.details || errorResponse.message
+      } as CorpXEnviarOtpPixResponse;
+    }
+    
+    const successResponse = responseData as {
+      error: false;
+      message: string;
+      data?: any;
+    };
+    
+    if (successResponse.error === false) {
+      return {
+        erro: false,
+        message: successResponse.message || 'OTP enviado com sucesso',
+        data: successResponse.data
+      } as CorpXEnviarOtpPixResponse;
+    } else {
+      return {
+        erro: true,
+        message: successResponse.message || 'Erro desconhecido',
+        details: successResponse.message
+      } as CorpXEnviarOtpPixResponse;
+    }
+    
+  } catch (error: any) {
+    console.error('[CORPX-PIX-OTP] Erro ao enviar OTP:', error);
+    
+    return {
+      erro: true,
+      message: 'Erro ao enviar OTP',
+      details: error.message || 'Erro de conexão. Tente novamente.'
+    } as CorpXEnviarOtpPixResponse;
   }
 }
 
@@ -1142,6 +1269,7 @@ export const CorpXService = {
   // 🔑 CHAVES PIX
   listarChavesPix: listarChavesPixCorpX,
   criarChavePix: criarChavePixCorpX,
+  enviarOtpPix: enviarOtpPixCorpX, // ✅ NOVO: Enviar OTP para validação
   cancelarChavePix: cancelarChavePixCorpX,
   
   // 💸 TRANSFERÊNCIAS PIX

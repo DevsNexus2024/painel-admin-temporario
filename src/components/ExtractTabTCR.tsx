@@ -89,8 +89,6 @@ export default function ExtractTabTCR() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStartDate, setSyncStartDate] = useState<Date | null>(null);
   const [syncEndDate, setSyncEndDate] = useState<Date | null>(null);
-  const [startDatePopoverOpen, setStartDatePopoverOpen] = useState(false);
-  const [endDatePopoverOpen, setEndDatePopoverOpen] = useState(false);
 
   // ✅ Conversão de dados da nova API de transações TCR
   const convertTCRToStandardFormat = (transaction: any) => {
@@ -1443,7 +1441,7 @@ export default function ExtractTabTCR() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-card-foreground">Data inicial</label>
-                      <Popover open={startDatePopoverOpen} onOpenChange={setStartDatePopoverOpen}>
+                      <Popover>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
@@ -1453,28 +1451,24 @@ export default function ExtractTabTCR() {
                             {syncStartDate ? format(syncStartDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent 
-                          className="w-auto p-0" 
-                          align="start"
-                        >
+                        <PopoverContent className="w-auto p-0" align="start">
                           <Calendar
                             mode="single"
                             selected={syncStartDate || undefined}
                             onSelect={(date) => {
                               if (date) {
                                 setSyncStartDate(date);
-                                // Fechar popover após seleção
-                                setTimeout(() => setStartDatePopoverOpen(false), 100);
                               }
                             }}
                             locale={ptBR}
+                            initialFocus
                           />
                         </PopoverContent>
                       </Popover>
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-card-foreground">Data final</label>
-                      <Popover open={endDatePopoverOpen} onOpenChange={setEndDatePopoverOpen}>
+                      <Popover>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
@@ -1484,21 +1478,17 @@ export default function ExtractTabTCR() {
                             {syncEndDate ? format(syncEndDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent 
-                          className="w-auto p-0" 
-                          align="start"
-                        >
+                        <PopoverContent className="w-auto p-0" align="start">
                           <Calendar
                             mode="single"
                             selected={syncEndDate || undefined}
                             onSelect={(date) => {
                               if (date) {
                                 setSyncEndDate(date);
-                                // Fechar popover após seleção
-                                setTimeout(() => setEndDatePopoverOpen(false), 100);
                               }
                             }}
                             locale={ptBR}
+                            initialFocus
                           />
                         </PopoverContent>
                       </Popover>

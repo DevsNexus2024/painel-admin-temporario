@@ -7,7 +7,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { CalendarWrapper } from "@/components/ui/calendar-wrapper";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -90,8 +89,6 @@ export default function ExtractTabCorpX() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStartDate, setSyncStartDate] = useState<Date | null>(null);
   const [syncEndDate, setSyncEndDate] = useState<Date | null>(null);
-  const [startDatePopoverOpen, setStartDatePopoverOpen] = useState(false);
-  const [endDatePopoverOpen, setEndDatePopoverOpen] = useState(false);
   const [searchName, setSearchName] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [searchDescCliente, setSearchDescCliente] = useState("");
@@ -1317,7 +1314,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-card-foreground">Data inicial</label>
-                    <Popover open={startDatePopoverOpen} onOpenChange={setStartDatePopoverOpen}>
+                    <Popover>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
@@ -1327,27 +1324,16 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           {syncStartDate ? format(syncStartDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent 
-                        className="w-auto p-0" 
-                        align="start"
-                        onInteractOutside={(e) => {
-                          // Prevenir fechamento ao clicar dentro do calendário
-                          const target = e.target as HTMLElement;
-                          if (target.closest('[role="gridcell"]') || target.closest('button.day') || target.closest('[role="button"]')) {
-                            e.preventDefault();
-                          }
-                        }}
-                      >
-                        <CalendarWrapper
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
                           mode="single"
                           selected={syncStartDate || undefined}
                           onSelect={(date) => {
                             if (date) {
                               setSyncStartDate(date);
-                              // Fechar popover após seleção
-                              setTimeout(() => setStartDatePopoverOpen(false), 100);
                             }
                           }}
+                          locale={ptBR}
                           initialFocus
                         />
                       </PopoverContent>
@@ -1355,7 +1341,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-card-foreground">Data final</label>
-                    <Popover open={endDatePopoverOpen} onOpenChange={setEndDatePopoverOpen}>
+                    <Popover>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
@@ -1365,27 +1351,16 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           {syncEndDate ? format(syncEndDate, "PPP", { locale: ptBR }) : "Selecionar data"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent 
-                        className="w-auto p-0" 
-                        align="start"
-                        onInteractOutside={(e) => {
-                          // Prevenir fechamento ao clicar dentro do calendário
-                          const target = e.target as HTMLElement;
-                          if (target.closest('[role="gridcell"]') || target.closest('button.day') || target.closest('[role="button"]')) {
-                            e.preventDefault();
-                          }
-                        }}
-                      >
-                        <CalendarWrapper
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
                           mode="single"
                           selected={syncEndDate || undefined}
                           onSelect={(date) => {
                             if (date) {
                               setSyncEndDate(date);
-                              // Fechar popover após seleção
-                              setTimeout(() => setEndDatePopoverOpen(false), 100);
                             }
                           }}
+                          locale={ptBR}
                           initialFocus
                         />
                       </PopoverContent>
