@@ -71,6 +71,9 @@ export default function ExtractTabCorpX() {
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [error, setError] = useState<string>("");
   
+  // ✅ Estado para controlar se filtros foram aplicados na API
+  const [filtersAppliedToAPI, setFiltersAppliedToAPI] = useState(false);
+  
   // ✅ Função para obter período padrão de 3 dias (hoje + 2 dias atrás)
   const getDefaultDates = () => {
     const hoje = new Date();
@@ -117,7 +120,8 @@ export default function ExtractTabCorpX() {
     const newLimit = parseInt(value, 10);
     setRecordsPerPage(newLimit);
     setCurrentPage(1);
-    loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1, newLimit);
+    // ✅ Manter estado de filtros ao mudar registros por página
+    loadCorpXTransactions(undefined, undefined, 1, newLimit, filtersAppliedToAPI);
   };
   
   // Estados para modal
@@ -228,58 +232,111 @@ export default function ExtractTabCorpX() {
     [convertCorpXToStandardFormat, shouldHideTransaction]
   );
 
+  // ✅ Aplicar filtros no frontend (estratégia híbrida)
   const applyFiltersAndSorting = React.useCallback(
     (transactions: any[]) => {
       let filtered = [...transactions];
 
-    filtered = filtered.filter((transaction) => {
-      const matchesName = !searchName || 
-        transaction.client?.toLowerCase().includes(searchName.toLowerCase()) ||
-        transaction.document?.toLowerCase().includes(searchName.toLowerCase());
-      
-      const matchesValue = !searchValue || 
-        Math.abs(transaction.value).toString().includes(searchValue);
-      
-      const matchesDescCliente = !searchDescCliente || 
-        transaction.descCliente?.toLowerCase().includes(searchDescCliente.toLowerCase()) ||
-        transaction.client?.toLowerCase().includes(searchDescCliente.toLowerCase());
+      filtered = filtered.filter((transaction) => {
+        // ✅ FILTRO 1: Busca por nome/documento
+        const matchesName = !searchName || 
+          transaction.client?.toLowerCase().includes(searchName.toLowerCase()) ||
+          transaction.document?.toLowerCase().includes(searchName.toLowerCase());
+        
+        // ✅ FILTRO 2: Busca por valor
+        const matchesValue = !searchValue || 
+          Math.abs(transaction.value).toString().includes(searchValue);
+        
+        // ✅ FILTRO 3: Busca por descrição
+        const matchesDescCliente = !searchDescCliente || 
+          transaction.descCliente?.toLowerCase().includes(searchDescCliente.toLowerCase()) ||
+          transaction.client?.toLowerCase().includes(searchDescCliente.toLowerCase()) ||
+          transaction._original?.description?.toLowerCase().includes(searchDescCliente.toLowerCase());
 
-      const matchesType = transactionTypeFilter === "todos" || 
-        (transactionTypeFilter === "debito" && transaction.type === "DÉBITO") ||
-        (transactionTypeFilter === "credito" && transaction.type === "CRÉDITO");
+        // ✅ FILTRO 4: Tipo de transação
+        const matchesType = transactionTypeFilter === "todos" || 
+          (transactionTypeFilter === "debito" && transaction.type === "DÉBITO") ||
+          (transactionTypeFilter === "credito" && transaction.type === "CRÉDITO");
 
-      let matchesDate = true;
-      if (dateFrom && dateTo) {
-        try {
-          const transactionDate = new Date(transaction.dateTime);
-          const fromDate = new Date(dateFrom);
-          const toDate = new Date(dateTo);
-          
-          fromDate.setHours(0, 0, 0, 0);
-          toDate.setHours(23, 59, 59, 999);
-          
-          matchesDate = transactionDate >= fromDate && transactionDate <= toDate;
-        } catch (error) {
+        // ✅ FILTRO 5: Data (refinamento no frontend)
+        let matchesDate = true;
+        if (dateFrom && dateTo) {
+          try {
+            const transactionDate = new Date(transaction.dateTime);
+            const fromDate = new Date(dateFrom);
+            const toDate = new Date(dateTo);
+            
+            fromDate.setHours(0, 0, 0, 0);
+            toDate.setHours(23, 59, 59, 999);
+            
+            matchesDate = transactionDate >= fromDate && transactionDate <= toDate;
+          } catch (error) {
             matchesDate = true;
+          }
         }
-      }
 
-      return matchesName && matchesValue && matchesDescCliente && matchesType && matchesDate;
-    });
+        // ✅ FILTRO 6: Busca geral (searchTerm)
+        const matchesSearch = !searchTerm || 
+          transaction.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          transaction.document?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          transaction.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          transaction.descCliente?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          Math.abs(transaction.value).toString().includes(searchTerm);
+
+        // ✅ FILTRO 7: Valor mínimo (refinamento)
+        const matchesMinAmount = !minAmount || minAmount.trim() === '' || 
+          Math.abs(transaction.value) >= parseFloat(minAmount);
+
+        // ✅ FILTRO 8: Valor máximo (refinamento)
+        const matchesMaxAmount = !maxAmount || maxAmount.trim() === '' || 
+          Math.abs(transaction.value) <= parseFloat(maxAmount);
+
+        // ✅ FILTRO 9: Valor específico (refinamento - compara valor absoluto)
+        const matchesSpecificAmount = !specificAmount || specificAmount.trim() === '' || (() => {
+          const targetAmount = parseFloat(specificAmount);
+          if (isNaN(targetAmount) || targetAmount <= 0) return true;
+          
+          const originalAmount = transaction._original?.amount;
+          let txValue: number;
+          
+          if (originalAmount !== undefined && originalAmount !== null) {
+            txValue = typeof originalAmount === 'string' 
+              ? parseFloat(originalAmount) 
+              : Number(originalAmount) || 0;
+          } else {
+            txValue = typeof transaction.value === 'string' 
+              ? parseFloat(transaction.value) 
+              : Number(transaction.value) || 0;
+          }
+          
+          const txAmountAbs = Math.abs(txValue);
+          const targetAbs = Math.abs(targetAmount);
+          
+          // Tolerância de 1 centavo (0.01) para comparação
+          return Math.abs(txAmountAbs - targetAbs) < 0.01;
+        })();
+
+        // ✅ Aplicar TODOS os filtros (AND lógico)
+        return matchesName && matchesValue && matchesDescCliente && matchesType && 
+               matchesDate && matchesSearch && matchesMinAmount && matchesMaxAmount && 
+               matchesSpecificAmount;
+      });
     
-    if (sortBy === "date" && sortOrder !== "none") {
-      filtered.sort((a, b) => {
+      // ✅ Aplicar ordenação
+      if (sortBy === "date" && sortOrder !== "none") {
+        filtered.sort((a, b) => {
           const dateA = new Date(a.dateTime).getTime();
           const dateB = new Date(b.dateTime).getTime();
           return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
-      });
-    } else if (sortBy === "value" && sortOrder !== "none") {
+        });
+      } else if (sortBy === "value" && sortOrder !== "none") {
         filtered.sort((a, b) => (sortOrder === "asc" ? a.value - b.value : b.value - a.value));
-    }
+      }
 
-    return filtered;
+      return filtered;
     },
-    [searchName, searchValue, searchDescCliente, transactionTypeFilter, dateFrom, dateTo, sortBy, sortOrder]
+    [searchName, searchValue, searchDescCliente, transactionTypeFilter, dateFrom, dateTo, 
+     sortBy, sortOrder, searchTerm, minAmount, maxAmount, specificAmount]
   );
 
   const filteredAndSortedTransactions = useMemo(
@@ -304,11 +361,13 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
 
   // ✅ Carregar transações (com filtros de período)
+  // ✅ NOVO: Parâmetro applyFilters indica se deve aplicar filtros na API
   const loadCorpXTransactions = async (
     customDateFrom?: Date,
     customDateTo?: Date,
     page: number = 1,
-    limitOverride?: number
+    limitOverride?: number,
+    applyFilters: boolean = false
   ) => {
     try {
       setIsLoading(true);
@@ -321,18 +380,26 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       let dataInicio: string | undefined;
       let dataFim: string | undefined;
       
-      if (customDateFrom && customDateTo) {
-        dataInicio = customDateFrom.toISOString().split('T')[0];
-        dataFim = customDateTo.toISOString().split('T')[0];
-      } else if (dateFrom && dateTo) {
-        dataInicio = dateFrom.toISOString().split('T')[0];
-        dataFim = dateTo.toISOString().split('T')[0];
+      // ✅ Se applyFilters é true, usar filtros selecionados; caso contrário, usar datas customizadas ou nenhuma
+      if (applyFilters) {
+        // Aplicar filtros: usar datas dos filtros se existirem
+        if (dateFrom && dateTo) {
+          dataInicio = dateFrom.toISOString().split('T')[0];
+          dataFim = dateTo.toISOString().split('T')[0];
+        }
+      } else {
+        // Não aplicar filtros: usar datas customizadas ou nenhuma
+        if (customDateFrom && customDateTo) {
+          dataInicio = customDateFrom.toISOString().split('T')[0];
+          dataFim = customDateTo.toISOString().split('T')[0];
+        }
       }
 
       const limit = limitOverride ?? recordsPerPage;
       const offset = (page - 1) * limit;
 
-      const baseFilters = buildQueryFilters();
+      // ✅ Aplicar filtros na API apenas se applyFilters for true
+      const baseFilters = applyFilters ? buildQueryFilters() : {};
 
       // ✅ Usar apiAccountId numérico quando disponível, ou 'ALL' para todas as contas
       const baseQueryParams: Record<string, any> = {
@@ -425,11 +492,14 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
           total_pages: totalPagesCalculated,
         });
         setCurrentPage(currentPageValue);
+        
+        // ✅ Atualizar estado de filtros aplicados
+        setFiltersAppliedToAPI(applyFilters);
 
         toast.success(`Página ${currentPageValue}: ${finalTransactions.length} transações`, {
-          description: isAllAccounts
-            ? "Extrato consolidado CORPX carregado"
-            : "Extrato CORPX carregado",
+          description: applyFilters 
+            ? (isAllAccounts ? "Extrato consolidado CORPX carregado com filtros" : "Extrato CORPX carregado com filtros")
+            : (isAllAccounts ? "Extrato consolidado CORPX carregado" : "Extrato CORPX carregado"),
           duration: 1500,
         });
       } else {
@@ -645,7 +715,8 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         setDateTo(syncEndDate);
       }
       setCurrentPage(1);
-      await loadCorpXTransactions(syncStartDate || undefined, syncEndDate || undefined, 1);
+      setFiltersAppliedToAPI(false); // Após sincronizar, não aplicar filtros automaticamente
+      await loadCorpXTransactions(syncStartDate || undefined, syncEndDate || undefined, 1, undefined, false);
     } catch (error: any) {
       const description = error?.message || 'Tente novamente em alguns instantes.';
       toast.error('Erro ao sincronizar extrato', { description });
@@ -662,14 +733,15 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     }
 
     setCurrentPage(newPage);
-    await loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, newPage);
+    // ✅ Manter o estado de filtros aplicados ao navegar entre páginas
+    await loadCorpXTransactions(undefined, undefined, newPage, undefined, filtersAppliedToAPI);
   };
 
-  // ✅ Aplicar filtros (com período específico para API)
+  // ✅ Aplicar filtros - ESTRATÉGIA HÍBRIDA: chamar API com filtros
   const handleAplicarFiltros = () => {
     setCurrentPage(1);
     
-    // ✅ IMPORTANTE: Validar se as datas foram selecionadas
+    // ✅ Validar datas se ambas foram selecionadas
     if (dateFrom && dateTo) {
       if (dateFrom > dateTo) {
         toast.error("Data inicial não pode ser maior que data final", {
@@ -678,22 +750,31 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         });
         return;
       }
-      
-      
-      // Passar as datas para a API (sempre página 1 para novos filtros)
-      loadCorpXTransactions(dateFrom, dateTo, 1);
-    } else if (dateFrom || dateTo) {
-      toast.error("Selecione ambas as datas", {
-        description: "Data inicial e final são obrigatórias para filtro por período",
-        duration: 3000
-      });
-    } else {
-      // Sem filtros de data, usar padrão (sempre página 1)
-      loadCorpXTransactions(undefined, undefined, 1);
     }
+    
+    // ✅ Validar valores mínimo e máximo
+    if (minAmount && maxAmount) {
+      const minValue = parseFloat(minAmount);
+      const maxValue = parseFloat(maxAmount);
+      if (!isNaN(minValue) && !isNaN(maxValue) && minValue > maxValue) {
+        toast.error("Valor mínimo não pode ser maior que valor máximo", {
+          description: "Verifique os valores informados",
+          duration: 3000
+        });
+        return;
+      }
+    }
+    
+    // ✅ Chamar API com filtros aplicados (applyFilters = true)
+    loadCorpXTransactions(undefined, undefined, 1, undefined, true);
+    
+    toast.success("Filtros aplicados!", {
+      description: "Carregando transações com os filtros selecionados",
+      duration: 2000
+    });
   };
 
-  // ✅ Limpar filtros - voltar ao período padrão de 3 dias
+  // ✅ Limpar filtros - voltar ao carregamento sem filtros
   const handleLimparFiltros = () => {
     setDateFrom(null);
     setDateTo(null);
@@ -708,7 +789,9 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     setSortBy("date");
     setSortOrder("desc");
     setCurrentPage(1);
-    loadCorpXTransactions(undefined, undefined, 1, recordsPerPage);
+    setFiltersAppliedToAPI(false);
+    // ✅ Carregar sem filtros (applyFilters = false)
+    loadCorpXTransactions(undefined, undefined, 1, recordsPerPage, false);
     toast.success("Filtros limpos!", {
       description: "Exibindo as últimas transações disponíveis",
       duration: 2000
@@ -908,13 +991,16 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
   // 🔄 Recarregar quando a conta selecionada mudar
   useEffect(() => {
-    loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1, recordsPerPage);
+    // ✅ Carregamento inicial: sem filtros (applyFilters = false)
+    loadCorpXTransactions(undefined, undefined, 1, recordsPerPage, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     setCurrentPage(1);
-    loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1, recordsPerPage);
+    setFiltersAppliedToAPI(false); // Reset filtros ao mudar conta
+    // ✅ Carregar sem filtros ao mudar conta (applyFilters = false)
+    loadCorpXTransactions(undefined, undefined, 1, recordsPerPage, false);
     toast.info(
       selectedAccount.id === 'ALL'
         ? 'Atualizando extrato consolidado de todas as contas...'
@@ -982,7 +1068,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
           <Button
             variant="outline"
             size="sm"
-            onClick={() => loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, currentPage)}
+            onClick={() => loadCorpXTransactions(undefined, undefined, currentPage, undefined, filtersAppliedToAPI)}
             disabled={isLoading}
           >
             <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
@@ -1270,7 +1356,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
               Limpar
             </Button>
             <Button 
-              onClick={() => loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, currentPage)} 
+              onClick={() => loadCorpXTransactions(undefined, undefined, currentPage, undefined, filtersAppliedToAPI)} 
               variant="outline" 
               disabled={isLoading}
               className="rounded-xl px-6 py-3 font-semibold border-border hover:border-purple-500 transition-colors"
@@ -1412,7 +1498,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                   const safeLimit = Math.min(Math.max(limit, 1), 2000);
                   setRecordsPerPage(safeLimit);
                   setCurrentPage(1);
-                  loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1, safeLimit);
+                  loadCorpXTransactions(undefined, undefined, 1, safeLimit, filtersAppliedToAPI);
                 }}
                 disabled={isLoading}
               >
@@ -1503,7 +1589,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
               <AlertCircle className="h-12 w-12 mx-auto text-red-500 mb-4" />
               <h3 className="text-lg font-semibold text-card-foreground mb-2">Erro ao carregar extrato</h3>
               <p className="text-muted-foreground mb-4">{error}</p>
-              <Button onClick={() => loadCorpXTransactions(dateFrom || undefined, dateTo || undefined, 1)} variant="outline">
+              <Button onClick={() => loadCorpXTransactions(undefined, undefined, 1, undefined, filtersAppliedToAPI)} variant="outline">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Tentar novamente
               </Button>

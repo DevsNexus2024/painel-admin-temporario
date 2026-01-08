@@ -680,7 +680,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                   <Label htmlFor="client">
                     Selecionar Cliente *
                   </Label>
-                  <Popover open={openClientSelect} onOpenChange={setOpenClientSelect}>
+                  <Popover open={openClientSelect} onOpenChange={setOpenClientSelect} modal>
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
@@ -707,7 +707,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                         <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-full p-0">
+                    <PopoverContent className="w-full p-0 z-[100]">
                       {/* NOTE(P0): removido cmdk/Command aqui porque em produção estava causando "undefined is not iterable" */}
                       <div className="p-2">
                         <div className="relative">
