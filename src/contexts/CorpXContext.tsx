@@ -22,9 +22,10 @@ export const CORPX_ACCOUNTS = [
   },
   {
     id: '4',
-    razaoSocial: 'FATTOR INCORPORACOES LTDA', 
-    cnpj: '49741299000124',
-    available: false,
+    razaoSocial: 'THE GOOD CELL LTDA',
+    cnpj: '49730998000179',
+    available: true,
+    apiAccountId: 52505, // ID numérico da API
   },
   {
     id: '2',
@@ -38,6 +39,13 @@ export const CORPX_ACCOUNTS = [
     cnpj: '61504259000164',
     available: true,
     apiAccountId: 51807, // ID numérico da API
+  },
+  {
+    id: '6',
+    razaoSocial: 'RXP SERVICOS DIGITAIS LTDA',
+    cnpj: '24586576000140',
+    available: true,
+    apiAccountId: 52255, // ID numérico da API
   }
 ];
 
