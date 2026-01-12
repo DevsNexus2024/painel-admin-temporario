@@ -387,10 +387,12 @@ export async function listarTransacoesCorpX(params: CorpXTransactionsParams = {}
     }
     
     // ✅ Prioridade: exactAmount ignora minAmount e maxAmount
-    if (typeof params.exactAmount === 'number' && params.exactAmount > 0) {
+    // ✅ Aceita valores negativos conforme especificação (GUIA-FRONTEND-TRANSACOES.md)
+    if (typeof params.exactAmount === 'number' && params.exactAmount !== 0) {
       query.append('exactAmount', params.exactAmount.toString());
     } else {
       // Só adicionar minAmount e maxAmount se exactAmount não foi informado
+      // ✅ Aceita valores negativos em minAmount e maxAmount
       if (typeof params.minAmount === 'number') {
         query.append('minAmount', params.minAmount.toString());
       }

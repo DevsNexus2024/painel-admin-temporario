@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign, Trash2, Building2 } from "lucide-react";
+import jsPDF from 'jspdf';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -232,22 +233,41 @@ export default function ExtractTabCorpX() {
     [convertCorpXToStandardFormat, shouldHideTransaction]
   );
 
-  // ✅ Aplicar filtros no frontend (estratégia híbrida)
+  // ✅ Refatorado: Quando filtros são aplicados na API, não refiltrar no frontend
+  // Os filtros do frontend são apenas para refinamento quando applyFilters = false
   const applyFiltersAndSorting = React.useCallback(
     (transactions: any[]) => {
+      // Se os filtros foram aplicados na API, retornar transações sem refiltrar
+      // (a API já retornou os dados filtrados)
+      if (filtersAppliedToAPI) {
+        // Apenas aplicar ordenação se não foi aplicada na API
+        let sorted = [...transactions];
+        if (sortBy === "date" && sortOrder !== "none") {
+          sorted.sort((a, b) => {
+            const dateA = new Date(a.dateTime).getTime();
+            const dateB = new Date(b.dateTime).getTime();
+            return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+          });
+        } else if (sortBy === "value" && sortOrder !== "none") {
+          sorted.sort((a, b) => (sortOrder === "asc" ? a.value - b.value : b.value - a.value));
+        }
+        return sorted;
+      }
+
+      // Se os filtros NÃO foram aplicados na API, aplicar filtros no frontend (modo antigo)
       let filtered = [...transactions];
 
       filtered = filtered.filter((transaction) => {
-        // ✅ FILTRO 1: Busca por nome/documento
+        // ✅ FILTRO 1: Busca por nome/documento (apenas se não aplicado na API)
         const matchesName = !searchName || 
           transaction.client?.toLowerCase().includes(searchName.toLowerCase()) ||
           transaction.document?.toLowerCase().includes(searchName.toLowerCase());
         
-        // ✅ FILTRO 2: Busca por valor
+        // ✅ FILTRO 2: Busca por valor (apenas se não aplicado na API)
         const matchesValue = !searchValue || 
           Math.abs(transaction.value).toString().includes(searchValue);
         
-        // ✅ FILTRO 3: Busca por descrição
+        // ✅ FILTRO 3: Busca por descrição (apenas se não aplicado na API)
         const matchesDescCliente = !searchDescCliente || 
           transaction.descCliente?.toLowerCase().includes(searchDescCliente.toLowerCase()) ||
           transaction.client?.toLowerCase().includes(searchDescCliente.toLowerCase()) ||
@@ -258,7 +278,7 @@ export default function ExtractTabCorpX() {
           (transactionTypeFilter === "debito" && transaction.type === "DÉBITO") ||
           (transactionTypeFilter === "credito" && transaction.type === "CRÉDITO");
 
-        // ✅ FILTRO 5: Data (refinamento no frontend)
+        // ✅ FILTRO 5: Data (refinamento no frontend quando não aplicado na API)
         let matchesDate = true;
         if (dateFrom && dateTo) {
           try {
@@ -275,7 +295,7 @@ export default function ExtractTabCorpX() {
           }
         }
 
-        // ✅ FILTRO 6: Busca geral (searchTerm)
+        // ✅ FILTRO 6: Busca geral (searchTerm) - apenas se não aplicado na API
         const matchesSearch = !searchTerm || 
           transaction.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           transaction.document?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -283,18 +303,24 @@ export default function ExtractTabCorpX() {
           transaction.descCliente?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           Math.abs(transaction.value).toString().includes(searchTerm);
 
-        // ✅ FILTRO 7: Valor mínimo (refinamento)
-        const matchesMinAmount = !minAmount || minAmount.trim() === '' || 
-          Math.abs(transaction.value) >= parseFloat(minAmount);
+        // ✅ FILTRO 7: Valor mínimo (refinamento - aceita valores negativos)
+        const matchesMinAmount = !minAmount || minAmount.trim() === '' || (() => {
+          const minValue = parseFloat(minAmount);
+          if (isNaN(minValue)) return true;
+          return transaction.value >= minValue; // Aceita valores negativos
+        })();
 
-        // ✅ FILTRO 8: Valor máximo (refinamento)
-        const matchesMaxAmount = !maxAmount || maxAmount.trim() === '' || 
-          Math.abs(transaction.value) <= parseFloat(maxAmount);
+        // ✅ FILTRO 8: Valor máximo (refinamento - aceita valores negativos)
+        const matchesMaxAmount = !maxAmount || maxAmount.trim() === '' || (() => {
+          const maxValue = parseFloat(maxAmount);
+          if (isNaN(maxValue)) return true;
+          return transaction.value <= maxValue; // Aceita valores negativos
+        })();
 
-        // ✅ FILTRO 9: Valor específico (refinamento - compara valor absoluto)
+        // ✅ FILTRO 9: Valor específico (refinamento - aceita valores negativos)
         const matchesSpecificAmount = !specificAmount || specificAmount.trim() === '' || (() => {
           const targetAmount = parseFloat(specificAmount);
-          if (isNaN(targetAmount) || targetAmount <= 0) return true;
+          if (isNaN(targetAmount) || targetAmount === 0) return true;
           
           const originalAmount = transaction._original?.amount;
           let txValue: number;
@@ -309,11 +335,9 @@ export default function ExtractTabCorpX() {
               : Number(transaction.value) || 0;
           }
           
-          const txAmountAbs = Math.abs(txValue);
-          const targetAbs = Math.abs(targetAmount);
-          
           // Tolerância de 1 centavo (0.01) para comparação
-          return Math.abs(txAmountAbs - targetAbs) < 0.01;
+          // Aceita valores negativos diretamente
+          return Math.abs(txValue - targetAmount) < 0.01;
         })();
 
         // ✅ Aplicar TODOS os filtros (AND lógico)
@@ -336,7 +360,7 @@ export default function ExtractTabCorpX() {
       return filtered;
     },
     [searchName, searchValue, searchDescCliente, transactionTypeFilter, dateFrom, dateTo, 
-     sortBy, sortOrder, searchTerm, minAmount, maxAmount, specificAmount]
+     sortBy, sortOrder, searchTerm, minAmount, maxAmount, specificAmount, filtersAppliedToAPI]
   );
 
   const filteredAndSortedTransactions = useMemo(
@@ -367,7 +391,8 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     customDateTo?: Date,
     page: number = 1,
     limitOverride?: number,
-    applyFilters: boolean = false
+    applyFilters: boolean = false,
+    incrementalUpdate: boolean = false // ✅ Novo parâmetro para atualização incremental
   ) => {
     try {
       setIsLoading(true);
@@ -377,25 +402,46 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       const isAllAccounts = accountIdParam === 'ALL';
       const sanitizedCnpj = !isAllAccounts && selectedAccount.cnpj ? selectedAccount.cnpj.replace(/\D/g, '') : '';
       
+      // ✅ Se for atualização incremental, buscar apenas transações mais recentes que as já em cache
       let dataInicio: string | undefined;
       let dataFim: string | undefined;
       
-      // ✅ Se applyFilters é true, usar filtros selecionados; caso contrário, usar datas customizadas ou nenhuma
-      if (applyFilters) {
-        // Aplicar filtros: usar datas dos filtros se existirem
-        if (dateFrom && dateTo) {
-          dataInicio = dateFrom.toISOString().split('T')[0];
-          dataFim = dateTo.toISOString().split('T')[0];
-        }
+      if (incrementalUpdate && allTransactions.length > 0) {
+        // Encontrar a transação mais recente no cache
+        const mostRecentTx = allTransactions.reduce((latest, current) => {
+          const latestDate = new Date(latest.dateTime).getTime();
+          const currentDate = new Date(current.dateTime).getTime();
+          return currentDate > latestDate ? current : latest;
+        });
+        
+        // Buscar apenas transações mais recentes que a mais recente do cache
+        // Usar data/hora completa para garantir precisão
+        const mostRecentDate = new Date(mostRecentTx.dateTime);
+        mostRecentDate.setMilliseconds(mostRecentDate.getMilliseconds() + 1); // Adicionar 1ms para evitar duplicatas
+        dataInicio = mostRecentDate.toISOString().split('T')[0];
+        // Não definir dataFim para buscar até o momento atual
+        
+        console.log('[CORPX-UPDATE] Atualização incremental: buscando transações após', mostRecentDate.toISOString());
       } else {
-        // Não aplicar filtros: usar datas customizadas ou nenhuma
-        if (customDateFrom && customDateTo) {
-          dataInicio = customDateFrom.toISOString().split('T')[0];
-          dataFim = customDateTo.toISOString().split('T')[0];
+        // ✅ Se applyFilters é true, usar filtros selecionados; caso contrário, usar datas customizadas ou nenhuma
+        if (applyFilters) {
+          // Aplicar filtros: usar datas dos filtros se existirem
+          if (dateFrom && dateTo) {
+            dataInicio = dateFrom.toISOString().split('T')[0];
+            dataFim = dateTo.toISOString().split('T')[0];
+          }
+        } else {
+          // Não aplicar filtros: usar datas customizadas ou nenhuma
+          if (customDateFrom && customDateTo) {
+            dataInicio = customDateFrom.toISOString().split('T')[0];
+            dataFim = customDateTo.toISOString().split('T')[0];
+          }
         }
       }
 
-      const limit = limitOverride ?? recordsPerPage;
+      // ✅ Limite máximo conforme especificação: 2000 registros por requisição
+      const requestedLimit = limitOverride ?? recordsPerPage;
+      const limit = Math.min(requestedLimit, 2000); // Máximo da API conforme GUIA-FRONTEND-TRANSACOES.md
       const offset = (page - 1) * limit;
 
       // ✅ Aplicar filtros na API apenas se applyFilters for true
@@ -472,7 +518,45 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
         const finalTransactions = normalizedTransactions.slice(0, limit);
 
-        setAllTransactions(finalTransactions);
+        // ✅ Se for atualização incremental, fazer merge com transações existentes
+        if (incrementalUpdate && allTransactions.length > 0) {
+          // Criar um Set de IDs existentes para evitar duplicatas
+          // Usar código end-to-end ou ID como identificador único
+          const existingIds = new Set(allTransactions.map(tx => tx.code || tx.id || String(tx.dateTime) + String(tx.value)));
+          
+          // Filtrar apenas transações novas (que não existem no cache)
+          const newTransactions = finalTransactions.filter(tx => {
+            const txId = tx.code || tx.id || String(tx.dateTime) + String(tx.value);
+            return !existingIds.has(txId);
+          });
+          
+          if (newTransactions.length > 0) {
+            // Fazer merge: novas transações no início (mais recentes) + transações existentes
+            const mergedTransactions = [...newTransactions, ...allTransactions];
+            
+            // Ordenar por data (mais recentes primeiro)
+            mergedTransactions.sort((a, b) => {
+              const dateA = new Date(a.dateTime).getTime();
+              const dateB = new Date(b.dateTime).getTime();
+              return dateB - dateA; // Descendente (mais recente primeiro)
+            });
+            
+            setAllTransactions(mergedTransactions);
+            
+            toast.success(`${newTransactions.length} nova(s) transação(ões) adicionada(s)`, {
+              description: `Total: ${mergedTransactions.length} transações em cache`,
+              duration: 2000,
+            });
+          } else {
+            toast.info("Nenhuma transação nova encontrada", {
+              description: "Todas as transações já estão em cache",
+              duration: 2000,
+            });
+          }
+        } else {
+          // Modo normal: substituir completamente
+          setAllTransactions(finalTransactions);
+        }
 
         const total = paginationData.total ?? (hasMoreFromApi || normalizedTransactions.length > finalTransactions.length ? offset + normalizedTransactions.length : finalTransactions.length);
         const limitUsed = limitFromApi && limitFromApi > 0 ? limitFromApi : limit;
@@ -539,67 +623,88 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     }
   };
 
+  // ✅ Refatorado conforme especificação do backend (GUIA-FRONTEND-TRANSACOES.md)
   const buildQueryFilters = React.useCallback(() => {
     const filters: Record<string, any> = {};
 
+    // 1. Tipo de transação
     if (transactionTypeFilter === 'debito') {
       filters.transactionType = 'D';
     } else if (transactionTypeFilter === 'credito') {
       filters.transactionType = 'C';
     }
 
+    // 2. Ordenação
     if (sortBy === 'date') {
       filters.order = sortOrder === 'asc' ? 'asc' : 'desc';
-    } else if (!filters.order) {
-      filters.order = 'desc';
+    } else if (sortBy === 'value') {
+      filters.order = sortOrder === 'asc' ? 'asc' : 'desc';
+    } else {
+      filters.order = 'desc'; // Padrão
     }
 
-    // ✅ Prioridade: exactAmount ignora minAmount e maxAmount
+    // 3. ✅ FILTROS DE VALOR (conforme especificação)
+    // Prioridade: exactAmount ignora minAmount e maxAmount
+    // Aceita valores negativos em todos os filtros de valor
+    
     if (specificAmount && specificAmount.trim() !== '') {
-      const specificValue = parseFloat(specificAmount);
-      if (!isNaN(specificValue) && specificValue > 0) {
+      // Remover espaços e garantir que o valor seja válido
+      const cleanedValue = specificAmount.trim().replace(/\s/g, '');
+      const specificValue = parseFloat(cleanedValue);
+      
+      // ✅ Aceita valores negativos e positivos (útil para buscar débitos específicos)
+      // Verificar se é um número válido (não NaN) e diferente de zero
+      if (!isNaN(specificValue) && specificValue !== 0) {
         filters.exactAmount = specificValue;
       }
     } else {
       // Só adicionar minAmount e maxAmount se exactAmount não foi informado
       if (minAmount && minAmount.trim() !== '') {
         const minValue = parseFloat(minAmount);
-        if (!isNaN(minValue) && minValue > 0) {
+        // ✅ Aceita valores negativos
+        if (!isNaN(minValue)) {
           filters.minAmount = minValue;
         }
       }
       
       if (maxAmount && maxAmount.trim() !== '') {
         const maxValue = parseFloat(maxAmount);
-        if (!isNaN(maxValue) && maxValue > 0) {
+        // ✅ Aceita valores negativos
+        if (!isNaN(maxValue)) {
           filters.maxAmount = maxValue;
         }
       }
     }
 
-    // ✅ Verificar se searchTerm parece ser um endToEnd (começa com 'E' e tem formato específico)
+    // 4. ✅ FILTROS DE BUSCA (conforme especificação)
+    // Prioridade: endToEnd ignora search
+    
     const searchTermTrimmed = searchTerm?.trim() || '';
-    const isEndToEndPattern = /^E\d{20,}/.test(searchTermTrimmed); // Padrão: E seguido de números
+    
+    // Detectar se é um endToEnd (formato: E seguido de números, mínimo 20 caracteres)
+    const isEndToEndPattern = /^E\d{20,}/.test(searchTermTrimmed);
     
     if (isEndToEndPattern && searchTermTrimmed.length >= 20) {
-      // ✅ Prioridade: endToEnd ignora search
+      // ✅ Prioridade: endToEnd ignora search (conforme especificação)
       filters.endToEnd = searchTermTrimmed;
     } else if (searchTermTrimmed) {
-      // Busca textual normal
+      // Busca textual normal (só funciona se endToEnd não estiver informado)
       filters.search = searchTermTrimmed;
     } else {
       // Se não há searchTerm, verificar outros campos de busca
+      // Combinar searchName e searchDescCliente em uma única busca textual
+      const searchParts: string[] = [];
+      
       if (searchName && searchName.trim() !== '') {
-        filters.search = searchName.trim();
+        searchParts.push(searchName.trim());
       }
       
       if (searchDescCliente && searchDescCliente.trim() !== '') {
-        if (filters.search) {
-          // Combinar com busca existente
-          filters.search = `${filters.search} ${searchDescCliente.trim()}`;
-        } else {
-          filters.search = searchDescCliente.trim();
-        }
+        searchParts.push(searchDescCliente.trim());
+      }
+      
+      if (searchParts.length > 0) {
+        filters.search = searchParts.join(' ');
       }
     }
 
@@ -804,6 +909,326 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       style: 'currency',
       currency: 'BRL',
     }).format(Math.abs(value));
+  };
+
+  // ✅ Exportar comprovante em PDF (apenas informações relevantes para cliente)
+  const exportComprovantePDF = (transaction: any) => {
+    if (!transaction) {
+      toast.error("Erro: Transação não encontrada");
+      return;
+    }
+
+    try {
+      // Obter dados do rawExtrato para informações completas de Payer e Beneficiary
+      const rawExtrato = transaction.rawExtrato || transaction._original?.rawExtrato || null;
+      const rawPayer = rawExtrato?.payer || rawExtrato?.pagador;
+      const rawBeneficiary = rawExtrato?.beneficiary || rawExtrato?.beneficiario;
+      
+      // Obter nome da conta beneficiária se disponível
+      const beneficiaryDocDigits = (transaction.beneficiaryDocument || transaction.document || '').replace(/\D/g, '');
+      const beneficiaryName = accountNameByDocument[beneficiaryDocDigits];
+      
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 20;
+      let yPosition = margin;
+
+      // Configurar fonte
+      pdf.setFont('helvetica');
+
+      // === CABEÇALHO ===
+      pdf.setFontSize(24);
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('COMPROVANTE DE TRANSAÇÃO', pageWidth / 2, yPosition + 10, { align: 'center' });
+      
+      pdf.setFontSize(12);
+      pdf.setTextColor(100, 100, 100);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('CORPX Banking', pageWidth / 2, yPosition + 18, { align: 'center' });
+      
+      // Linha divisória
+      pdf.setDrawColor(200, 200, 200);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, yPosition + 25, pageWidth - margin, yPosition + 25);
+      yPosition += 35;
+
+      // === INFORMAÇÕES DA TRANSAÇÃO ===
+      pdf.setFontSize(16);
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('DADOS DA TRANSAÇÃO', margin, yPosition);
+      yPosition += 10;
+
+      pdf.setDrawColor(200, 200, 200);
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 8;
+
+      // Configurar fonte para conteúdo
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(0, 0, 0);
+
+      // Data/Hora
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Data/Hora:', margin, yPosition);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(formatDate(transaction.dateTime), margin + 40, yPosition);
+      yPosition += 8;
+
+      // Valor
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Valor:', margin, yPosition);
+      pdf.setFont('helvetica', 'bold');
+      // Cor: vermelho para débito (220, 53, 69), verde para crédito (34, 197, 94)
+      if (transaction.type === 'DÉBITO') {
+        pdf.setTextColor(220, 53, 69);
+      } else {
+        pdf.setTextColor(34, 197, 94);
+      }
+      pdf.text(
+        `${transaction.type === 'DÉBITO' ? "-" : "+"}${formatCurrency(transaction.value)}`,
+        margin + 40,
+        yPosition
+      );
+      pdf.setTextColor(0, 0, 0);
+      yPosition += 8;
+
+      // Tipo
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Tipo:', margin, yPosition);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(transaction.type, margin + 40, yPosition);
+      yPosition += 8;
+
+      // Código End-to-End
+      if (transaction.code) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Código End-to-End:', margin, yPosition);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(9);
+        pdf.text(transaction.code, margin + 50, yPosition);
+        pdf.setFontSize(11);
+        yPosition += 8;
+      }
+
+      yPosition += 8;
+
+      // === INFORMAÇÕES DAS PARTES ENVOLVIDAS ===
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('INFORMAÇÕES DAS PARTES', margin, yPosition);
+      yPosition += 10;
+
+      pdf.setDrawColor(200, 200, 200);
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+
+      // === PAGADOR (Payer) - Sempre mostrar quando disponível ===
+      if (rawPayer) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.text('PAGADOR', margin, yPosition);
+        yPosition += 8;
+        
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'normal');
+        
+        // Nome do Pagador
+        const payerName = rawPayer.fullName || rawPayer.nome || transaction.client || 'Não informado';
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Nome:', margin, yPosition);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(payerName, margin + 30, yPosition);
+        yPosition += 8;
+        
+        // Documento do Pagador
+        if (rawPayer.document) {
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Documento:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(formatDocument(rawPayer.document), margin + 40, yPosition);
+          yPosition += 8;
+        } else if (transaction.payerDocument) {
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Documento:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(formatDocument(transaction.payerDocument), margin + 40, yPosition);
+          yPosition += 8;
+        }
+        
+        // Agência e Conta (se disponível)
+        if (rawPayer.agency || rawPayer.account) {
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Conta:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          const accountInfo = `Ag. ${rawPayer.agency || '—'} • Conta ${rawPayer.account || '—'}`;
+          pdf.text(accountInfo, margin + 35, yPosition);
+          yPosition += 8;
+        }
+        
+        yPosition += 5;
+      }
+
+      // === BENEFICIÁRIO (Beneficiary) - Sempre mostrar quando disponível ===
+      if (rawBeneficiary) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.text('BENEFICIÁRIO', margin, yPosition);
+        yPosition += 8;
+        
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'normal');
+        
+        // Nome do Beneficiário
+        const beneficiaryFullName = rawBeneficiary.fullName || rawBeneficiary.nome || transaction.client || beneficiaryName || 'Não informado';
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Nome:', margin, yPosition);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(beneficiaryFullName, margin + 30, yPosition);
+        yPosition += 8;
+        
+        // Documento do Beneficiário
+        if (rawBeneficiary.document) {
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Documento:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(formatDocument(rawBeneficiary.document), margin + 40, yPosition);
+          yPosition += 8;
+        } else if (transaction.beneficiaryDocument) {
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Documento:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(formatDocument(transaction.beneficiaryDocument), margin + 40, yPosition);
+          yPosition += 8;
+        } else if (transaction.document && transaction.type === 'CRÉDITO') {
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Documento:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(formatDocument(transaction.document), margin + 40, yPosition);
+          yPosition += 8;
+        }
+        
+        // Nome da conta se disponível (apenas para créditos)
+        if (transaction.type === 'CRÉDITO' && beneficiaryName) {
+          pdf.setFont('helvetica', 'italic');
+          pdf.setFontSize(10);
+          pdf.setTextColor(100, 100, 100);
+          pdf.text(`Conta: ${beneficiaryName}`, margin, yPosition);
+          pdf.setFontSize(11);
+          pdf.setTextColor(0, 0, 0);
+          yPosition += 6;
+        }
+        
+        yPosition += 5;
+      }
+
+      // Se não tiver rawExtrato, usar dados básicos da transação
+      if (!rawPayer && !rawBeneficiary) {
+        // Determinar qual parte mostrar baseado no tipo de transação
+        const sectionTitle = transaction.type === 'CRÉDITO' ? 'BENEFICIÁRIO' : 'PAGADOR';
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.text(sectionTitle, margin, yPosition);
+        yPosition += 8;
+        
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'normal');
+        
+        // Nome do Cliente
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Nome:', margin, yPosition);
+        pdf.setFont('helvetica', 'normal');
+        const clientName = transaction.client || 'Não informado';
+        pdf.text(clientName, margin + 30, yPosition);
+        yPosition += 8;
+
+        // Documento
+        if (transaction.document) {
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Documento:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(formatDocument(transaction.document), margin + 40, yPosition);
+          yPosition += 8;
+        }
+        
+        // Nome da conta beneficiária (apenas para créditos)
+        if (transaction.type === 'CRÉDITO' && beneficiaryName) {
+          pdf.setFont('helvetica', 'italic');
+          pdf.setFontSize(10);
+          pdf.setTextColor(100, 100, 100);
+          pdf.text(`Conta: ${beneficiaryName}`, margin, yPosition);
+          pdf.setFontSize(11);
+          pdf.setTextColor(0, 0, 0);
+          yPosition += 6;
+        }
+      }
+
+      // Descrição
+      if (transaction.descCliente) {
+        yPosition += 5;
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Descrição:', margin, yPosition);
+        yPosition += 6;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(10);
+        
+        // Quebrar descrição em múltiplas linhas se necessário
+        const maxWidth = pageWidth - (margin * 2);
+        const descLines = pdf.splitTextToSize(transaction.descCliente, maxWidth);
+        pdf.text(descLines, margin, yPosition);
+        yPosition += (descLines.length * 5);
+        pdf.setFontSize(11);
+      }
+
+      // === RODAPÉ ===
+      yPosition = pageHeight - 30;
+      pdf.setDrawColor(200, 200, 200);
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(9);
+      pdf.setTextColor(150, 150, 150);
+      pdf.setFont('helvetica', 'italic');
+      pdf.text(
+        'Este é um comprovante gerado automaticamente pelo sistema CORPX Banking.',
+        pageWidth / 2,
+        yPosition,
+        { align: 'center' }
+      );
+      yPosition += 5;
+      pdf.text(
+        `Documento gerado em: ${new Date().toLocaleString('pt-BR')}`,
+        pageWidth / 2,
+        yPosition,
+        { align: 'center' }
+      );
+
+      // Nome do arquivo (sanitizar para evitar caracteres inválidos)
+      const date = new Date(transaction.dateTime);
+      const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+      const timeStr = date.toTimeString().split(' ')[0].replace(/:/g, '-'); // HH-MM-SS
+      const codeStr = (transaction.code || transaction.id || 'sem-codigo').replace(/[^a-zA-Z0-9]/g, '_');
+      const fileName = `comprovante_corpx_${dateStr}_${timeStr}_${codeStr}.pdf`;
+
+      // Salvar PDF
+      pdf.save(fileName);
+
+      toast.success("Comprovante exportado com sucesso!", {
+        description: `Arquivo: ${fileName}`,
+        duration: 3000,
+      });
+    } catch (error: any) {
+      console.error('[CORPX-PDF] Erro ao gerar comprovante:', error);
+      toast.error("Erro ao gerar comprovante", {
+        description: error.message || "Tente novamente",
+        duration: 4000,
+      });
+    }
   };
 
   // ✅ Formatar data (dados já processados do backend)
@@ -1068,8 +1493,9 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
           <Button
             variant="outline"
             size="sm"
-            onClick={() => loadCorpXTransactions(undefined, undefined, currentPage, undefined, filtersAppliedToAPI)}
+            onClick={() => loadCorpXTransactions(undefined, undefined, currentPage, undefined, filtersAppliedToAPI, true)}
             disabled={isLoading}
+            title="Atualizar e manter transações em cache"
           >
             <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
           </Button>
@@ -1238,6 +1664,9 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                   className="pl-10 h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
                 />
               </div>
+              <p className="text-xs text-muted-foreground">
+                EndToEnd (E...) tem prioridade sobre busca textual
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -1245,12 +1674,15 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
               <Input
                 type="number"
                 step="0.01"
-                placeholder="0.00"
+                placeholder="0.00 ou -385.95 (aceita negativos)"
                 value={specificAmount}
                 onChange={(e) => setSpecificAmount(e.target.value)}
                 disabled={isLoading}
                 className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
               />
+              <p className="text-xs text-muted-foreground">
+                Aceita valores negativos para buscar débitos específicos
+              </p>
             </div>
           </div>
 
@@ -1261,12 +1693,17 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
               <Input
                 type="number"
                 step="0.01"
-                placeholder="0.00"
+                placeholder="0.00 ou -5000 (aceita negativos)"
                 value={minAmount}
                 onChange={(e) => setMinAmount(e.target.value)}
                 disabled={isLoading || (specificAmount && specificAmount.trim() !== '')}
                 className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
               />
+              {specificAmount && specificAmount.trim() !== '' && (
+                <p className="text-xs text-yellow-600">
+                  Desabilitado quando valor específico está preenchido
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -1274,12 +1711,17 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
               <Input
                 type="number"
                 step="0.01"
-                placeholder="0.00"
+                placeholder="0.00 ou -100 (aceita negativos)"
                 value={maxAmount}
                 onChange={(e) => setMaxAmount(e.target.value)}
                 disabled={isLoading || (specificAmount && specificAmount.trim() !== '')}
                 className="h-12 rounded-xl border-border hover:border-purple-500 transition-colors bg-input"
               />
+              {specificAmount && specificAmount.trim() !== '' && (
+                <p className="text-xs text-yellow-600">
+                  Desabilitado quando valor específico está preenchido
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -1356,7 +1798,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
               Limpar
             </Button>
             <Button 
-              onClick={() => loadCorpXTransactions(undefined, undefined, currentPage, undefined, filtersAppliedToAPI)} 
+              onClick={() => loadCorpXTransactions(undefined, undefined, currentPage, undefined, filtersAppliedToAPI, true)} 
               variant="outline" 
               disabled={isLoading}
               className="rounded-xl px-6 py-3 font-semibold border-border hover:border-purple-500 transition-colors"
@@ -1589,7 +2031,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
               <AlertCircle className="h-12 w-12 mx-auto text-red-500 mb-4" />
               <h3 className="text-lg font-semibold text-card-foreground mb-2">Erro ao carregar extrato</h3>
               <p className="text-muted-foreground mb-4">{error}</p>
-              <Button onClick={() => loadCorpXTransactions(undefined, undefined, 1, undefined, filtersAppliedToAPI)} variant="outline">
+              <Button onClick={() => loadCorpXTransactions(undefined, undefined, 1, undefined, filtersAppliedToAPI, true)} variant="outline">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Tentar novamente
               </Button>
@@ -1884,10 +2326,23 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Detalhes da Transação CORPX
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Detalhes da Transação CORPX
+              </DialogTitle>
+              {selectedTransaction && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportComprovantePDF(selectedTransaction)}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Exportar Comprovante PDF
+                </Button>
+              )}
+            </div>
           </DialogHeader>
           {selectedTransaction && (() => {
             const beneficiaryDocDigits = (selectedTransaction.beneficiaryDocument || selectedTransaction.document || '').replace(/\D/g, '');
