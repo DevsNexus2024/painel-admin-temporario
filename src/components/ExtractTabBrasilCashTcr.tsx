@@ -555,7 +555,7 @@ export default function ExtractTabBrasilCashTcr() {
     }
     
     // ✅ Converter para formato MovimentoExtrato esperado pelo modal (IGUAL CorpX TCR)
-    let extractRecord = {
+    let extractRecord: any = {
       id: transaction.transactionId,
       dateTime: transaction.createdAt,
       value: parseFloat(transaction.amount),
@@ -572,8 +572,17 @@ export default function ExtractTabBrasilCashTcr() {
       descricaoOperacao: `BrasilCash TCR - ${transaction.type === 'FUNDING' 
         ? (transaction.payerName || 'N/A')
         : (transaction.payeeName || 'N/A')}`,
-      _original: transaction
+      status: transaction.status, // ✅ Incluir status da transação
+      _original: transaction // ✅ Preservar dados originais para extração de status
     };
+    
+    // ✅ Garantir que o status está presente no extractRecord (prioridade: status direto > _original)
+    if (!extractRecord.status && extractRecord._original) {
+      extractRecord.status = extractRecord._original.status || 
+                            extractRecord._original.pixStatus || 
+                            extractRecord._original.rawWebhook?.status ||
+                            null;
+    }
     
     // ✅ Buscar id_usuario automaticamente via endtoend (IGUAL CorpX TCR)
     try {

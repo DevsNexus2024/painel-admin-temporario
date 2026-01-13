@@ -713,6 +713,82 @@ export default function ExtractTabTCR() {
     }).format(Math.abs(value));
   };
 
+  // ✅ Formatar status da transação com badge colorido
+  const formatStatus = (status: string | undefined | null): JSX.Element | null => {
+    if (!status) return null;
+    
+    const statusUpper = String(status).toUpperCase();
+    
+    // Mapear status para cores e labels
+    const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string }> = {
+      'SUCCESS': {
+        label: 'Sucesso',
+        variant: 'default',
+        className: 'bg-green-100 text-green-800 border-green-200'
+      },
+      'COMPLETE': {
+        label: 'Completo',
+        variant: 'default',
+        className: 'bg-green-100 text-green-800 border-green-200'
+      },
+      'COMPLETED': {
+        label: 'Completo',
+        variant: 'default',
+        className: 'bg-green-100 text-green-800 border-green-200'
+      },
+      'PENDING': {
+        label: 'Pendente',
+        variant: 'secondary',
+        className: 'bg-yellow-100 text-yellow-800 border-yellow-200'
+      },
+      'PROCESSING': {
+        label: 'Processando',
+        variant: 'secondary',
+        className: 'bg-blue-100 text-blue-800 border-blue-200'
+      },
+      'FAILED': {
+        label: 'Falhou',
+        variant: 'destructive',
+        className: 'bg-red-100 text-red-800 border-red-200'
+      },
+      'ERROR': {
+        label: 'Erro',
+        variant: 'destructive',
+        className: 'bg-red-100 text-red-800 border-red-200'
+      },
+      'CANCELLED': {
+        label: 'Cancelado',
+        variant: 'outline',
+        className: 'bg-gray-100 text-gray-800 border-gray-200'
+      },
+      'CANCELED': {
+        label: 'Cancelado',
+        variant: 'outline',
+        className: 'bg-gray-100 text-gray-800 border-gray-200'
+      },
+      'UNKNOWN': {
+        label: 'Desconhecido',
+        variant: 'outline',
+        className: 'bg-gray-100 text-gray-600 border-gray-200'
+      }
+    };
+
+    const config = statusConfig[statusUpper] || {
+      label: statusUpper,
+      variant: 'outline' as const,
+      className: 'bg-gray-100 text-gray-600 border-gray-200'
+    };
+    
+    return (
+      <Badge 
+        variant={config.variant}
+        className={`text-xs font-medium ${config.className}`}
+      >
+        {config.label}
+      </Badge>
+    );
+  };
+
   // ✅ Formatar data (dados já processados do backend)
   const formatDate = (dateString: string) => {
     if (!dateString) return "Data inválida";
@@ -976,7 +1052,7 @@ export default function ExtractTabTCR() {
     event.stopPropagation();
     
     // ✅ Converter para formato MovimentoExtrato esperado pelo modal
-    const extractRecord = {
+    const extractRecord: any = {
       id: transaction.id,
       dateTime: transaction.dateTime,
       value: transaction.value,
@@ -986,8 +1062,18 @@ export default function ExtractTabTCR() {
       code: transaction.code,
       descCliente: transaction.descCliente,
       identified: transaction.identified || true,
-      descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente
+      descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente,
+      status: transaction.status, // ✅ Incluir status da transação
+      _original: transaction._original || transaction // ✅ Preservar dados originais para extração de status
     };
+    
+    // ✅ Garantir que o status está presente no extractRecord (prioridade: status direto > _original)
+    if (!extractRecord.status && extractRecord._original) {
+      extractRecord.status = extractRecord._original.pixStatus || 
+                            extractRecord._original.status || 
+                            extractRecord._original.rawWebhook?.status ||
+                            null;
+    }
     
     setSelectedCompensationRecord(extractRecord);
     setCompensationModalOpen(true);
@@ -1003,7 +1089,7 @@ export default function ExtractTabTCR() {
     event.stopPropagation();
     
     // ✅ Converter para formato MovimentoExtrato esperado pelo modal
-    let extractRecord = {
+    let extractRecord: any = {
       id: transaction.id,
       dateTime: transaction.dateTime,
       value: transaction.value,
@@ -1013,8 +1099,18 @@ export default function ExtractTabTCR() {
       code: transaction.code,
       descCliente: transaction.descCliente,
       identified: transaction.identified || true,
-      descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente
+      descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente,
+      status: transaction.status, // ✅ Incluir status da transação
+      _original: transaction._original || transaction // ✅ Preservar dados originais para extração de status
     };
+    
+    // ✅ Garantir que o status está presente no extractRecord (prioridade: status direto > _original)
+    if (!extractRecord.status && extractRecord._original) {
+      extractRecord.status = extractRecord._original.pixStatus || 
+                            extractRecord._original.status || 
+                            extractRecord._original.rawWebhook?.status ||
+                            null;
+    }
     
     // ✅ Buscar id_usuario automaticamente via endtoend (silencioso - sem toast de loading)
     try {
@@ -1604,6 +1700,7 @@ export default function ExtractTabTCR() {
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Valor</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Reconciliation ID</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">End-to-End</th>
+                    <th className="text-center p-3 text-xs font-medium text-muted-foreground">Status</th>
                     {!bulkMode && <th className="w-24 p-3"></th>}
                   </tr>
                 </thead>
@@ -1653,22 +1750,15 @@ export default function ExtractTabTCR() {
                             </div>
                       </td>
                       <td className="p-3">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            {tx.type === 'CRÉDITO' ? (
-                              <ArrowDownCircle className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <ArrowUpCircle className="h-4 w-4 text-red-500" />
-                            )}
-                            <span className="text-sm">
-                              {tx.type === 'CRÉDITO' ? 'Recebimento' : 'Envio'}
-                            </span>
-                          </div>
-                          <div className="mt-1">
-                            <Badge className="bg-green-100 text-green-800 border-green-200 text-xs">
-                              {tx.status || 'Completo'}
-                            </Badge>
-                          </div>
+                        <div className="flex items-center gap-2">
+                          {tx.type === 'CRÉDITO' ? (
+                            <ArrowDownCircle className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <ArrowUpCircle className="h-4 w-4 text-red-500" />
+                          )}
+                          <span className="text-sm">
+                            {tx.type === 'CRÉDITO' ? 'Recebimento' : 'Envio'}
+                          </span>
                         </div>
                       </td>
                       <td className="p-3">
@@ -1712,6 +1802,10 @@ export default function ExtractTabTCR() {
                           {tx.code ? `${tx.code.substring(0, 20)}...` : '-'}
                             </div>
                       </td>
+                      {/* ✅ Coluna de Status */}
+                      <td className="p-3 text-center">
+                        {formatStatus(tx.status) || formatStatus('COMPLETE')}
+                      </td>
                       {!bulkMode && (
                         <td className="p-3">
                           {tx.type === 'DÉBITO' && (
@@ -1754,7 +1848,7 @@ export default function ExtractTabTCR() {
                       
                       return (
                         <tr className="bg-muted/5 dark:bg-muted/5 border-b border-border/50">
-                          <td colSpan={bulkMode ? 9 : 8} className="p-0">
+                          <td colSpan={bulkMode ? 10 : 9} className="p-0">
                             <div className="p-6 space-y-4">
                               <div className="flex items-center justify-between mb-4">
                                 <h4 className="text-sm font-semibold text-green-600">Detalhes da Transação</h4>

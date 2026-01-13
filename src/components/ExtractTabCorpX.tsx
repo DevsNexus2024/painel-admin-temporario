@@ -177,6 +177,12 @@ export default function ExtractTabCorpX() {
       || transaction.rawWebhook?.rawExtrato
       || null;
 
+    // ✅ Extrair status da transação (prioridade: pixStatus > rawWebhook.status)
+    const status = transaction.pixStatus 
+      || transaction.rawWebhook?.status 
+      || transaction.status 
+      || 'UNKNOWN';
+
     return {
       id: (transaction.id ?? transaction.nrMovimento ?? transaction.idEndToEnd ?? Date.now()).toString(),
       dateTime: transactionDateTime,
@@ -191,6 +197,7 @@ export default function ExtractTabCorpX() {
       identified: Boolean(fallbackClient),
       descricaoOperacao: description,
       rawExtrato,
+      status, // ✅ Adicionar status ao objeto retornado
       _original: transaction,
     };
   };
@@ -909,6 +916,63 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       style: 'currency',
       currency: 'BRL',
     }).format(Math.abs(value));
+  };
+
+  // ✅ Formatar status da transação com badge colorido
+  const formatStatus = (status: string | undefined | null): JSX.Element | null => {
+    if (!status) return null;
+    
+    const statusUpper = String(status).toUpperCase();
+    
+    // Mapear status para cores e labels
+    const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string }> = {
+      'SUCCESS': {
+        label: 'Sucesso',
+        variant: 'default',
+        className: 'bg-green-100 text-green-800 border-green-200'
+      },
+      'PENDING': {
+        label: 'Pendente',
+        variant: 'secondary',
+        className: 'bg-yellow-100 text-yellow-800 border-yellow-200'
+      },
+      'PROCESSING': {
+        label: 'Processando',
+        variant: 'secondary',
+        className: 'bg-blue-100 text-blue-800 border-blue-200'
+      },
+      'FAILED': {
+        label: 'Falhou',
+        variant: 'destructive',
+        className: 'bg-red-100 text-red-800 border-red-200'
+      },
+      'ERROR': {
+        label: 'Erro',
+        variant: 'destructive',
+        className: 'bg-red-100 text-red-800 border-red-200'
+      },
+      'CANCELLED': {
+        label: 'Cancelado',
+        variant: 'outline',
+        className: 'bg-gray-100 text-gray-800 border-gray-200'
+      },
+      'UNKNOWN': {
+        label: 'Desconhecido',
+        variant: 'outline',
+        className: 'bg-gray-100 text-gray-600 border-gray-200'
+      }
+    };
+
+    const config = statusConfig[statusUpper] || statusConfig['UNKNOWN'];
+    
+    return (
+      <Badge 
+        variant={config.variant}
+        className={`text-xs font-medium ${config.className}`}
+      >
+        {config.label}
+      </Badge>
+    );
   };
 
   // ✅ Exportar comprovante em PDF (apenas informações relevantes para cliente)
@@ -2058,6 +2122,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                         <TableHead className="font-semibold text-card-foreground py-3 w-[180px]">Documento Beneficiário</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[200px]">Descrição</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Código (End-to-End)</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[120px] text-center">Status</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[100px] text-center">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -2148,6 +2213,11 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                             </div>
                           </TableCell>
                           
+                          {/* ✅ Coluna de Status */}
+                          <TableCell className="py-3 text-center">
+                            {formatStatus(transaction.status)}
+                          </TableCell>
+                          
                           {/* ✅ Coluna de Ações - Botão +OTC */}
                           <TableCell className="py-3">
                             <div className="flex items-center justify-center">
@@ -2208,9 +2278,12 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                         <span className="text-xs text-muted-foreground">
                           {formatDate(transaction.dateTime)}
                         </span>
-                        <Badge className="bg-purple-50 text-purple-700 border-purple-200 rounded-full px-2 py-1 text-xs font-semibold">
-                          CORPX
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          {formatStatus(transaction.status)}
+                          <Badge className="bg-purple-50 text-purple-700 border-purple-200 rounded-full px-2 py-1 text-xs font-semibold">
+                            CORPX
+                          </Badge>
+                        </div>
                       </div>
                       
                       <div className="flex items-center justify-between mb-3">

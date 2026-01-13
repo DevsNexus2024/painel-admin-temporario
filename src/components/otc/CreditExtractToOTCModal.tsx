@@ -59,6 +59,10 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
     status: 'checking' | 'success' | 'error' | 'duplicate' | null;
     message: string;
   }>({ status: null, message: '' });
+  
+  // ✅ Estados para validação de status
+  const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   const handleSelectClient = (client: OTCClient) => {
     setSelectedClient(client);
@@ -96,6 +100,21 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         setShowConfirmation(false);
         setDuplicateInfo(null);
         setVerificationResult({ status: null, message: '' });
+        
+        // ✅ EXTRAIR E VALIDAR STATUS DA TRANSAÇÃO
+        const status = extractTransactionStatus();
+        setTransactionStatus(status);
+        
+        if (status) {
+          const validation = validateTransactionStatus(status);
+          if (!validation.isValid) {
+            setStatusError(validation.error);
+          } else {
+            setStatusError(null);
+          }
+        } else {
+          setStatusError(null);
+        }
 
         // 🚨 VERIFICAR DUPLICAÇÃO AUTOMATICAMENTE
         checkForDuplicate();
@@ -111,11 +130,51 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
       setShowConfirmation(false);
       setDuplicateInfo(null);
       setVerificationResult({ status: null, message: '' });
+      setTransactionStatus(null);
+      setStatusError(null);
     }
 
     wasOpenRef.current = isOpen;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, recordKey]);
+
+  // ✅ FUNÇÃO PARA EXTRAIR STATUS DA TRANSAÇÃO
+  const extractTransactionStatus = (): string | null => {
+    if (!extractRecord?._original) return null;
+    
+    const original = extractRecord._original;
+    
+    // Prioridade: pixStatus > rawWebhook.status > status > Status > operation_status
+    const status = 
+      original.pixStatus ||
+      original.rawWebhook?.status ||
+      original.status ||
+      original.Status ||
+      original.operation_status ||
+      null;
+    
+    return status ? String(status).toUpperCase() : null;
+  };
+
+  // ✅ FUNÇÃO PARA VALIDAR STATUS DA TRANSAÇÃO
+  const validateTransactionStatus = (status: string | null): { isValid: boolean; error: string | null } => {
+    if (!status) {
+      // Se não há status, permitir (pode ser operação manual sem dados_extrato)
+      return { isValid: true, error: null };
+    }
+
+    const statusUpper = status.toUpperCase();
+    const statusFalha = ['FAILED', 'ERROR', 'REJECTED', 'CANCELLED', 'EXPIRED'];
+    
+    if (statusFalha.includes(statusUpper)) {
+      return {
+        isValid: false,
+        error: `Não é possível criar operação manual para transação com status ${statusUpper}. Transações com status de falha (FAILED, ERROR, REJECTED, CANCELLED, EXPIRED) não devem ser creditadas.`
+      };
+    }
+
+    return { isValid: true, error: null };
+  };
 
   // 🆕 FUNÇÃO PARA DETECTAR PROVIDER CORRETAMENTE
   const detectProvider = (): { provider: string; codigo: string } => {
@@ -362,6 +421,11 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
       newErrors.value = 'Valor deve ser positivo';
     }
 
+    // ✅ VALIDAR STATUS DA TRANSAÇÃO
+    if (statusError) {
+      newErrors.status = statusError;
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -404,7 +468,12 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
           hora: new Date(extractRecord.dateTime).toTimeString().split(' ')[0]
         };
         
-        console.log('🔧 [OTC-MODAL] Dados CorpX para backend:', { provider, dados_extrato });
+        // ✅ GARANTIR QUE STATUS ESTÁ PRESENTE NO dados_extrato
+        if (transactionStatus && !dados_extrato.status) {
+          dados_extrato.status = transactionStatus;
+        }
+        
+        console.log('🔧 [OTC-MODAL] Dados CorpX para backend:', { provider, dados_extrato, status: transactionStatus });
       } else if (provider === 'bitso') {
         // Para Bitso, garantir que endToEndId seja usado corretamente
         const endToEndId = extractRecord._original?.endToEndId || extractRecord.code;
@@ -422,6 +491,11 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
           id: transactionId,
           dateTime: extractRecord.dateTime
         };
+        
+        // ✅ GARANTIR QUE STATUS ESTÁ PRESENTE NO dados_extrato
+        if (transactionStatus && !dados_extrato.status) {
+          dados_extrato.status = transactionStatus;
+        }
       } else if (provider === 'bmp531') {
         dados_extrato = extractRecord._original || {
           codigoTransacao: extractRecord.code,
@@ -429,6 +503,11 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
           nsu: null,
           dtMovimento: extractRecord.dateTime
         };
+        
+        // ✅ GARANTIR QUE STATUS ESTÁ PRESENTE NO dados_extrato
+        if (transactionStatus && !dados_extrato.status) {
+          dados_extrato.status = transactionStatus;
+        }
       } else {
         // bmp274
         dados_extrato = extractRecord._original || {
@@ -437,6 +516,11 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
           nsu: null,
           dtMovimento: extractRecord.dateTime
         };
+        
+        // ✅ GARANTIR QUE STATUS ESTÁ PRESENTE NO dados_extrato
+        if (transactionStatus && !dados_extrato.status) {
+          dados_extrato.status = transactionStatus;
+        }
       }
 
       const operationData = {
@@ -466,8 +550,18 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
       });
       
       onClose(true); // 🚨 NOTIFICAR SUCESSO
-    } catch (error) {
+    } catch (error: any) {
       console.error('[OTC-MODAL] Erro ao criar operação:', error);
+      
+      // ✅ Tratar erro específico de status
+      if (error?.response?.data?.reason === 'status_not_success' || 
+          (error instanceof Error && error.message.includes('status'))) {
+        toast.error('Status de transação inválido', {
+          description: error?.response?.data?.message || error.message || 'Transação com status de falha não pode ser creditada'
+        });
+        setShowConfirmation(false);
+        return;
+      }
       
       // Mostrar erro específico de duplicação
       if (error instanceof Error && error.message.includes('já foi creditado')) {
@@ -476,7 +570,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         });
       } else {
         toast.error('Erro ao criar operação', {
-          description: 'Não foi possível processar a operação'
+          description: error?.response?.data?.message || error.message || 'Não foi possível processar a operação'
         });
       }
       
@@ -602,6 +696,27 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
               </Alert>
             )}
 
+            {/* ✅ ALERT DE STATUS DE FALHA */}
+            {statusError && (
+              <Alert className="border-red-200 bg-red-50">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800">
+                  <div className="space-y-2">
+                    <p className="font-medium">❌ Status de Transação Inválido</p>
+                    <p className="text-sm">{statusError}</p>
+                    {transactionStatus && (
+                      <p className="text-xs text-red-600 mt-2">
+                        Status atual: <strong>{transactionStatus}</strong>
+                      </p>
+                    )}
+                    <p className="text-xs text-red-600 mt-2">
+                      Esta operação será bloqueada. Apenas transações com status SUCCESS, COMPLETED, APPROVED ou CONFIRMED podem ser creditadas manualmente.
+                    </p>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* Informações do Registro do Extrato */}
             <Card className="bg-muted/30 border-border">
               <CardHeader>
@@ -653,6 +768,34 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                     {extractRecord.code}
                   </div>
                 </div>
+                {/* ✅ Exibir Status da Transação */}
+                {transactionStatus && (
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">
+                      Status da Transação
+                    </Label>
+                    <div className="mt-1">
+                      <Badge 
+                        variant={
+                          ['FAILED', 'ERROR', 'REJECTED', 'CANCELLED', 'EXPIRED'].includes(transactionStatus)
+                            ? 'destructive'
+                            : ['SUCCESS', 'COMPLETED', 'APPROVED', 'CONFIRMED'].includes(transactionStatus)
+                            ? 'default'
+                            : 'secondary'
+                        }
+                        className={
+                          ['FAILED', 'ERROR', 'REJECTED', 'CANCELLED', 'EXPIRED'].includes(transactionStatus)
+                            ? 'bg-red-100 text-red-800 border-red-200'
+                            : ['SUCCESS', 'COMPLETED', 'APPROVED', 'CONFIRMED'].includes(transactionStatus)
+                            ? 'bg-green-100 text-green-800 border-green-200'
+                            : 'bg-yellow-100 text-yellow-800 border-yellow-200'
+                        }
+                      >
+                        {transactionStatus}
+                      </Badge>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -875,11 +1018,12 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                   isCreating || 
                   extractRecord.type !== 'CRÉDITO' || 
                   verificationResult.status === 'duplicate' || 
-                  verificationResult.status === 'checking'
+                  verificationResult.status === 'checking' ||
+                  !!statusError // ✅ BLOQUEAR SE HOUVER ERRO DE STATUS
                 }
                 className={cn(
                   "transition-all",
-                  verificationResult.status === 'duplicate' || verificationResult.status === 'checking'
+                  verificationResult.status === 'duplicate' || verificationResult.status === 'checking' || statusError
                     ? "bg-gray-400 hover:bg-gray-400 cursor-not-allowed" 
                     : verificationResult.status === 'success'
                     ? "bg-green-600 hover:bg-green-700" 
@@ -887,7 +1031,9 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                 )}
               >
                 <Plus className="w-4 h-4 mr-2" />
-                {verificationResult.status === 'duplicate' 
+                {statusError
+                  ? 'Status Inválido'
+                  : verificationResult.status === 'duplicate' 
                   ? 'Já Creditado' 
                   : verificationResult.status === 'checking'
                   ? 'Verificando...'
