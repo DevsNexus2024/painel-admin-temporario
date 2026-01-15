@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
 import MoneyRainEffect from "@/components/MoneyRainEffect";
 import { useCorpX, CORPX_ACCOUNTS } from "@/contexts/CorpXContext";
-import CorpXService from "@/services/corpx";
+import CorpXService, { consultarTransacaoPorEndToEnd } from "@/services/corpx";
 import { useCorpxRealtime, CorpXTransactionPayload } from "@/hooks/useCorpxRealtime";
 
 // Componente completo para o Extrato CorpX (baseado no BMP 531)
@@ -133,6 +133,7 @@ export default function ExtractTabCorpX() {
   const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
   const [selectedExtractRecord, setSelectedExtractRecord] = useState<any>(null);
   const [creditedRecords, setCreditedRecords] = useState<Set<string>>(new Set());
+  const [isVerifyingTransaction, setIsVerifyingTransaction] = useState<string | null>(null); // ID da transação sendo verificada
 
   // ✅ Conversão de dados já processados do serviço CorpX
   const convertCorpXToStandardFormat = (transaction: any) => {
@@ -1415,9 +1416,98 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       });
       return;
     }
-    
-    setSelectedExtractRecord(transaction);
-    setCreditOTCModalOpen(true);
+
+    // Extrair endtoend da transação
+    const endtoend = transaction.code || 
+                     transaction._original?.endToEnd || 
+                     transaction._original?.idEndToEnd ||
+                     transaction._original?.endToEndId ||
+                     '';
+
+    if (!endtoend || endtoend.length < 10) {
+      toast.error('EndToEnd não encontrado', {
+        description: 'Não foi possível identificar o código EndToEnd desta transação'
+      });
+      return;
+    }
+
+    // Obter tax_document da conta selecionada ou do beneficiário da transação
+    let taxDocument = selectedAccount.cnpj;
+
+    // ✅ Se "todas contas" estiver selecionada, usar o documento do beneficiário da transação
+    if (!taxDocument || taxDocument === 'ALL') {
+      // Extrair documento do beneficiário da transação
+      taxDocument = transaction.beneficiaryDocument || 
+                    transaction._original?.beneficiaryDocument ||
+                    transaction._original?.beneficiary_document ||
+                    transaction._original?.creditorDocument ||
+                    transaction._original?.documentoBeneficiario ||
+                    '';
+      
+      if (!taxDocument) {
+        toast.error('Documento não encontrado', {
+          description: 'Não foi possível identificar o documento do beneficiário desta transação. Selecione uma conta específica ou verifique os dados da transação.'
+        });
+        return;
+      }
+    }
+
+    // ✅ Limpar formatação do tax_document (remover pontos, barras, hífens)
+    const taxDocumentLimpo = taxDocument.replace(/\D/g, '');
+
+    if (!taxDocumentLimpo || taxDocumentLimpo.length < 11) {
+      toast.error('Documento inválido', {
+        description: `Documento "${taxDocument}" é inválido. Deve ter pelo menos 11 dígitos (CPF) ou 14 dígitos (CNPJ).`
+      });
+      return;
+    }
+
+    // Marcar que está verificando esta transação
+    setIsVerifyingTransaction(transaction.id);
+
+    try {
+      // 🔍 Verificar transação na API antes de permitir operação
+      toast.loading('Verificando transação...', { id: 'verify-transaction' });
+      
+      const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
+      
+      toast.dismiss('verify-transaction');
+
+      if (!resultado.sucesso) {
+        toast.error('Erro na verificação', {
+          description: resultado.mensagem,
+          duration: 5000
+        });
+        return;
+      }
+
+      if (!resultado.permiteOperacao) {
+        toast.error('Operação não permitida', {
+          description: resultado.mensagem,
+          duration: 6000
+        });
+        return;
+      }
+
+      // ✅ Transação verificada com sucesso - mostrar feedback positivo
+      toast.success('Transação verificada!', {
+        description: `Status: ${resultado.status?.toUpperCase()} - Operação autorizada`,
+        duration: 3000
+      });
+
+      // Abrir modal para creditar
+      setSelectedExtractRecord(transaction);
+      setCreditOTCModalOpen(true);
+
+    } catch (error: any) {
+      toast.dismiss('verify-transaction');
+      toast.error('Erro ao verificar transação', {
+        description: error.message || 'Tente novamente',
+        duration: 5000
+      });
+    } finally {
+      setIsVerifyingTransaction(null);
+    }
   };
 
   const handleCloseCreditOTCModal = (wasSuccessful?: boolean) => {
@@ -2226,19 +2316,26 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                                   variant="outline"
                                   size="sm"
                                   onClick={(e) => handleCreditToOTC(transaction, e)}
-                                  disabled={isRecordCredited(transaction)}
+                                  disabled={isRecordCredited(transaction) || isVerifyingTransaction === transaction.id}
                                   className={cn(
                                     "h-7 px-2 text-xs transition-all",
                                     isRecordCredited(transaction)
                                       ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                      : isVerifyingTransaction === transaction.id
+                                      ? "bg-blue-50 text-blue-600 border-blue-200"
                                       : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
                                   )}
-                                  title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
+                                  title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : isVerifyingTransaction === transaction.id ? "Verificando transação..." : "Creditar para cliente OTC"}
                                 >
                                   {isRecordCredited(transaction) ? (
                                     <>
                                       <Check className="h-3 w-3 mr-1" />
                                       Creditado
+                                    </>
+                                  ) : isVerifyingTransaction === transaction.id ? (
+                                    <>
+                                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                      Verificando...
                                     </>
                                   ) : (
                                     <>
@@ -2328,19 +2425,26 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                             variant="outline"
                             size="sm"
                             onClick={(e) => handleCreditToOTC(transaction, e)}
-                            disabled={isRecordCredited(transaction)}
+                            disabled={isRecordCredited(transaction) || isVerifyingTransaction === transaction.id}
                             className={cn(
                               "h-7 px-2 text-xs transition-all",
                               isRecordCredited(transaction)
                                 ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                : isVerifyingTransaction === transaction.id
+                                ? "bg-blue-50 text-blue-600 border-blue-200"
                                 : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
                             )}
-                            title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
+                            title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : isVerifyingTransaction === transaction.id ? "Verificando transação..." : "Creditar para cliente OTC"}
                           >
                             {isRecordCredited(transaction) ? (
                               <>
                                 <Check className="h-3 w-3 mr-1" />
                                 Creditado
+                              </>
+                            ) : isVerifyingTransaction === transaction.id ? (
+                              <>
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                Verificando...
                               </>
                             ) : (
                               <>

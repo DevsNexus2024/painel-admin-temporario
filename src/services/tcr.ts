@@ -39,6 +39,9 @@ const TCR_CONFIG = {
     consultarExtrato: '/api/corpx/account/extrato',
     criarConta: '/api/corpx/account/criar',
     
+    // 🔍 CONSULTA DE TRANSAÇÃO POR ENDTOEND
+    consultarTransacao: '/api/corpx/account/qtran',
+    
     // 🔑 CHAVES PIX (rotas corretas do backend)
     listarChavesPix: '/api/corpx/pix/chaves',
     criarChavePix: '/api/corpx/pix/chave',
@@ -534,6 +537,184 @@ export async function sincronizarExtratoTCR(params: CorpXSyncRequest): Promise<C
   } catch (error: any) {
     console.error('[TCR-SYNC] Erro ao sincronizar extrato:', error?.message || error);
     throw error;
+  }
+}
+
+// ==================== INTERFACE PARA CONSULTA DE TRANSAÇÃO ====================
+
+export interface ConsultarTransacaoRequest {
+  tax_document: string;
+  endtoend: string;
+}
+
+export interface ConsultarTransacaoResponse {
+  error: boolean;
+  message: string;
+  data?: {
+    ok: boolean;
+    data: {
+      cursor: string | null;
+      requests: Array<{
+        amount: number;
+        cashAmount: number;
+        cashierBankCode: string;
+        cashierType: string;
+        created: string;
+        description: string;
+        endToEndId: string;
+        externalId: string;
+        fee: number;
+        flow: 'in' | 'out';
+        id: string;
+        initiatorTaxId: string;
+        method: string;
+        priority: string;
+        receiverAccountNumber: string;
+        receiverAccountType: string;
+        receiverBankCode: string;
+        receiverBranchCode: string;
+        receiverKeyId: string;
+        receiverName: string;
+        receiverTaxId: string;
+        reconciliationId: string;
+        senderAccountNumber: string;
+        senderAccountType: string;
+        senderBankCode: string;
+        senderBranchCode: string;
+        senderName: string;
+        senderTaxId: string;
+        status: string;
+        tags: string[];
+        updated: string;
+      }>;
+    };
+    erro_code: string | null;
+    erro_message: string | null;
+  };
+}
+
+export interface VerificacaoTransacaoResult {
+  sucesso: boolean;
+  status?: string;
+  mensagem: string;
+  transacao?: ConsultarTransacaoResponse['data']['data']['requests'][0];
+  permiteOperacao: boolean;
+}
+
+/**
+ * 🔍 Consultar Transação por EndToEnd
+ * Endpoint: POST /api/corpx/account/qtran
+ * 
+ * Verifica o status de uma transação na API usando o endtoend
+ */
+export async function consultarTransacaoPorEndToEndTCR(
+  taxDocument: string,
+  endtoend: string
+): Promise<VerificacaoTransacaoResult> {
+  try {
+    console.log('[TCR-QTRAN] Consultando transação...', { taxDocument, endtoend: endtoend.substring(0, 20) + '...' });
+    
+    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const userToken = TOKEN_STORAGE.get();
+
+    if (!userToken) {
+      return {
+        sucesso: false,
+        mensagem: 'Token de autenticação não encontrado. Faça login novamente.',
+        permiteOperacao: false
+      };
+    }
+
+    // Limpar tax_document (apenas números)
+    const taxDocumentLimpo = taxDocument.replace(/\D/g, '');
+    
+    if (!taxDocumentLimpo || taxDocumentLimpo.length < 11) {
+      return {
+        sucesso: false,
+        mensagem: 'Documento fiscal inválido',
+        permiteOperacao: false
+      };
+    }
+
+    if (!endtoend || endtoend.length < 10) {
+      return {
+        sucesso: false,
+        mensagem: 'EndToEnd inválido ou muito curto',
+        permiteOperacao: false
+      };
+    }
+
+    const payload: ConsultarTransacaoRequest = {
+      tax_document: taxDocumentLimpo,
+      endtoend: endtoend.trim()
+    };
+
+    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.consultarTransacao}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const responseData = await response.json() as ConsultarTransacaoResponse;
+    console.log('[TCR-QTRAN] Resposta recebida:', responseData);
+
+    if (!response.ok || responseData.error) {
+      return {
+        sucesso: false,
+        mensagem: responseData.message || `Erro ao consultar transação: HTTP ${response.status}`,
+        permiteOperacao: false
+      };
+    }
+
+    // Verificar se encontrou a transação
+    const requests = responseData.data?.data?.requests || [];
+    
+    if (requests.length === 0) {
+      return {
+        sucesso: false,
+        mensagem: 'Transação não encontrada na API. O endtoend pode estar incorreto ou a transação não foi processada.',
+        permiteOperacao: false
+      };
+    }
+
+    // Pegar a primeira transação (geralmente só tem uma)
+    const transacao = requests[0];
+    const status = transacao.status?.toLowerCase();
+
+    // Verificar se o status permite operação
+    const statusPermitidos = ['success', 'completed', 'approved', 'confirmed'];
+    const permiteOperacao = statusPermitidos.includes(status);
+
+    if (permiteOperacao) {
+      return {
+        sucesso: true,
+        status: transacao.status,
+        mensagem: `Transação verificada com sucesso! Status: ${transacao.status.toUpperCase()}`,
+        transacao,
+        permiteOperacao: true
+      };
+    } else {
+      return {
+        sucesso: true,
+        status: transacao.status,
+        mensagem: `Transação encontrada, porém com status "${transacao.status.toUpperCase()}". Operações de crédito/compensação não são permitidas para transações com este status.`,
+        transacao,
+        permiteOperacao: false
+      };
+    }
+
+  } catch (error: any) {
+    console.error('[TCR-QTRAN] Erro ao consultar transação:', error);
+    
+    return {
+      sucesso: false,
+      mensagem: `Erro ao consultar transação: ${error.message || 'Erro de conexão'}`,
+      permiteOperacao: false
+    };
   }
 }
 
@@ -1105,6 +1286,9 @@ export const TCRService = {
   listarTransacoes: listarTransacoesTCR,
   sincronizarExtrato: sincronizarExtratoTCR,
   criarConta: criarContaTCR,
+  
+  // 🔍 VERIFICAÇÃO DE TRANSAÇÃO
+  consultarTransacaoPorEndToEnd: consultarTransacaoPorEndToEndTCR,
   
   // 🔑 CHAVES PIX
   listarChavesPix: listarChavesPixTCR,

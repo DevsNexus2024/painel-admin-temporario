@@ -16,7 +16,6 @@ import { CompensationData, useCompensation, CompensationService } from "@/servic
 import { useCompensacaoBRBTC, validarElegibilidadeBRBTC } from "@/services/compensacao-brbtc";
 import { TcrSaldosService, compararSaldos, type SaldosComparacao, type UsuarioSaldo, type SaldoBrbtc } from "@/services/tcrSaldos";
 import { TOKEN_STORAGE } from "@/config/api";
-import { cn } from "@/lib/utils";
 import DiagnosticoDepositoSimplificado from "./DiagnosticoDepositoSimplificado";
 import DiagnosticoDeposito from "./DiagnosticoDeposito";
 import DuplicataManagerModal from "./DuplicataManagerModal";
@@ -60,11 +59,10 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
   const [idUsuarioManual, setIdUsuarioManual] = useState<string>('');
   const [usarIdManual, setUsarIdManual] = useState(false);
   
-  // ✅ Estados para validação de status
+  // ✅ Estado para exibição de status (apenas visual, sem bloqueio)
   const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
 
-  // ✅ FUNÇÃO PARA EXTRAIR STATUS DA TRANSAÇÃO
+  // ✅ FUNÇÃO PARA EXTRAIR STATUS DA TRANSAÇÃO (apenas para exibição)
   const extractTransactionStatus = (): string | null => {
     if (!extractRecord) return null;
     
@@ -77,33 +75,6 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       null;
     
     return status ? String(status).toUpperCase() : null;
-  };
-
-  // ✅ FUNÇÃO PARA VALIDAR STATUS DA TRANSAÇÃO
-  const validateTransactionStatus = (status: string | null): { isValid: boolean; error: string | null } => {
-    if (!status) {
-      // Se não há status, permitir (pode ser operação manual sem status definido)
-      return { isValid: true, error: null };
-    }
-
-    const statusUpper = status.toUpperCase();
-    const statusSucesso = ['SUCCESS', 'COMPLETE', 'COMPLETED', 'APPROVED', 'CONFIRMED'];
-    const statusFalha = ['FAILED', 'ERROR', 'REJECTED', 'CANCELLED', 'CANCELED', 'EXPIRED'];
-    
-    if (statusFalha.includes(statusUpper)) {
-      return {
-        isValid: false,
-        error: `Não é possível realizar compensação manual para depósito com status ${statusUpper}. Depósitos com status de falha (FAILED, ERROR, REJECTED, CANCELLED, EXPIRED) não devem ser compensados.`
-      };
-    }
-
-    // Se for status de sucesso ou pendente, permitir
-    if (statusSucesso.includes(statusUpper) || statusUpper === 'PENDING') {
-      return { isValid: true, error: null };
-    }
-
-    // Status desconhecido: permitir com aviso
-    return { isValid: true, error: null };
   };
 
   // Inicializar dados do formulário quando o modal abrir
@@ -143,20 +114,9 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       setIdUsuarioManual('');
       setUsarIdManual(false);
       
-      // ✅ EXTRAIR E VALIDAR STATUS DA TRANSAÇÃO
+      // ✅ EXTRAIR STATUS DA TRANSAÇÃO (apenas para exibição)
       const status = extractTransactionStatus();
       setTransactionStatus(status);
-      
-      if (status) {
-        const validation = validateTransactionStatus(status);
-        if (!validation.isValid) {
-          setStatusError(validation.error);
-        } else {
-          setStatusError(null);
-        }
-      } else {
-        setStatusError(null);
-      }
     }
   }, [isOpen, extractRecord]);
 
@@ -649,19 +609,6 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       return;
     }
 
-    // ✅ VALIDAR STATUS ANTES DE PERMITIR COMPENSAÇÃO
-    const status = extractTransactionStatus();
-    if (status) {
-      const validation = validateTransactionStatus(status);
-      if (!validation.isValid) {
-        toast.error('Status de depósito inválido', {
-          description: validation.error || 'Depósito com status de falha não pode ser compensado',
-          duration: 6000
-        });
-        return;
-      }
-    }
-
     // ✅ Verificar se temos ID do usuário (automático ou manual)
     const idUsuario = obterIdUsuario();
     if (!idUsuario) {
@@ -688,35 +635,8 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
       return;
     }
 
-    // ✅ VALIDAÇÃO ADICIONAL DE STATUS ANTES DE ABRIR MODAL DE CONFIRMAÇÃO
-    const statusAtual = extractTransactionStatus();
-    if (statusAtual) {
-      const validacaoStatus = validateTransactionStatus(statusAtual);
-      if (!validacaoStatus.isValid) {
-        toast.error('Status de depósito inválido', {
-          description: validacaoStatus.error || 'Depósito com status de falha não pode ser compensado',
-          duration: 6000
-        });
-        return;
-      }
-    }
-
     // Abrir modal de confirmação personalizado
     setConfirmAction(() => async () => {
-      // ✅ VALIDAÇÃO FINAL DE STATUS ANTES DE EXECUTAR
-      const statusFinal = extractTransactionStatus();
-      if (statusFinal) {
-        const validacaoFinal = validateTransactionStatus(statusFinal);
-        if (!validacaoFinal.isValid) {
-          toast.error('Status de depósito inválido', {
-            description: validacaoFinal.error || 'Depósito com status de falha não pode ser compensado',
-            duration: 6000
-          });
-          setShowConfirmModal(false);
-          return;
-        }
-      }
-      
       // Executar compensação com o registro que contém o ID correto
       const sucesso = await executarCompensacaoBRBTC(extractRecordComId);
       
@@ -809,26 +729,6 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
           </Card>
         )}
 
-        {/* ✅ ALERT DE STATUS DE FALHA */}
-        {statusError && (
-          <Alert className="border-red-200 bg-red-50 mt-4">
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-            <AlertDescription className="text-red-800">
-              <div className="space-y-2">
-                <p className="font-medium">❌ Status de Depósito Inválido</p>
-                <p className="text-sm">{statusError}</p>
-                {transactionStatus && (
-                  <p className="text-xs text-red-600 mt-2">
-                    Status atual: <strong>{transactionStatus}</strong>
-                  </p>
-                )}
-                <p className="text-xs text-red-600 mt-2">
-                  A compensação manual será bloqueada. Apenas depósitos com status SUCCESS, COMPLETE, APPROVED ou CONFIRMED podem ser compensados.
-                </p>
-              </div>
-            </AlertDescription>
-          </Alert>
-        )}
 
         {/* Conteúdo Principal */}
         <div className="flex-1 overflow-y-auto">
@@ -1355,29 +1255,17 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
               disabled={
                 isLoading || 
                 isLoadingBRBTC || 
-                obterIdUsuario() === 0 ||
-                !!statusError // ✅ BLOQUEAR SE HOUVER ERRO DE STATUS
+                obterIdUsuario() === 0
               }
-              className={cn(
-                "text-white",
-                statusError 
-                  ? "bg-gray-400 hover:bg-gray-400 cursor-not-allowed" 
-                  : "bg-green-600 hover:bg-green-700"
-              )}
-              title={statusError ? statusError : 'Compensar depósito manualmente'}
+              className="bg-green-600 hover:bg-green-700 text-white"
+              title="Compensar depósito manualmente"
             >
               {isLoadingBRBTC ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : statusError ? (
-                <AlertTriangle className="h-4 w-4 mr-2" />
               ) : (
                 <CheckCircle className="h-4 w-4 mr-2" />
               )}
-              {isLoadingBRBTC 
-                ? 'Processando...' 
-                : statusError 
-                ? 'Status Inválido' 
-                : 'Compensação Saldo Real'}
+              {isLoadingBRBTC ? 'Processando...' : 'Compensação Saldo Real'}
             </Button>
           )}
         </DialogFooter>
@@ -1398,24 +1286,6 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
           
           {extractRecord && (
             <div className="space-y-4">
-              {/* ✅ ALERT DE STATUS INVÁLIDO NO MODAL DE CONFIRMAÇÃO */}
-              {statusError && (
-                <Alert className="border-red-200 bg-red-50">
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
-                  <AlertDescription className="text-red-800">
-                    <div className="space-y-2">
-                      <p className="font-medium">❌ Status de Depósito Inválido</p>
-                      <p className="text-sm">{statusError}</p>
-                      {transactionStatus && (
-                        <p className="text-xs text-red-600 mt-2">
-                          Status atual: <strong>{transactionStatus}</strong>
-                        </p>
-                      )}
-                    </div>
-                  </AlertDescription>
-                </Alert>
-              )}
-              
               <Alert className="border-orange-200 bg-orange-50">
                 <AlertTriangle className="h-4 w-4 text-orange-600" />
                 <AlertDescription className="text-orange-800">
@@ -1452,14 +1322,9 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
             </Button>
             <Button 
               onClick={() => confirmAction && confirmAction()}
-              disabled={isLoadingBRBTC || !!statusError}
-              className={cn(
-                "text-white",
-                statusError 
-                  ? "bg-gray-400 hover:bg-gray-400 cursor-not-allowed" 
-                  : "bg-green-600 hover:bg-green-700"
-              )}
-              title={statusError ? statusError : 'Confirmar compensação'}
+              disabled={isLoadingBRBTC}
+              className="bg-green-600 hover:bg-green-700 text-white"
+              title="Confirmar compensação"
             >
               {isLoadingBRBTC ? (
                 <>

@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
 import { TCRVerificacaoService } from "@/services/tcrVerificacao";
+import { consultarTransacaoPorEndToEndTCR } from "@/services/tcr";
 
 // Componente completo para o Extrato TCR (baseado no Bitso)
 export default function ExtractTabTCR() {
@@ -83,6 +84,7 @@ export default function ExtractTabTCR() {
   // ✅ Estados para funcionalidade Compensação Inteligente (MODAL COMPLETO)
   const [compensationModalOpen, setCompensationModalOpen] = useState(false);
   const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<any>(null);
+  const [isVerifyingTransaction, setIsVerifyingTransaction] = useState<string | null>(null); // ID da transação sendo verificada
   
   // ✅ Estados para sincronização de extrato
   const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
@@ -1087,53 +1089,101 @@ export default function ExtractTabTCR() {
 
   const handleVerificarTransacao = async (transaction: any, event: React.MouseEvent) => {
     event.stopPropagation();
-    
-    // ✅ Converter para formato MovimentoExtrato esperado pelo modal
-    let extractRecord: any = {
-      id: transaction.id,
-      dateTime: transaction.dateTime,
-      value: transaction.value,
-      type: transaction.type,
-      client: transaction.client,
-      document: transaction.document || '',
-      code: transaction.code,
-      descCliente: transaction.descCliente,
-      identified: transaction.identified || true,
-      descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente,
-      status: transaction.status, // ✅ Incluir status da transação
-      _original: transaction._original || transaction // ✅ Preservar dados originais para extração de status
-    };
-    
-    // ✅ Garantir que o status está presente no extractRecord (prioridade: status direto > _original)
-    if (!extractRecord.status && extractRecord._original) {
-      extractRecord.status = extractRecord._original.pixStatus || 
-                            extractRecord._original.status || 
-                            extractRecord._original.rawWebhook?.status ||
-                            null;
+
+    // Extrair endtoend da transação
+    const endtoend = transaction.code || 
+                     transaction._original?.endToEnd || 
+                     transaction._original?.idEndToEnd ||
+                     transaction._original?.endToEndId ||
+                     '';
+
+    if (!endtoend || endtoend.length < 10) {
+      toast.error('EndToEnd não encontrado', {
+        description: 'Não foi possível identificar o código EndToEnd desta transação'
+      });
+      return;
     }
-    
-    // ✅ Buscar id_usuario automaticamente via endtoend (silencioso - sem toast de loading)
+
+    // CNPJ fixo da TCR
+    const taxDocument = '53781325000115';
+
+    // Marcar que está verificando esta transação
+    setIsVerifyingTransaction(transaction.id);
+
     try {
-      const resultado = await TCRVerificacaoService.verificarTransacaoTCR(transaction);
+      // 🔍 Verificar transação na API antes de permitir operação
+      toast.loading('Verificando transação na API...', { id: 'verify-tcr-transaction' });
       
-      if (resultado.encontrou && resultado.id_usuario) {
-        // ✅ ENCONTROU! Modificar descCliente para incluir o ID do usuário
-        extractRecord.descCliente = `Usuario ${resultado.id_usuario}; ${extractRecord.descCliente}`;
-        // ✅ Toast silencioso apenas se encontrou (feedback positivo mínimo)
-        toast.success(`Usuário ID ${resultado.id_usuario} identificado`, {
-          duration: 3000
+      const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
+      
+      toast.dismiss('verify-tcr-transaction');
+
+      if (!resultadoApi.sucesso) {
+        toast.error('Erro na verificação', {
+          description: resultadoApi.mensagem,
+          duration: 5000
         });
+        return;
       }
-      // ✅ Não encontrou: não mostrar toast - o modal já indica que pode informar manualmente
-    } catch (error) {
-      console.error('[TCR-VERIFICACAO] Erro:', error);
-      // ✅ Apenas mostrar erro se for crítico - o modal permite entrada manual
-      // toast removido - erro não crítico, modal permite correção manual
+
+      if (!resultadoApi.permiteOperacao) {
+        toast.error('Operação não permitida', {
+          description: resultadoApi.mensagem,
+          duration: 6000
+        });
+        return;
+      }
+
+      // ✅ Transação verificada com sucesso - mostrar feedback positivo
+      toast.success('Transação verificada!', {
+        description: `Status: ${resultadoApi.status?.toUpperCase()} - Operação autorizada`,
+        duration: 3000
+      });
+
+      // ✅ Converter para formato MovimentoExtrato esperado pelo modal
+      let extractRecord: any = {
+        id: transaction.id,
+        dateTime: transaction.dateTime,
+        value: transaction.value,
+        type: transaction.type,
+        client: transaction.client,
+        document: transaction.document || '',
+        code: transaction.code,
+        descCliente: transaction.descCliente,
+        identified: transaction.identified || true,
+        descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente,
+        status: resultadoApi.status || transaction.status, // ✅ Usar status da API
+        _original: transaction._original || transaction
+      };
+      
+      // ✅ Buscar id_usuario automaticamente via endtoend
+      try {
+        const resultado = await TCRVerificacaoService.verificarTransacaoTCR(transaction);
+        
+        if (resultado.encontrou && resultado.id_usuario) {
+          // ✅ ENCONTROU! Modificar descCliente para incluir o ID do usuário
+          extractRecord.descCliente = `Usuario ${resultado.id_usuario}; ${extractRecord.descCliente}`;
+          toast.success(`Usuário ID ${resultado.id_usuario} identificado`, {
+            duration: 3000
+          });
+        }
+      } catch (error) {
+        console.error('[TCR-VERIFICACAO] Erro ao buscar usuário:', error);
+      }
+      
+      // ✅ Abrir o modal de compensação
+      setSelectedCompensationRecord(extractRecord);
+      setCompensationModalOpen(true);
+
+    } catch (error: any) {
+      toast.dismiss('verify-tcr-transaction');
+      toast.error('Erro ao verificar transação', {
+        description: error.message || 'Tente novamente',
+        duration: 5000
+      });
+    } finally {
+      setIsVerifyingTransaction(null);
     }
-    
-    // ✅ SEMPRE abrir o modal (com ou sem id_usuario encontrado)
-    setSelectedCompensationRecord(extractRecord);
-    setCompensationModalOpen(true);
   };
 
   // ✅ Carregar dados ao montar o componente - últimos 100 registros (sem filtro de data)
@@ -1335,11 +1385,20 @@ export default function ExtractTabTCR() {
 
             <div className="space-y-2">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tipo</label>
-              <Select value={transactionTypeFilter === 'todos' ? 'ALL' : (transactionTypeFilter === 'credito' ? 'FUNDING' : 'WITHDRAWAL')} onValueChange={(v: any) => {
-                if (v === 'ALL') setTransactionTypeFilter('todos');
-                else if (v === 'FUNDING') setTransactionTypeFilter('credito');
-                else setTransactionTypeFilter('debito');
-              }}>
+              <Select 
+                value={
+                  transactionTypeFilter === 'todos' 
+                    ? 'ALL' 
+                    : transactionTypeFilter === 'credito' 
+                    ? 'FUNDING' 
+                    : 'WITHDRAWAL'
+                } 
+                onValueChange={(v: any) => {
+                  if (v === 'ALL') setTransactionTypeFilter('todos');
+                  else if (v === 'FUNDING') setTransactionTypeFilter('credito');
+                  else setTransactionTypeFilter('debito');
+                }}
+              >
                 <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(34,197,94,0.6)]">
                   <SelectValue />
                 </SelectTrigger>
@@ -1827,13 +1886,25 @@ export default function ExtractTabTCR() {
                                   variant="outline"
                                   size="sm"
                               onClick={(e) => handleVerificarTransacao(tx, e)}
+                              disabled={isVerifyingTransaction === tx.id}
                       className={cn(
                                 "h-7 px-2 text-xs transition-all",
-                                "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300"
+                                isVerifyingTransaction === tx.id
+                                  ? "bg-blue-100 text-blue-600 border-blue-300"
+                                  : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300"
                       )}
                                 >
-                                  <DollarSign className="h-3 w-3 mr-1" />
-                                  Verificar
+                                  {isVerifyingTransaction === tx.id ? (
+                                    <>
+                                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                      Verificando...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <DollarSign className="h-3 w-3 mr-1" />
+                                      Verificar
+                                    </>
+                                  )}
                                 </Button>
                               )}
                         </td>
