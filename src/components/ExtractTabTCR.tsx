@@ -1087,10 +1087,80 @@ export default function ExtractTabTCR() {
     toast.success("Operação realizada com sucesso!");
   };
 
+  // ✅ Função para detectar se é transferência interna
+  const isTransferenciaInterna = (transaction: any): boolean => {
+    const description = (transaction.descCliente || 
+                        transaction.descricaoOperacao ||
+                        transaction.description || 
+                        transaction._original?.description ||
+                        transaction._original?.rawExtrato?.descricao ||
+                        '').toUpperCase();
+    
+    // Verificar se a descrição indica transferência interna
+    const isTransferenciaEntreContas = description.includes('TRANSF.ENTRE CTAS') ||
+                                       description.includes('TRANSF ENTRE CTAS') ||
+                                       description.includes('TRANSFERÊNCIA ENTRE CONTAS') ||
+                                       description.includes('TRANSFERENCIA ENTRE CONTAS');
+    
+    // Verificar se não tem endToEnd válido (transferências internas podem ter endToEnd vazio ou hash interno)
+    const endtoend = transaction.code || 
+                     transaction._original?.endToEnd || 
+                     transaction._original?.idEndToEnd ||
+                     transaction._original?.endToEndId ||
+                     '';
+    
+    // Se não tem endToEnd ou endToEnd está vazio, e a descrição indica transferência interna
+    if (isTransferenciaEntreContas && (!endtoend || endtoend.length === 0)) {
+      return true;
+    }
+    
+    // Também verificar pelo pixType null e rawWebhook null (indicadores de transferência interna)
+    const pixType = transaction._original?.pixType;
+    const rawWebhook = transaction._original?.rawWebhook;
+    
+    if (isTransferenciaEntreContas && !pixType && !rawWebhook) {
+      return true;
+    }
+    
+    return false;
+  };
+
   const handleVerificarTransacao = async (transaction: any, event: React.MouseEvent) => {
     event.stopPropagation();
 
-    // Extrair endtoend da transação
+    // ✅ Verificar se é transferência interna - se for, permitir operação sem verificação na API
+    const isInterna = isTransferenciaInterna(transaction);
+    
+    if (isInterna) {
+      // Transferência interna: permitir operação diretamente sem verificação na API
+      toast.success('Transferência interna detectada', {
+        description: 'Operação autorizada para transferências entre contas',
+        duration: 2000
+      });
+
+      // ✅ Converter para formato MovimentoExtrato esperado pelo modal
+      let extractRecord: any = {
+        id: transaction.id,
+        dateTime: transaction.dateTime,
+        value: transaction.value,
+        type: transaction.type,
+        client: transaction.client,
+        document: transaction.document || '',
+        code: transaction.code,
+        descCliente: transaction.descCliente,
+        identified: transaction.identified || true,
+        descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente,
+        status: transaction.status || 'COMPLETE', // Transferências internas geralmente são completas
+        _original: transaction._original || transaction
+      };
+      
+      // ✅ Abrir o modal de compensação diretamente
+      setSelectedCompensationRecord(extractRecord);
+      setCompensationModalOpen(true);
+      return;
+    }
+
+    // Extrair endtoend da transação (apenas para transações não-internas)
     const endtoend = transaction.code || 
                      transaction._original?.endToEnd || 
                      transaction._original?.idEndToEnd ||
