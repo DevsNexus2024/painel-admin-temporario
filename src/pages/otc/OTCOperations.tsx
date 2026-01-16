@@ -98,6 +98,7 @@ const OTCOperations: React.FC = () => {
     otc_client_id: '',
     dateFrom: '',
     dateTo: '',
+    operation_type: '', // 'convert' para conversões, 'debit' para saques, '' para todos
   });
 
   // Carregar clientes OTC
@@ -125,6 +126,7 @@ const OTCOperations: React.FC = () => {
       if (filters.otc_client_id) params.otc_client_id = parseInt(filters.otc_client_id);
       if (filters.dateFrom) params.dateFrom = filters.dateFrom;
       if (filters.dateTo) params.dateTo = filters.dateTo;
+      if (filters.operation_type) params.operation_type = filters.operation_type;
 
       const response = await otcService.getOperations(params);
 
@@ -169,6 +171,7 @@ const OTCOperations: React.FC = () => {
       otc_client_id: '',
       dateFrom: '',
       dateTo: '',
+      operation_type: '',
     });
     setPagination((prev) => ({ ...prev, page: 1 }));
     setTimeout(() => loadOperations(), 100);
@@ -315,7 +318,7 @@ const OTCOperations: React.FC = () => {
           </Button>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div>
               <label className="text-sm font-medium mb-1 block">Cliente OTC</label>
               <Select
@@ -332,6 +335,23 @@ const OTCOperations: React.FC = () => {
                       {client.name}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-1 block">Tipo de Operação</label>
+              <Select
+                value={filters.operation_type || 'all'}
+                onValueChange={(value) => handleFilterChange('operation_type', value === 'all' ? '' : value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Todas as operações" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as operações</SelectItem>
+                  <SelectItem value="convert">Apenas Conversões</SelectItem>
+                  <SelectItem value="debit">Apenas Saques</SelectItem>
                 </SelectContent>
               </Select>
             </div>
