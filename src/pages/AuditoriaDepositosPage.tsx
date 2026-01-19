@@ -45,7 +45,8 @@ import {
   getSituacaoLabel,
   getStepLabel,
   getStatusColor,
-  getSituacaoColor
+  getSituacaoColor,
+  getDepositoIndicadores
 } from "@/services/depositos-normais.service";
 
 // ===================================
@@ -701,6 +702,8 @@ function DepositosNormaisStats({
   erros,
   aguardandoQrCode,
   aguardandoWebhook,
+  bolsaoSemTransferencia,
+  finalizados,
   loading 
 }: { 
   total: number; 
@@ -708,6 +711,8 @@ function DepositosNormaisStats({
   erros: number;
   aguardandoQrCode: number;
   aguardandoWebhook: number;
+  bolsaoSemTransferencia?: number;
+  finalizados?: number;
   loading: boolean;
 }) {
   const statCards = [
@@ -750,11 +755,30 @@ function DepositosNormaisStats({
       color: "text-yellow-400",
       bgColor: "bg-yellow-500/10",
       borderColor: "border-yellow-500/30"
-    }
+    },
+    ...(bolsaoSemTransferencia !== undefined ? [{
+      label: "⚠️ Bolsão Sem Transferência",
+      value: bolsaoSemTransferencia,
+      icon: AlertTriangle,
+      color: "text-red-400",
+      bgColor: "bg-red-500/10",
+      borderColor: "border-red-500/30"
+    }] : []),
+    ...(finalizados !== undefined ? [{
+      label: "Finalizados",
+      value: finalizados,
+      icon: CheckCircle,
+      color: "text-emerald-400",
+      bgColor: "bg-emerald-500/10",
+      borderColor: "border-emerald-500/30"
+    }] : [])
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+    <div className={cn(
+      "grid gap-4",
+      statCards.length <= 5 ? "grid-cols-2 lg:grid-cols-5" : "grid-cols-2 lg:grid-cols-4 xl:grid-cols-7"
+    )}>
       {statCards.map((stat, idx) => (
         <div 
           key={idx}
@@ -813,6 +837,8 @@ function DepositoNormalListItem({
     );
   };
 
+  const indicadores = getDepositoIndicadores(deposito);
+  
   const getSituacaoBadge = () => {
     return (
       <Badge className={cn("gap-1 text-xs", getSituacaoColor(deposito.situacao))}>
@@ -821,15 +847,21 @@ function DepositoNormalListItem({
     );
   };
 
+  // Determinar se pode reprocessar baseado na situação
+  const podeReprocessar = deposito.precisa_reprocessar && 
+    deposito.status_deposito !== 'finished' &&
+    deposito.situacao !== 'finalizado';
+
   return (
     <tr 
       className={cn(
         "group border-b border-border/50 bg-card/30 hover:bg-card/50 transition-colors",
-        "cursor-pointer"
+        "cursor-pointer",
+        deposito.situacao === 'bolsao_sem_transferencia_interna' && "bg-red-500/5 border-red-500/20"
       )}
       onClick={() => onViewDetails(deposito.id)}
     >
-      {/* ID */}
+      {/* ID / EndToEnd */}
       <td className="p-4">
         <div className="flex flex-col gap-1">
           <span className="font-mono text-sm font-semibold">#{deposito.id}</span>
@@ -855,11 +887,25 @@ function DepositoNormalListItem({
         </div>
       </td>
 
-      {/* Status e Situação */}
+      {/* Status / Situação / Indicadores */}
       <td className="p-4">
         <div className="flex flex-col gap-2">
           {getStatusBadge()}
           {getSituacaoBadge()}
+          {/* Indicadores Visuais */}
+          {indicadores.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {indicadores.map((indicador, idx) => (
+                <Badge 
+                  key={idx}
+                  className={cn("text-xs px-1.5 py-0.5", indicador.color)}
+                  title={indicador.label}
+                >
+                  {indicador.icon} {indicador.label}
+                </Badge>
+              ))}
+            </div>
+          )}
         </div>
       </td>
 
@@ -894,7 +940,7 @@ function DepositoNormalListItem({
           >
             <Eye className="h-4 w-4" />
           </Button>
-          {deposito.precisa_reprocessar && deposito.status_deposito === 'processing' && (
+          {podeReprocessar && (
             <Button
               size="sm"
               onClick={(e) => {
@@ -902,7 +948,12 @@ function DepositoNormalListItem({
                 onReprocessar(deposito.id);
               }}
               disabled={isReprocessando}
-              className="h-8 px-2 bg-emerald-600 hover:bg-emerald-700"
+              className={cn(
+                "h-8 px-2",
+                deposito.situacao === 'bolsao_sem_transferencia_interna' 
+                  ? "bg-red-600 hover:bg-red-700" 
+                  : "bg-emerald-600 hover:bg-emerald-700"
+              )}
               title="Reprocessar depósito"
             >
               {isReprocessando ? (
@@ -1050,6 +1101,23 @@ function DepositoNormalDetailsModal({
               </div>
             </div>
 
+            {/* Indicadores Visuais */}
+            {detalhes && getDepositoIndicadores(detalhes).length > 0 && (
+              <div className="p-4 rounded-lg border bg-card space-y-2">
+                <Label className="text-sm font-semibold">Status do Fluxo</Label>
+                <div className="flex flex-wrap gap-2">
+                  {getDepositoIndicadores(detalhes).map((indicador, idx) => (
+                    <Badge 
+                      key={idx}
+                      className={cn("text-sm px-3 py-1", indicador.color)}
+                    >
+                      {indicador.icon} {indicador.label}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Informações do Depósito */}
             <div className="p-4 rounded-lg border bg-card space-y-3">
               <div className="flex items-center gap-2">
@@ -1063,7 +1131,7 @@ function DepositoNormalDetailsModal({
                 </div>
                 {detalhes.pix_operationId && (
                   <div className="col-span-2 md:col-span-3">
-                    <span className="text-muted-foreground">PIX Operation ID: </span>
+                    <span className="text-muted-foreground">PIX Operation ID (EndToEnd): </span>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="font-mono text-xs">{detalhes.pix_operationId}</span>
                       <Button
@@ -1075,6 +1143,70 @@ function DepositoNormalDetailsModal({
                         <Copy className="h-3 w-3" />
                       </Button>
                     </div>
+                  </div>
+                )}
+                {detalhes.id_internal_b8cash && (
+                  <div className="col-span-2 md:col-span-3">
+                    <span className="text-muted-foreground">ID Internal B8Cash (QR Code Pago): </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="font-mono text-xs">{detalhes.id_internal_b8cash}</span>
+                      <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/50 text-xs ml-2">
+                        ✓ QR Pago
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyToClipboard(detalhes.id_internal_b8cash!, 'ID Internal B8Cash')}
+                        className="h-6 w-6 p-0"
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {detalhes.pix_transaction_id_brbtc && (
+                  <div className="col-span-2 md:col-span-3">
+                    <span className="text-muted-foreground">PIX Transaction ID BRBTC (No Bolsão): </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="font-mono text-xs">{detalhes.pix_transaction_id_brbtc}</span>
+                      <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/50 text-xs ml-2">
+                        ✓ No Bolsão
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyToClipboard(detalhes.pix_transaction_id_brbtc!, 'PIX Transaction ID BRBTC')}
+                        className="h-6 w-6 p-0"
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {detalhes.id_deposito_caas_tcr && (
+                  <div className="col-span-2 md:col-span-3">
+                    <span className="text-muted-foreground">ID Depósito CaaS TCR (Creditado): </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="font-mono text-xs">{detalhes.id_deposito_caas_tcr}</span>
+                      <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/50 text-xs ml-2">
+                        ✓ Creditado
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyToClipboard(detalhes.id_deposito_caas_tcr!, 'ID Depósito CaaS TCR')}
+                        className="h-6 w-6 p-0"
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {!detalhes.id_deposito_caas_tcr && detalhes.pix_transaction_id_brbtc && (
+                  <div className="col-span-2 md:col-span-3">
+                    <Badge className="bg-red-500/20 text-red-400 border-red-500/50 text-xs">
+                      ⚠️ Dinheiro no bolsão mas transferência interna NÃO executada
+                    </Badge>
                   </div>
                 )}
                 {detalhes.pix_transactionId && (
@@ -1093,7 +1225,11 @@ function DepositoNormalDetailsModal({
                   <div className="col-span-2 md:col-span-3">
                     <span className="text-muted-foreground">Ação de Reprocessamento: </span>
                     <Badge variant="outline" className="ml-2">
-                      {detalhes.acao_reprocessamento === 'gerar_qr_code_e_pagar' ? 'Gerar QR Code e Pagar' : 'Verificar Webhook Pendente'}
+                      {detalhes.acao_reprocessamento === 'gerar_qr_code_e_pagar' 
+                        ? 'Gerar QR Code e Pagar' 
+                        : detalhes.acao_reprocessamento === 'executar_transferencia_interna_caas'
+                        ? 'Executar Transferência Interna CaaS'
+                        : 'Verificar Webhook Pendente'}
                     </Badge>
                   </div>
                 )}
@@ -1224,11 +1360,18 @@ function DepositoNormalDetailsModal({
           <Button variant="outline" onClick={onClose}>
             Fechar
           </Button>
-          {detalhes?.precisa_reprocessar && detalhes.status_deposito === 'processing' && (
+          {detalhes?.precisa_reprocessar && 
+           detalhes.status_deposito !== 'finished' && 
+           detalhes.situacao !== 'finalizado' && (
             <Button 
               onClick={() => onReprocessar(depositoId)} 
               disabled={isReprocessando}
-              className="bg-emerald-600 hover:bg-emerald-700 gap-2"
+              className={cn(
+                "gap-2",
+                detalhes.situacao === 'bolsao_sem_transferencia_interna'
+                  ? "bg-red-600 hover:bg-red-700"
+                  : "bg-emerald-600 hover:bg-emerald-700"
+              )}
             >
               {isReprocessando ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1304,7 +1447,12 @@ export default function AuditoriaDepositosPage() {
     processando: depositosNormais.filter(d => d.status_deposito === 'processing').length,
     erros: depositosNormais.filter(d => d.status_deposito === 'error').length,
     aguardandoQrCode: depositosNormais.filter(d => d.situacao === 'aguardando_geracao_qr_code').length,
-    aguardandoWebhook: depositosNormais.filter(d => d.situacao === 'aguardando_webhook_brasil_bitcoin').length,
+    aguardandoWebhook: depositosNormais.filter(d => 
+      d.situacao === 'aguardando_webhook_brasil_bitcoin' || 
+      d.situacao === 'pixout_aguardando_bolsao'
+    ).length,
+    bolsaoSemTransferencia: depositosNormais.filter(d => d.situacao === 'bolsao_sem_transferencia_interna').length,
+    finalizados: depositosNormais.filter(d => d.situacao === 'finalizado' || d.status_deposito === 'finished').length,
   };
 
   // Buscar lotes
@@ -1374,7 +1522,7 @@ export default function AuditoriaDepositosPage() {
         params.status = statusFilterDepositos as 'processing' | 'error';
       }
       if (stepFilterDepositos) {
-        params.step = stepFilterDepositos as '01newdeposit' | '02internal_transfer_b8cash';
+        params.step = stepFilterDepositos as '01newdeposit' | '02internal_transfer_b8cash' | '03bolsao_deposit' | '04internal_transfer_caas';
       }
 
       const response = await depositosNormaisService.listarDepositosNormais(params);
@@ -1752,6 +1900,8 @@ export default function AuditoriaDepositosPage() {
               erros={statsDepositos.erros}
               aguardandoQrCode={statsDepositos.aguardandoQrCode}
               aguardandoWebhook={statsDepositos.aguardandoWebhook}
+              bolsaoSemTransferencia={statsDepositos.bolsaoSemTransferencia}
+              finalizados={statsDepositos.finalizados}
               loading={loadingDepositos}
             />
 
@@ -1809,6 +1959,8 @@ export default function AuditoriaDepositosPage() {
                         <SelectItem value="all">Todos</SelectItem>
                         <SelectItem value="01newdeposit">Novo Depósito</SelectItem>
                         <SelectItem value="02internal_transfer_b8cash">Transferência Interna B8Cash</SelectItem>
+                        <SelectItem value="03bolsao_deposit">Bolsão Deposit</SelectItem>
+                        <SelectItem value="04internal_transfer_caas">Transferência Interna CaaS</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -15,17 +15,35 @@ export interface DepositoNormal {
   quantia: number;
   step: string;
   status_deposito: 'processing' | 'finished' | 'error';
-  situacao: 'aguardando_geracao_qr_code' | 'aguardando_webhook_brasil_bitcoin';
+  situacao: 
+    | 'aguardando_geracao_qr_code' 
+    | 'aguardando_webhook_brasil_bitcoin'
+    | 'pixout_aguardando_bolsao'
+    | 'bolsao_sem_transferencia_interna'
+    | 'aguardando_transferencia_interna_caas'
+    | 'transferencia_ok_status_pendente'
+    | 'deposito_finalizado_movimentacao_pendente'
+    | 'aguardando_finalizacao'
+    | 'finalizado';
   precisa_reprocessar: boolean;
   pix_operationId: string | null;
   pix_transactionId: string | null;
   pix_payment_endtoend: string | null;
+  pix_transaction_id_brbtc?: string | null; // ID do depósito na Brasil Bitcoin (webhook de confirmação)
+  id_deposito_caas_tcr?: string | null; // ID da transferência interna CaaS (TransferId) - indica que transferência interna FOI EXECUTADA
+  id_internal_b8cash?: string | null; // EndToEnd do PIX-OUT (pagamento do QR Code) - indica que QR Code FOI PAGO
+  movimentacao_id?: number | null;
+  movimentacao_status_id?: number | null;
+  movimentacao_status?: string | null;
   criado_em: string;
   atualizado_em: string;
 }
 
 export interface DepositoNormalDetalhes extends DepositoNormal {
-  acao_reprocessamento: 'gerar_qr_code_e_pagar' | 'verificar_webhook_pendente';
+  acao_reprocessamento: 
+    | 'gerar_qr_code_e_pagar' 
+    | 'verificar_webhook_pendente'
+    | 'executar_transferencia_interna_caas';
   pix_from_name?: string;
   pix_from_userDocument?: string;
   pix_to_key?: string;
@@ -100,9 +118,18 @@ export interface ReprocessarDepositoNormalResponse {
   mensagem: string;
   deposito_id: number;
   depositoId: number;
+  status_deposito_anterior?: string;
   step_anterior?: string;
+  status_deposito_atual?: string;
   step_atual?: string;
-  status_atual?: string;
+  id_deposito_caas_tcr?: string | null; // NOVO - ID da transferência interna executada
+  movimentacao_status_anterior?: string;
+  movimentacao_status_atual?: string;
+  acao_realizada?: 
+    | 'finalizacao_status_step'
+    | 'confirmacao_movimentacao'
+    | 'transferencia_interna_e_finalizacao'
+    | 'reprocessamento_completo';
 }
 
 // ===================================
@@ -277,6 +304,13 @@ export function getSituacaoLabel(situacao: string): string {
   const labels: Record<string, string> = {
     aguardando_geracao_qr_code: 'Aguardando Geração QR Code',
     aguardando_webhook_brasil_bitcoin: 'Aguardando Webhook Brasil Bitcoin',
+    pixout_aguardando_bolsao: 'PIX-OUT Aguardando Bolsão',
+    bolsao_sem_transferencia_interna: 'Bolsão Sem Transferência Interna',
+    aguardando_transferencia_interna_caas: 'Aguardando Transferência Interna CaaS',
+    transferencia_ok_status_pendente: 'Transferência OK - Status Pendente',
+    deposito_finalizado_movimentacao_pendente: 'Depósito Finalizado - Movimentação Pendente',
+    aguardando_finalizacao: 'Aguardando Finalização',
+    finalizado: 'Finalizado',
   };
   return labels[situacao] || situacao;
 }
@@ -288,6 +322,8 @@ export function getStepLabel(step: string): string {
   const labels: Record<string, string> = {
     '01newdeposit': 'Novo Depósito',
     '02internal_transfer_b8cash': 'Transferência Interna B8Cash',
+    '03bolsao_deposit': 'Bolsão Deposit',
+    '04internal_transfer_caas': 'Transferência Interna CaaS',
   };
   return labels[step] || step;
 }
@@ -311,7 +347,55 @@ export function getSituacaoColor(situacao: string): string {
   const colors: Record<string, string> = {
     aguardando_geracao_qr_code: 'bg-blue-500/20 text-blue-400 border-blue-500/50',
     aguardando_webhook_brasil_bitcoin: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50',
+    pixout_aguardando_bolsao: 'bg-orange-500/20 text-orange-400 border-orange-500/50',
+    bolsao_sem_transferencia_interna: 'bg-red-500/20 text-red-400 border-red-500/50',
+    aguardando_transferencia_interna_caas: 'bg-purple-500/20 text-purple-400 border-purple-500/50',
+    transferencia_ok_status_pendente: 'bg-amber-500/20 text-amber-400 border-amber-500/50',
+    deposito_finalizado_movimentacao_pendente: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/50',
+    aguardando_finalizacao: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/50',
+    finalizado: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50',
   };
   return colors[situacao] || 'bg-muted text-muted-foreground';
 }
 
+/**
+ * Retorna indicadores visuais do estado do depósito
+ */
+export function getDepositoIndicadores(deposito: DepositoNormal) {
+  const indicadores = [];
+  
+  if (deposito.id_internal_b8cash) {
+    indicadores.push({
+      label: 'QR Pago',
+      color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50',
+      icon: '✓',
+    });
+  }
+  
+  if (deposito.pix_transaction_id_brbtc) {
+    indicadores.push({
+      label: 'No Bolsão',
+      color: 'bg-orange-500/20 text-orange-400 border-orange-500/50',
+      icon: '✓',
+    });
+  }
+  
+  if (deposito.id_deposito_caas_tcr) {
+    indicadores.push({
+      label: 'Creditado',
+      color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50',
+      icon: '✓',
+    });
+  }
+  
+  // Caso crítico: dinheiro no bolsão mas sem transferência interna
+  if (deposito.pix_transaction_id_brbtc && !deposito.id_deposito_caas_tcr) {
+    indicadores.push({
+      label: '⚠️ Ação Necessária',
+      color: 'bg-red-500/20 text-red-400 border-red-500/50',
+      icon: '⚠️',
+    });
+  }
+  
+  return indicadores;
+}
