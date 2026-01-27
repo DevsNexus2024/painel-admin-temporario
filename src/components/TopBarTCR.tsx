@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RefreshCcw, Loader2, Wifi, WifiOff, CheckCircle, AlertCircle, FileText, Banknote, Lock, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
+import { RefreshCcw, Loader2, Wifi, WifiOff, CheckCircle, AlertCircle, FileText, Banknote, Lock, DollarSign } from "lucide-react";
 import { useTCRSaldo } from "@/hooks/useTCRSaldo";
 import { TCRService } from "@/services/tcr";
 import AnimatedBalance from "@/components/AnimatedBalance";
@@ -43,9 +43,10 @@ export default function TopBarTCR() {
   };
 
   // Valores dos saldos
+  const saldoGlobal = saldoData?.globalBalance || 0;
   const saldoTotal = saldoData?.saldo || 0;
   const saldoDisponivel = saldoData?.saldoDisponivel || 0;
-  const limiteBloqueado = saldoData?.limiteBloqueado || 0;
+  const saldoBloqueado = saldoData?.saldoBloqueado || saldoData?.limiteBloqueado || 0;
 
   return (
     <div className="sticky top-0 z-30 bg-background border-b border-border h-auto p-6">
@@ -88,13 +89,30 @@ export default function TopBarTCR() {
         </div>
       </div>
 
-      {/* Cards lado a lado - 5 cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
-        {/* Card 1: Total */}
+      {/* Cards lado a lado - 4 cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+        {/* Card 1: Saldo Global */}
         <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
           <div className="flex items-center gap-2 mb-1">
             <FileText className="h-[18px] w-[18px] text-[rgb(0,105,209)] group-hover:opacity-80 transition-opacity" />
-            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Total</span>
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo Global</span>
+          </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(0,105,209)] mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : errorSaldo || saldoData?.erro ? (
+              <span className="text-lg text-red-500">Erro</span>
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.globalBalance || 0)} /></div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 2: Saldo */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <DollarSign className="h-[18px] w-[18px] text-[rgb(0,105,209)] group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo</span>
           </div>
           <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(0,105,209)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
@@ -107,11 +125,11 @@ export default function TopBarTCR() {
           </div>
         </div>
 
-        {/* Card 2: Available */}
+        {/* Card 3: Saldo Disponível */}
         <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
           <div className="flex items-center gap-2 mb-1">
             <CheckCircle className="h-[18px] w-[18px] text-[rgb(56,209,0)] group-hover:opacity-80 transition-opacity" />
-            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Disponível</span>
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo Disponível</span>
           </div>
           <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(56,209,0)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
@@ -124,11 +142,11 @@ export default function TopBarTCR() {
           </div>
         </div>
 
-        {/* Card 3: Locked */}
+        {/* Card 4: Saldo Bloqueado */}
         <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
           <div className="flex items-center gap-2 mb-1">
             <Lock className="h-[18px] w-[18px] text-[rgb(184,0,0)] group-hover:opacity-80 transition-opacity" />
-            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Bloqueado</span>
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo Bloqueado</span>
           </div>
           <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-[rgb(184,0,0)] mt-1 overflow-hidden">
             {isLoadingSaldo ? (
@@ -136,41 +154,7 @@ export default function TopBarTCR() {
             ) : errorSaldo || saldoData?.erro ? (
               <span className="text-lg text-red-500">Erro</span>
             ) : (
-              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(limiteBloqueado)} /></div>
-            )}
-          </div>
-        </div>
-
-        {/* Card 4: Pending Deposit */}
-        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
-          <div className="flex items-center gap-2 mb-1">
-            <ArrowDownCircle className="h-[18px] w-[18px] text-green-600 group-hover:opacity-80 transition-opacity" />
-            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Depósito Pendente</span>
-          </div>
-          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-green-600 mt-1 overflow-hidden">
-            {isLoadingSaldo ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : errorSaldo || saldoData?.erro ? (
-              <span className="text-lg text-red-500">Erro</span>
-            ) : (
-              <div className="whitespace-nowrap">R$ <AnimatedBalance value={0} /></div>
-            )}
-          </div>
-        </div>
-
-        {/* Card 5: Pending Withdrawal */}
-        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
-          <div className="flex items-center gap-2 mb-1">
-            <ArrowUpCircle className="h-[18px] w-[18px] text-green-600 group-hover:opacity-80 transition-opacity" />
-            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saque Pendente</span>
-          </div>
-          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-green-600 mt-1 overflow-hidden">
-            {isLoadingSaldo ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : errorSaldo || saldoData?.erro ? (
-              <span className="text-lg text-red-500">Erro</span>
-            ) : (
-              <div className="whitespace-nowrap">R$ <AnimatedBalance value={0} /></div>
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoBloqueado)} /></div>
             )}
           </div>
         </div>

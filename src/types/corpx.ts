@@ -3,8 +3,10 @@
 
 export interface CorpXSaldoResponse {
   erro: boolean;
+  globalBalance: number;
   saldo: number;
   saldoDisponivel: number;
+  saldoBloqueado: number;
   limite: number;
   limiteBloqueado: number;
 }

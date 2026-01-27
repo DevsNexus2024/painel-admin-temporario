@@ -173,16 +173,20 @@ export async function consultarSaldoTCR(cnpj: string): Promise<CorpXSaldoRespons
       // Adaptar dados do backend para a interface esperada
       return {
         erro: false,
-        saldo: backendResponse.data.globalBalance || backendResponse.data.saldo || 0,
-        saldoDisponivel: backendResponse.data.globalBalance || backendResponse.data.saldo || 0,
+        globalBalance: backendResponse.data.globalBalance || 0,
+        saldo: backendResponse.data.saldo || backendResponse.data.globalBalance || 0,
+        saldoDisponivel: backendResponse.data.saldo_disp || backendResponse.data.saldoDisponivel || 0,
+        saldoBloqueado: backendResponse.data.saldo_block || backendResponse.data.saldoBloqueado || 0,
         limite: 0, // Campo padrão
-        limiteBloqueado: 0 // Campo padrão
+        limiteBloqueado: backendResponse.data.saldo_block || backendResponse.data.saldoBloqueado || 0 // Compatibilidade
       } as CorpXSaldoResponse;
     } else {
       return {
         erro: true,
+        globalBalance: 0,
         saldo: 0,
         saldoDisponivel: 0,
+        saldoBloqueado: 0,
         limite: 0,
         limiteBloqueado: 0
       } as CorpXSaldoResponse;
@@ -194,8 +198,10 @@ export async function consultarSaldoTCR(cnpj: string): Promise<CorpXSaldoRespons
     // ✅ Retornar estrutura de erro em vez de null
     return {
       erro: true,
+      globalBalance: 0,
       saldo: 0,
       saldoDisponivel: 0,
+      saldoBloqueado: 0,
       limite: 0,
       limiteBloqueado: 0
     } as CorpXSaldoResponse;

@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SendHorizontal, RefreshCcw, Loader2, DollarSign, Lock, CheckCircle, AlertCircle, FileText, Banknote, ArrowDownCircle, ArrowUpCircle, Wifi, WifiOff } from "lucide-react";
+import { RefreshCcw, Loader2, DollarSign, Lock, CheckCircle, AlertCircle, FileText, Banknote, Wifi, WifiOff } from "lucide-react";
 import { useCorpXSaldo } from "@/hooks/useCorpXSaldo";
 import { CorpXService } from "@/services/corpx";
 import { useCorpX } from "@/contexts/CorpXContext";
@@ -143,13 +143,30 @@ export default function TopBarCorpX() {
         </div>
       </div>
 
-      {/* Cards lado a lado - 5 cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
-        {/* Card 1: Total */}
+      {/* Cards lado a lado - 4 cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+        {/* Card 1: Saldo Global */}
         <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
           <div className="flex items-center gap-2 mb-1">
             <FileText className="h-[18px] w-[18px] text-purple-500 group-hover:opacity-80 transition-opacity" />
-            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Total</span>
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo Global</span>
+          </div>
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-purple-500 mt-1 overflow-hidden">
+            {isLoadingSaldo ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : errorSaldo ? (
+              <span className="text-lg text-red-500">Erro</span>
+            ) : (
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.globalBalance || 0)} /></div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 2: Saldo */}
+        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
+          <div className="flex items-center gap-2 mb-1">
+            <DollarSign className="h-[18px] w-[18px] text-purple-500 group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo</span>
           </div>
           <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-purple-500 mt-1 overflow-hidden">
             {isLoadingSaldo ? (
@@ -162,13 +179,13 @@ export default function TopBarCorpX() {
           </div>
         </div>
 
-        {/* Card 2: Available */}
+        {/* Card 3: Saldo Disponível */}
         <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
           <div className="flex items-center gap-2 mb-1">
-            <CheckCircle className="h-[18px] w-[18px] text-purple-500 group-hover:opacity-80 transition-opacity" />
-            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Disponível</span>
+            <CheckCircle className="h-[18px] w-[18px] text-green-500 group-hover:opacity-80 transition-opacity" />
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo Disponível</span>
           </div>
-          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-purple-500 mt-1 overflow-hidden">
+          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-green-500 mt-1 overflow-hidden">
             {isLoadingSaldo ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : errorSaldo ? (
@@ -179,11 +196,11 @@ export default function TopBarCorpX() {
           </div>
         </div>
 
-        {/* Card 3: Locked */}
+        {/* Card 4: Saldo Bloqueado */}
         <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
           <div className="flex items-center gap-2 mb-1">
             <Lock className="h-[18px] w-[18px] text-orange-500 group-hover:opacity-80 transition-opacity" />
-            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Bloqueado</span>
+            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo Bloqueado</span>
           </div>
           <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-orange-500 mt-1 overflow-hidden">
             {isLoadingSaldo ? (
@@ -191,37 +208,7 @@ export default function TopBarCorpX() {
             ) : errorSaldo ? (
               <span className="text-lg text-red-500">Erro</span>
             ) : (
-              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.limiteBloqueado || 0)} /></div>
-            )}
-          </div>
-        </div>
-
-        {/* Card 4: Pending Deposit */}
-        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
-          <div className="flex items-center gap-2 mb-1">
-            <ArrowDownCircle className="h-[18px] w-[18px] text-blue-500 group-hover:opacity-80 transition-opacity" />
-            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Depósito Pendente</span>
-          </div>
-          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-blue-500 mt-1 overflow-hidden">
-            {isLoadingSaldo ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <div className="whitespace-nowrap">R$ <AnimatedBalance value={0} /></div>
-            )}
-          </div>
-        </div>
-
-        {/* Card 5: Pending Withdrawal */}
-        <div className="p-4 lg:p-5 rounded-lg bg-background border border-[rgba(255,255,255,0.1)] hover:opacity-90 transition-all duration-200 group">
-          <div className="flex items-center gap-2 mb-1">
-            <ArrowUpCircle className="h-[18px] w-[18px] text-red-500 group-hover:opacity-80 transition-opacity" />
-            <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saque Pendente</span>
-          </div>
-          <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-red-500 mt-1 overflow-hidden">
-            {isLoadingSaldo ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <div className="whitespace-nowrap">R$ <AnimatedBalance value={0} /></div>
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.saldoBloqueado || saldoData?.limiteBloqueado || 0)} /></div>
             )}
           </div>
         </div>
