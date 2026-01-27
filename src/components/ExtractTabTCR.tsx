@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign, Trash2, ChevronLeft, ChevronRight, RotateCcw, ArrowDownCircle, ArrowUpCircle, CheckSquare, ChevronUp, FileDown } from "lucide-react";
+import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign, Trash2, ChevronLeft, ChevronRight, RotateCcw, ArrowDownCircle, ArrowUpCircle, ChevronUp, FileDown } from "lucide-react";
 import jsPDF from 'jspdf';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,9 +71,6 @@ export default function ExtractTabTCR() {
     loading: false
   });
   
-  // Estados para modo lote
-  const [bulkMode, setBulkMode] = useState(false);
-  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [isEditingPage, setIsEditingPage] = useState(false);
   
@@ -91,6 +88,12 @@ export default function ExtractTabTCR() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStartDate, setSyncStartDate] = useState<Date | null>(null);
   const [syncEndDate, setSyncEndDate] = useState<Date | null>(null);
+
+  // 🆕 Estado para busca de depósito por EndToEnd
+  const [buscarEndToEnd, setBuscarEndToEnd] = useState("");
+  const [isBuscandoDeposito, setIsBuscandoDeposito] = useState(false);
+  const [depositoModalOpen, setDepositoModalOpen] = useState(false);
+  const [depositoData, setDepositoData] = useState<any>(null);
 
   // ✅ Conversão de dados da nova API de transações TCR
   const convertTCRToStandardFormat = (transaction: any) => {
@@ -205,6 +208,44 @@ export default function ExtractTabTCR() {
     return isTransferenciaEntreContas || (isValorPequeno && isTcrFinance);
   };
 
+  // ✅ Função para detectar se é transferência interna
+  const isTransferenciaInterna = (transaction: any): boolean => {
+    const description = (transaction.descCliente || 
+                        transaction.descricaoOperacao ||
+                        transaction.description || 
+                        transaction._original?.description ||
+                        transaction._original?.rawExtrato?.descricao ||
+                        '').toUpperCase();
+    
+    // Verificar se a descrição indica transferência interna
+    const isTransferenciaEntreContas = description.includes('TRANSF.ENTRE CTAS') ||
+                                       description.includes('TRANSF ENTRE CTAS') ||
+                                       description.includes('TRANSFERÊNCIA ENTRE CONTAS') ||
+                                       description.includes('TRANSFERENCIA ENTRE CONTAS');
+    
+    // Verificar se não tem endToEnd válido (transferências internas podem ter endToEnd vazio ou hash interno)
+    const endtoend = transaction.code || 
+                     transaction._original?.endToEnd || 
+                     transaction._original?.idEndToEnd ||
+                     transaction._original?.endToEndId ||
+                     '';
+    
+    // Se não tem endToEnd ou endToEnd está vazio, e a descrição indica transferência interna
+    if (isTransferenciaEntreContas && (!endtoend || endtoend.length === 0)) {
+      return true;
+    }
+    
+    // Também verificar pelo pixType null e rawWebhook null (indicadores de transferência interna)
+    const pixType = transaction._original?.pixType;
+    const rawWebhook = transaction._original?.rawWebhook;
+    
+    if (isTransferenciaEntreContas && !pixType && !rawWebhook) {
+      return true;
+    }
+    
+    return false;
+  };
+
   // ✅ Aplicar filtros (igual ao CorpX)
   const filteredAndSortedTransactions = useMemo(() => {
     
@@ -213,8 +254,9 @@ export default function ExtractTabTCR() {
 
     // Filtros de busca
     filtered = filtered.filter((transaction) => {
-      // ✅ FILTRO: Esconder transações de tarifa
-      if (isTarifaTransaction(transaction)) {
+      // ✅ FILTRO: Esconder apenas transferências internas de tarifa
+      // (transferência interna E tarifa)
+      if (isTransferenciaInterna(transaction) && isTarifaTransaction(transaction)) {
         return false;
       }
 
@@ -889,6 +931,155 @@ export default function ExtractTabTCR() {
     }
   };
 
+  // 🆕 Função para gerar PDF do depósito encontrado
+  const generateDepositoPDF = (depositoInfo: any) => {
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 20;
+      let yPosition = margin;
+
+      const request = depositoInfo?.transacao;
+      if (!request) {
+        toast.error('Dados do depósito não encontrados');
+        return;
+      }
+
+      // Cabeçalho
+      pdf.setFontSize(20);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(255, 140, 0); // Laranja
+      pdf.text('COMPROVANTE DE DEPÓSITO PIX', pageWidth / 2, yPosition, { align: 'center' });
+      yPosition += 10;
+
+      // Linha separadora
+      pdf.setDrawColor(255, 140, 0);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 10;
+
+      // Informações principais
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('INFORMAÇÕES DA TRANSAÇÃO', margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`ID: ${request.id || '-'}`, margin, yPosition);
+      pdf.text(`Status: ${request.status?.toUpperCase() || '-'}`, margin + 90, yPosition);
+      yPosition += 6;
+
+      pdf.text(`End-to-End: ${request.endToEndId || '-'}`, margin, yPosition);
+      yPosition += 6;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(14);
+      pdf.setTextColor(255, 140, 0); // Laranja
+      const valor = (request.amount || 0) / 100; // Converter centavos para reais
+      pdf.text(`Valor: ${formatCurrency(valor)}`, margin, yPosition);
+      yPosition += 10;
+
+      // Dados do Pagador
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('DADOS DO PAGADOR', margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Nome: ${request.senderName || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`CPF/CNPJ: ${request.senderTaxId || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Banco: ${request.senderBankCode || '-'}`, margin, yPosition);
+      pdf.text(`Agência: ${request.senderBranchCode || '-'}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Conta: ${request.senderAccountNumber || '-'}`, margin, yPosition);
+      pdf.text(`Tipo: ${request.senderAccountType || '-'}`, margin + 60, yPosition);
+      yPosition += 10;
+
+      // Dados do Beneficiário
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('DADOS DO BENEFICIÁRIO', margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Nome: ${request.receiverName || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`CPF/CNPJ: ${request.receiverTaxId || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Banco: ${request.receiverBankCode || '-'}`, margin, yPosition);
+      pdf.text(`Agência: ${request.receiverBranchCode || '-'}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Conta: ${request.receiverAccountNumber || '-'}`, margin, yPosition);
+      pdf.text(`Tipo: ${request.receiverAccountType || '-'}`, margin + 60, yPosition);
+      yPosition += 10;
+
+      // Identificadores
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('IDENTIFICADORES', margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`End-to-End: ${request.endToEndId || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Reconciliation ID: ${request.reconciliationId || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Método: ${request.method || '-'}`, margin, yPosition);
+      pdf.text(`Prioridade: ${request.priority || '-'}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Fluxo: ${request.flow || '-'}`, margin, yPosition);
+      yPosition += 10;
+
+      // Informações Adicionais
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('INFORMAÇÕES ADICIONAIS', margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Descrição: ${request.description || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Taxa: ${formatCurrency((request.fee || 0) / 100)}`, margin, yPosition);
+      pdf.text(`Valor em Dinheiro: ${formatCurrency((request.cashAmount || 0) / 100)}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Criado em: ${request.created ? new Date(request.created).toLocaleString('pt-BR') : '-'}`, margin, yPosition);
+      pdf.text(`Atualizado em: ${request.updated ? new Date(request.updated).toLocaleString('pt-BR') : '-'}`, margin + 60, yPosition);
+
+      // Rodapé
+      yPosition = pdf.internal.pageSize.getHeight() - 20;
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`Documento gerado em ${new Date().toLocaleString('pt-BR')}`, pageWidth / 2, yPosition, { align: 'center' });
+
+      // Salvar PDF
+      const fileName = `comprovante-deposito-${request.endToEndId || Date.now()}.pdf`;
+      pdf.save(fileName);
+
+      toast.success('PDF gerado com sucesso!', {
+        description: fileName,
+        duration: 3000
+      });
+    } catch (error) {
+      console.error('[TCR-PDF-DEPOSITO] Erro ao gerar PDF:', error);
+      toast.error('Erro ao gerar PDF', {
+        description: 'Não foi possível gerar o comprovante',
+        duration: 4000
+      });
+    }
+  };
+
   // ✅ Função para gerar PDF do comprovante
   const generateReceiptPDF = async (transaction: any) => {
     try {
@@ -1087,42 +1278,82 @@ export default function ExtractTabTCR() {
     toast.success("Operação realizada com sucesso!");
   };
 
-  // ✅ Função para detectar se é transferência interna
-  const isTransferenciaInterna = (transaction: any): boolean => {
-    const description = (transaction.descCliente || 
-                        transaction.descricaoOperacao ||
-                        transaction.description || 
-                        transaction._original?.description ||
-                        transaction._original?.rawExtrato?.descricao ||
-                        '').toUpperCase();
+  // 🆕 Função auxiliar para abrir modal de compensação diretamente (quando já temos dados verificados)
+  const abrirModalCompensacao = (transaction: any) => {
+    // Converter para formato MovimentoExtrato esperado pelo modal
+    let extractRecord: any = {
+      id: transaction.id,
+      dateTime: transaction.dateTime,
+      value: transaction.value,
+      type: transaction.type,
+      client: transaction.client,
+      document: transaction.document || '',
+      code: transaction.code,
+      descCliente: transaction.descCliente,
+      identified: transaction.identified || true,
+      descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente,
+      status: transaction.status || 'COMPLETE',
+      _original: transaction._original || transaction
+    };
     
-    // Verificar se a descrição indica transferência interna
-    const isTransferenciaEntreContas = description.includes('TRANSF.ENTRE CTAS') ||
-                                       description.includes('TRANSF ENTRE CTAS') ||
-                                       description.includes('TRANSFERÊNCIA ENTRE CONTAS') ||
-                                       description.includes('TRANSFERENCIA ENTRE CONTAS');
-    
-    // Verificar se não tem endToEnd válido (transferências internas podem ter endToEnd vazio ou hash interno)
-    const endtoend = transaction.code || 
-                     transaction._original?.endToEnd || 
-                     transaction._original?.idEndToEnd ||
-                     transaction._original?.endToEndId ||
-                     '';
-    
-    // Se não tem endToEnd ou endToEnd está vazio, e a descrição indica transferência interna
-    if (isTransferenciaEntreContas && (!endtoend || endtoend.length === 0)) {
-      return true;
+    // Abrir o modal de compensação diretamente
+    setSelectedCompensationRecord(extractRecord);
+    setCompensationModalOpen(true);
+  };
+
+  // 🆕 Função para buscar depósito por EndToEnd
+  const handleBuscarDeposito = async () => {
+    if (!buscarEndToEnd || buscarEndToEnd.trim().length < 10) {
+      toast.error('EndToEnd inválido', {
+        description: 'Digite um código EndToEnd válido (mínimo 10 caracteres)'
+      });
+      return;
     }
-    
-    // Também verificar pelo pixType null e rawWebhook null (indicadores de transferência interna)
-    const pixType = transaction._original?.pixType;
-    const rawWebhook = transaction._original?.rawWebhook;
-    
-    if (isTransferenciaEntreContas && !pixType && !rawWebhook) {
-      return true;
+
+    const endtoend = buscarEndToEnd.trim();
+    const taxDocument = '53781325000115'; // CNPJ fixo da TCR
+
+    setIsBuscandoDeposito(true);
+
+    try {
+      toast.loading('Buscando depósito...', { id: 'buscar-deposito' });
+      
+      const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
+      
+      toast.dismiss('buscar-deposito');
+
+      if (!resultadoApi.sucesso) {
+        toast.error('Depósito não encontrado', {
+          description: resultadoApi.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd',
+          duration: 5000
+        });
+        return;
+      }
+
+      if (!resultadoApi.permiteOperacao) {
+        toast.warning('Depósito encontrado, mas operação não permitida', {
+          description: resultadoApi.mensagem,
+          duration: 6000
+        });
+        return;
+      }
+
+      // ✅ Depósito encontrado e verificado - abrir modal com dados
+      setDepositoData(resultadoApi);
+      setDepositoModalOpen(true);
+      
+      // Limpar campo após busca bem-sucedida
+      setBuscarEndToEnd("");
+
+    } catch (error: any) {
+      toast.dismiss('buscar-deposito');
+      toast.error('Erro ao buscar depósito', {
+        description: error.message || 'Tente novamente',
+        duration: 5000
+      });
+    } finally {
+      setIsBuscandoDeposito(false);
     }
-    
-    return false;
   };
 
   const handleVerificarTransacao = async (transaction: any, event: React.MouseEvent) => {
@@ -1265,37 +1496,6 @@ export default function ExtractTabTCR() {
   // ✅ Removido: Aplicação automática de filtros de data
   // Agora os filtros são aplicados apenas quando o usuário clicar em "Aplicar Filtros"
   // Isso dá mais controle ao usuário e evita requisições desnecessárias
-
-  // Funções para modo lote
-  const toggleBulkMode = () => {
-    setBulkMode(!bulkMode);
-    if (bulkMode) {
-      setSelectedTransactions(new Set());
-    }
-  };
-
-  const toggleTransactionSelection = (transactionId: string) => {
-    setSelectedTransactions(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(transactionId)) {
-        newSet.delete(transactionId);
-      } else {
-        newSet.add(transactionId);
-      }
-      return newSet;
-    });
-  };
-
-  const selectAllVisibleCredits = () => {
-    const creditTransactions = filteredAndSortedTransactions
-      .filter(t => t.type === 'CRÉDITO')
-      .map(t => t.id.toString());
-    setSelectedTransactions(new Set(creditTransactions));
-  };
-
-  const clearSelection = () => {
-    setSelectedTransactions(new Set());
-  };
 
   const handleRecordsPerPageChange = (value: string) => {
     const limit = parseInt(value, 10);
@@ -1626,7 +1826,35 @@ export default function ExtractTabTCR() {
               )}
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center flex-wrap">
+              {/* 🆕 Buscar Depósito por EndToEnd */}
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Buscar depósito (EndToEnd)"
+                  value={buscarEndToEnd}
+                  onChange={(e) => setBuscarEndToEnd(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !isBuscandoDeposito) {
+                      handleBuscarDeposito();
+                    }
+                  }}
+                  className="h-10 w-[200px] bg-background border border-yellow-500 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 font-mono text-xs"
+                  disabled={isBuscandoDeposito}
+                />
+                <Button
+                  onClick={handleBuscarDeposito}
+                  disabled={isBuscandoDeposito || !buscarEndToEnd.trim()}
+                  variant="outline"
+                  size="sm"
+                  className="h-10"
+                >
+                  {isBuscandoDeposito ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
               <Button 
                 onClick={handleAplicarFiltros}
                 className="h-10 bg-green-600 hover:bg-green-700 text-white transition-all duration-200 rounded-md px-3 lg:px-4"
@@ -1752,52 +1980,6 @@ export default function ExtractTabTCR() {
 
       {/* Tabela */}
       <Card className="overflow-hidden">
-      {/* 🆕 Barra de Ações em Lote */}
-        <div className={cn(
-          "px-6 py-4 border-b border-border transition-all",
-          "bg-muted/30"
-      )}>
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button 
-              variant={bulkMode ? "default" : "outline"}
-              onClick={toggleBulkMode}
-                className={bulkMode ? "bg-green-600 hover:bg-green-700" : ""}
-            >
-              <CheckSquare className="h-4 w-4 mr-2" />
-              {bulkMode ? "Sair do Modo Lote" : "Modo Seleção em Lote"}
-            </Button>
-            
-            {bulkMode && (
-              <>
-                <Badge variant="secondary" className="text-sm px-3 py-1">
-                  {selectedTransactions.size} selecionada{selectedTransactions.size !== 1 ? 's' : ''}
-                </Badge>
-                
-            <Button 
-                  variant="ghost"
-                  size="sm"
-                  onClick={selectAllVisibleCredits}
-                    disabled={filteredAndSortedTransactions.filter(t => t.type === 'CRÉDITO').length === 0}
-                >
-                  Selecionar Todas Visíveis
-            </Button>
-                
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearSelection}
-                  disabled={selectedTransactions.size === 0}
-                >
-                  <X className="h-3 w-3 mr-1" />
-                  Limpar Seleção
-                </Button>
-              </>
-            )}
-                  </div>
-              </div>
-            </div>
-
           {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-green-600" />
@@ -1822,7 +2004,6 @@ export default function ExtractTabTCR() {
               <table className="w-full">
                 <thead className="bg-muted/50 border-b sticky top-0 z-10">
                   <tr>
-                    {bulkMode && <th className="w-12 p-3"></th>}
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Data/Hora</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Tipo</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Nome</th>
@@ -1830,7 +2011,7 @@ export default function ExtractTabTCR() {
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Reconciliation ID</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">End-to-End</th>
                     <th className="text-center p-3 text-xs font-medium text-muted-foreground">Status</th>
-                    {!bulkMode && <th className="w-24 p-3"></th>}
+                    <th className="w-24 p-3"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1841,36 +2022,18 @@ export default function ExtractTabTCR() {
             className={cn(
                         "border-b hover:bg-muted/30 transition-colors cursor-pointer",
                         index % 2 === 0 ? "bg-[#181818]" : "bg-[#1E1E1E]",
-                        bulkMode && selectedTransactions.has(tx.id.toString()) && "bg-muted/20 dark:bg-muted/10",
                         expandedRow === tx.id && "bg-muted/10 dark:bg-muted/5"
             )}
                           onClick={() => {
-                        if (bulkMode && tx.type === 'CRÉDITO') {
-                          toggleTransactionSelection(tx.id.toString());
-                        } else if (!bulkMode) {
                           setExpandedRow(expandedRow === tx.id ? null : tx.id);
-                        }
                       }}
                     >
-                      {bulkMode && (
-                        <td className="p-3">
-                          {tx.type === 'CRÉDITO' && (
-                <Checkbox
-                              checked={selectedTransactions.has(tx.id.toString())}
-                              onCheckedChange={() => toggleTransactionSelection(tx.id.toString())}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              )}
-                        </td>
-                      )}
                       <td className="p-3">
                         <div className="flex items-center gap-2">
-                          {!bulkMode && (
-                            expandedRow === tx.id ? (
-                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                            )
+                          {expandedRow === tx.id ? (
+                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           )}
                   <div>
                             <div className="text-sm">{formatDate(tx.dateTime).split(' ')[0]}</div>
@@ -1935,9 +2098,8 @@ export default function ExtractTabTCR() {
                       <td className="p-3 text-center">
                         {formatStatus(tx.status) || formatStatus('COMPLETE')}
                       </td>
-                      {!bulkMode && (
-                        <td className="p-3">
-                          {tx.type === 'DÉBITO' && (
+                      <td className="p-3">
+                        {tx.type === 'DÉBITO' && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -1978,18 +2140,17 @@ export default function ExtractTabTCR() {
                                 </Button>
                               )}
                         </td>
-                      )}
                     </tr>
                     
                     {/* Linha expandida com detalhes */}
-                    {expandedRow === tx.id && !bulkMode && (() => {
+                    {expandedRow === tx.id && (() => {
                       const original = tx._original || {};
                       const rawWebhook = original.rawWebhook || {};
                       const corpxAccount = original.corpxAccount || {};
                       
                       return (
                         <tr className="bg-muted/5 dark:bg-muted/5 border-b border-border/50">
-                          <td colSpan={bulkMode ? 10 : 9} className="p-0">
+                          <td colSpan={9} className="p-0">
                             <div className="p-6 space-y-4">
                               <div className="flex items-center justify-between mb-4">
                                 <h4 className="text-sm font-semibold text-green-600">Detalhes da Transação</h4>
@@ -2413,6 +2574,273 @@ export default function ExtractTabTCR() {
         onClose={() => setCompensationModalOpen(false)}
         extractRecord={selectedCompensationRecord}
       />
+
+      {/* 🆕 Modal de Depósito Encontrado */}
+      <Dialog open={depositoModalOpen} onOpenChange={setDepositoModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5 text-green-600" />
+              Depósito Encontrado
+            </DialogTitle>
+            <DialogDescription>
+              Informações detalhadas do depósito consultado
+            </DialogDescription>
+          </DialogHeader>
+          
+          {depositoData?.transacao && (() => {
+            const request = depositoData.transacao;
+            const valor = (request.amount || 0) / 100;
+            
+            return (
+              <div className="space-y-6">
+                {/* Informações Principais */}
+                <Card className="bg-gradient-to-r from-green-50 to-green-100/50 dark:from-green-950/20 dark:to-green-900/10 border-green-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Valor</p>
+                        <p className="text-2xl font-bold text-green-600">{formatCurrency(valor)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-muted-foreground">Status</p>
+                        {formatStatus(request.status)}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Grid de Informações */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Dados do Pagador */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Dados do Pagador</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Nome</label>
+                        <p className="text-sm font-medium">{request.senderName || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">CPF/CNPJ</label>
+                        <p className="text-sm font-mono">{request.senderTaxId || '-'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Banco</label>
+                          <p className="text-sm">{request.senderBankCode || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Agência</label>
+                          <p className="text-sm">{request.senderBranchCode || '-'}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Conta</label>
+                          <p className="text-sm font-mono">{request.senderAccountNumber || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Tipo</label>
+                          <p className="text-sm">{request.senderAccountType || '-'}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Dados do Beneficiário */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Dados do Beneficiário</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Nome</label>
+                        <p className="text-sm font-medium">{request.receiverName || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">CPF/CNPJ</label>
+                        <p className="text-sm font-mono">{request.receiverTaxId || '-'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Banco</label>
+                          <p className="text-sm">{request.receiverBankCode || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Agência</label>
+                          <p className="text-sm">{request.receiverBranchCode || '-'}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Conta</label>
+                          <p className="text-sm font-mono">{request.receiverAccountNumber || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Tipo</label>
+                          <p className="text-sm">{request.receiverAccountType || '-'}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Identificadores */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Identificadores</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground">End-to-End ID</label>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-mono">{request.endToEndId || '-'}</p>
+                          {request.endToEndId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                navigator.clipboard.writeText(request.endToEndId);
+                                toast.success('EndToEnd copiado!');
+                              }}
+                              className="h-6 w-6 p-0"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Reconciliation ID</label>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-mono">{request.reconciliationId || '-'}</p>
+                          {request.reconciliationId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                navigator.clipboard.writeText(request.reconciliationId);
+                                toast.success('Reconciliation ID copiado!');
+                              }}
+                              className="h-6 w-6 p-0"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">ID</label>
+                        <p className="text-sm font-mono">{request.id || '-'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Método</label>
+                          <p className="text-sm">{request.method || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Prioridade</label>
+                          <p className="text-sm">{request.priority || '-'}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Informações Adicionais */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Informações Adicionais</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Descrição</label>
+                        <p className="text-sm">{request.description || '-'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Taxa</label>
+                          <p className="text-sm">{formatCurrency((request.fee || 0) / 100)}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Valor em Dinheiro</label>
+                          <p className="text-sm">{formatCurrency((request.cashAmount || 0) / 100)}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Fluxo</label>
+                        <Badge variant={request.flow === 'in' ? 'default' : 'secondary'}>
+                          {request.flow === 'in' ? 'Entrada' : 'Saída'}
+                        </Badge>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Criado em</label>
+                        <p className="text-sm">{request.created ? new Date(request.created).toLocaleString('pt-BR') : '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Atualizado em</label>
+                        <p className="text-sm">{request.updated ? new Date(request.updated).toLocaleString('pt-BR') : '-'}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Ações */}
+                <DialogFooter className="flex items-center justify-between">
+                  <Button
+                    variant="outline"
+                    onClick={() => generateDepositoPDF(depositoData)}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Baixar Comprovante PDF
+                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setDepositoModalOpen(false)}
+                    >
+                      Fechar
+                    </Button>
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        
+                        // Converter para formato de transação
+                        const transactionData = {
+                          id: request.id,
+                          dateTime: request.created,
+                          value: valor,
+                          type: 'CRÉDITO',
+                          client: request.senderName || '',
+                          document: request.senderTaxId || '',
+                          code: request.endToEndId,
+                          descCliente: request.description || '',
+                          identified: true,
+                          status: request.status,
+                          reconciliationId: request.reconciliationId,
+                          _original: request
+                        };
+                        
+                        // Fechar modal de depósito primeiro
+                        setDepositoModalOpen(false);
+                        
+                        // Abrir modal de compensação diretamente (já temos dados verificados)
+                        setTimeout(() => {
+                          abrirModalCompensacao(transactionData);
+                        }, 150);
+                      }}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      <DollarSign className="h-4 w-4 mr-2" />
+                      Verificar
+                    </Button>
+                  </div>
+                </DialogFooter>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

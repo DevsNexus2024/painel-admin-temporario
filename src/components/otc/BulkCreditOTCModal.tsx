@@ -143,6 +143,34 @@ const BulkCreditOTCModal: React.FC<BulkCreditOTCModalProps> = ({
     setShowConfirmation(true);
   };
 
+  // 🆕 Função para detectar provider automaticamente
+  const detectProvider = (transaction: any): string => {
+    // Detectar CorpX: verificar se tem corpxAccount ou se está na rota /corpx
+    const isCorpX = Boolean(
+      transaction._original?.corpxAccount ||
+      transaction._original?.rawExtrato ||
+      transaction._original?.source === 'CORPX' ||
+      window.location.pathname.includes('/corpx')
+    );
+
+    if (isCorpX) {
+      return 'corpx';
+    }
+
+    // Detectar Bitso: tem bitsoData ou endToEndId no _original
+    if (transaction.bitsoData || transaction._original?.endToEndId) {
+      return 'bitso';
+    }
+
+    // Detectar BMP-531: verificar estrutura ou descCliente
+    if (transaction._original?.descCliente || transaction.descCliente) {
+      return 'bmp531';
+    }
+
+    // Fallback padrão: Bitso (para compatibilidade)
+    return 'bitso';
+  };
+
   // Confirmar operação em lote
   const handleConfirmBulkOperation = async () => {
     if (!selectedClient) {
@@ -157,21 +185,24 @@ const BulkCreditOTCModal: React.FC<BulkCreditOTCModalProps> = ({
       const payload = {
         otc_client_id: selectedClient.id,
         transactions: transactions.map(t => {
-          // Para Bitso, garantir que reference_code seja sempre o endToEndId
-          const endToEndId = t._original?.endToEndId || t.code;
+          // Detectar provider automaticamente
+          const provider = detectProvider(t);
+          
+          // Para CorpX e Bitso, usar endToEndId como reference_code
+          const endToEndId = t._original?.endToEndId || t._original?.endToEnd || t.code;
           const transactionId = t._original?.transactionId || t._original?.id || t.id;
           
           return {
-            provider: 'bitso',
+            provider: provider,
             transaction_id: transactionId,
             amount: t.value || t.amount || 0,
-            // Para Bitso, reference_code deve ser sempre o endToEndId, não o transactionId
+            // Para CorpX e Bitso, reference_code deve ser sempre o endToEndId
             reference_code: endToEndId,
             reference_date: t.dateTime || t.date,
             // Garantir que dados_extrato tenha endToEndId correto
             dados_extrato: t._original ? {
               ...t._original,
-              endToEndId: t._original.endToEndId || endToEndId,
+              endToEndId: t._original.endToEndId || t._original.endToEnd || endToEndId,
               id: transactionId
             } : {
               endToEndId: endToEndId,

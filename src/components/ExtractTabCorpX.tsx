@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign, Trash2, Building2 } from "lucide-react";
+import { Copy, Filter, Download, Eye, Calendar as CalendarIcon, FileText, X, Loader2, AlertCircle, RefreshCw, ChevronDown, Search, ArrowUpDown, ArrowUp, ArrowDown, Plus, Check, DollarSign, Trash2, Building2, CheckSquare } from "lucide-react";
 import jsPDF from 'jspdf';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,9 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
+import BulkCreditOTCModal from "@/components/otc/BulkCreditOTCModal";
 import MoneyRainEffect from "@/components/MoneyRainEffect";
 import { useCorpX, CORPX_ACCOUNTS } from "@/contexts/CorpXContext";
 import CorpXService, { consultarTransacaoPorEndToEnd } from "@/services/corpx";
@@ -34,7 +36,8 @@ export default function ExtractTabCorpX() {
     return map;
   }, []);
 
-  const formatDocument = (document: string | undefined | null) => {
+  // 🚀 OTIMIZADO: Memoizar para evitar recriação a cada render
+  const formatDocument = React.useCallback((document: string | undefined | null) => {
     if (!document) return '';
     const digits = document.replace(/\D/g, '');
 
@@ -47,25 +50,21 @@ export default function ExtractTabCorpX() {
     }
 
     return document;
-  };
+  }, []);
 
-  const shouldHideTransaction = (transaction: any) => {
+  // 🚀 OTIMIZADO: Memoizar para evitar recriação a cada render
+  const shouldHideTransaction = React.useCallback((transaction: any) => {
     if (!transaction) return false;
 
     const isDebit = transaction.type === 'DÉBITO' || transaction._original?.transactionType === 'D';
-    if (!isDebit) {
-      return false;
-    }
+    if (!isDebit) return false;
 
     const amount = typeof transaction.value === 'number' ? transaction.value : Number(transaction.value) || 0;
+    if (Math.abs(amount) !== 0.5) return false;
+    
     const beneficiaryDoc = (transaction.beneficiaryDocument || transaction.document || '').replace(/\D/g, '');
-
-    if (beneficiaryDoc === '36741675000139' && Math.abs(amount) === 0.5) {
-      return true;
-    }
-
-    return false;
-  };
+    return beneficiaryDoc === '36741675000139';
+  }, []);
   
   // Estados para controle de dados
   const [isLoading, setIsLoading] = useState(false);
@@ -135,8 +134,19 @@ export default function ExtractTabCorpX() {
   const [creditedRecords, setCreditedRecords] = useState<Set<string>>(new Set());
   const [isVerifyingTransaction, setIsVerifyingTransaction] = useState<string | null>(null); // ID da transação sendo verificada
 
-  // ✅ Conversão de dados já processados do serviço CorpX
-  const convertCorpXToStandardFormat = (transaction: any) => {
+  // 🆕 Estados para modo seleção em lote
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
+  const [bulkOTCModalOpen, setBulkOTCModalOpen] = useState(false);
+
+  // 🆕 Estado para busca de depósito por EndToEnd
+  const [buscarEndToEnd, setBuscarEndToEnd] = useState("");
+  const [isBuscandoDeposito, setIsBuscandoDeposito] = useState(false);
+  const [depositoModalOpen, setDepositoModalOpen] = useState(false);
+  const [depositoData, setDepositoData] = useState<any>(null);
+
+  // ✅ Conversão de dados já processados do serviço CorpX (memoizado)
+  const convertCorpXToStandardFormat = React.useCallback((transaction: any) => {
     if (!transaction) {
       return null;
     }
@@ -201,168 +211,175 @@ export default function ExtractTabCorpX() {
       status, // ✅ Adicionar status ao objeto retornado
       _original: transaction,
     };
-  };
+  }, []);
 
+  // 🚀 OTIMIZADO: Combina map + 3 filters em uma única passada para melhor performance
   const normalizeTransactions = React.useCallback(
-    (transactions: any[], isAllAccountsParam: boolean, sanitizedCnpjParam: string) =>
-      transactions
-        .map(convertCorpXToStandardFormat)
-        .filter((tx): tx is NonNullable<ReturnType<typeof convertCorpXToStandardFormat>> => Boolean(tx) && !shouldHideTransaction(tx))
-        // 🚨 FILTRAR DEPÓSITOS DA TCR - Remover transações onde beneficiário é TCR (53.781.325/0001-15)
-        // Este modal é referente ao OTC, então depósitos da TCR não devem aparecer
-        .filter((tx) => {
-          if (!tx.beneficiaryDocument) return true;
-          
-          // Normalizar documento removendo formatação para comparação
+    (transactions: any[], isAllAccountsParam: boolean, sanitizedCnpjParam: string) => {
+      const TCR_DOCUMENT = '53781325000115'; // Documento da TCR sem formatação
+      const result: NonNullable<ReturnType<typeof convertCorpXToStandardFormat>>[] = [];
+      
+      for (let i = 0; i < transactions.length; i++) {
+        const tx = convertCorpXToStandardFormat(transactions[i]);
+        
+        // Filtro 1: tx válido e não deve ser escondido
+        if (!tx || shouldHideTransaction(tx)) continue;
+        
+        // Filtro 2: Não é depósito da TCR
+        if (tx.beneficiaryDocument) {
           const beneficiaryDocNormalized = tx.beneficiaryDocument.replace(/\D/g, '');
-          const tcrDocumentNormalized = '53781325000115'; // Documento da TCR sem formatação
+          if (beneficiaryDocNormalized === TCR_DOCUMENT) continue;
+        }
+        
+        // Filtro 3: Matches selected account
+        if (!isAllAccountsParam && sanitizedCnpjParam) {
+          const docNorm = tx.document?.replace(/\D/g, '') || '';
+          const beneficiaryNorm = tx.beneficiaryDocument?.replace(/\D/g, '') || '';
+          const payerNorm = tx.payerDocument?.replace(/\D/g, '') || '';
           
-          // Se o beneficiário for TCR, remover a transação
-          if (beneficiaryDocNormalized === tcrDocumentNormalized) {
-            return false;
+          if (docNorm !== sanitizedCnpjParam && 
+              beneficiaryNorm !== sanitizedCnpjParam && 
+              payerNorm !== sanitizedCnpjParam) {
+            continue;
           }
-          
-          return true;
-        })
-        .filter((tx) => {
-          if (isAllAccountsParam || !sanitizedCnpjParam) {
-            return true;
-          }
-
-          const matchesAccount = (doc?: string | null) => {
-            if (!doc) return false;
-            return doc.replace(/\D/g, '') === sanitizedCnpjParam;
-          };
-
-          return matchesAccount(tx.document)
-            || matchesAccount(tx.beneficiaryDocument)
-            || matchesAccount(tx.payerDocument);
-        }),
+        }
+        
+        result.push(tx);
+      }
+      
+      return result;
+    },
     [convertCorpXToStandardFormat, shouldHideTransaction]
   );
 
-  // ✅ Refatorado: Quando filtros são aplicados na API, não refiltrar no frontend
-  // Os filtros do frontend são apenas para refinamento quando applyFilters = false
+  // 🚀 OTIMIZADO: Pré-calcular valores de filtro fora do loop para melhor performance
   const applyFiltersAndSorting = React.useCallback(
     (transactions: any[]) => {
       // Se os filtros foram aplicados na API, retornar transações sem refiltrar
-      // (a API já retornou os dados filtrados)
       if (filtersAppliedToAPI) {
         // Apenas aplicar ordenação se não foi aplicada na API
-        let sorted = [...transactions];
-        if (sortBy === "date" && sortOrder !== "none") {
+        if (sortOrder === "none") return transactions;
+        
+        const sorted = [...transactions];
+        if (sortBy === "date") {
           sorted.sort((a, b) => {
-            const dateA = new Date(a.dateTime).getTime();
-            const dateB = new Date(b.dateTime).getTime();
-            return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+            const diff = new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
+            return sortOrder === "asc" ? diff : -diff;
           });
-        } else if (sortBy === "value" && sortOrder !== "none") {
-          sorted.sort((a, b) => (sortOrder === "asc" ? a.value - b.value : b.value - a.value));
+        } else if (sortBy === "value") {
+          sorted.sort((a, b) => sortOrder === "asc" ? a.value - b.value : b.value - a.value);
         }
         return sorted;
       }
 
-      // Se os filtros NÃO foram aplicados na API, aplicar filtros no frontend (modo antigo)
-      let filtered = [...transactions];
+      // 🚀 Pré-calcular todos os valores de filtro ANTES do loop
+      const searchNameLower = searchName?.toLowerCase() || '';
+      const searchDescClienteLower = searchDescCliente?.toLowerCase() || '';
+      const searchTermLower = searchTerm?.toLowerCase() || '';
+      
+      const hasSearchName = !!searchName;
+      const hasSearchValue = !!searchValue;
+      const hasSearchDescCliente = !!searchDescCliente;
+      const hasSearchTerm = !!searchTerm;
+      const hasTypeFilter = transactionTypeFilter !== "todos";
+      
+      // Pré-calcular datas como timestamps
+      let fromTimestamp = 0;
+      let toTimestamp = 0;
+      const hasDateFilter = !!dateFrom && !!dateTo;
+      if (hasDateFilter) {
+        const fromDate = new Date(dateFrom);
+        const toDate = new Date(dateTo);
+        fromDate.setHours(0, 0, 0, 0);
+        toDate.setHours(23, 59, 59, 999);
+        fromTimestamp = fromDate.getTime();
+        toTimestamp = toDate.getTime();
+      }
+      
+      // Pré-calcular valores numéricos
+      const minValue = minAmount?.trim() ? parseFloat(minAmount) : NaN;
+      const maxValue = maxAmount?.trim() ? parseFloat(maxAmount) : NaN;
+      const specificValue = specificAmount?.trim() ? parseFloat(specificAmount) : NaN;
+      const hasMinAmount = !isNaN(minValue);
+      const hasMaxAmount = !isNaN(maxValue);
+      const hasSpecificAmount = !isNaN(specificValue) && specificValue !== 0;
 
-      filtered = filtered.filter((transaction) => {
-        // ✅ FILTRO 1: Busca por nome/documento (apenas se não aplicado na API)
-        const matchesName = !searchName || 
-          transaction.client?.toLowerCase().includes(searchName.toLowerCase()) ||
-          transaction.document?.toLowerCase().includes(searchName.toLowerCase());
+      // Filtrar em uma única passada com early returns
+      const filtered: any[] = [];
+      const len = transactions.length;
+      
+      for (let i = 0; i < len; i++) {
+        const tx = transactions[i];
         
-        // ✅ FILTRO 2: Busca por valor (apenas se não aplicado na API)
-        const matchesValue = !searchValue || 
-          Math.abs(transaction.value).toString().includes(searchValue);
-        
-        // ✅ FILTRO 3: Busca por descrição (apenas se não aplicado na API)
-        const matchesDescCliente = !searchDescCliente || 
-          transaction.descCliente?.toLowerCase().includes(searchDescCliente.toLowerCase()) ||
-          transaction.client?.toLowerCase().includes(searchDescCliente.toLowerCase()) ||
-          transaction._original?.description?.toLowerCase().includes(searchDescCliente.toLowerCase());
-
-        // ✅ FILTRO 4: Tipo de transação
-        const matchesType = transactionTypeFilter === "todos" || 
-          (transactionTypeFilter === "debito" && transaction.type === "DÉBITO") ||
-          (transactionTypeFilter === "credito" && transaction.type === "CRÉDITO");
-
-        // ✅ FILTRO 5: Data (refinamento no frontend quando não aplicado na API)
-        let matchesDate = true;
-        if (dateFrom && dateTo) {
-          try {
-            const transactionDate = new Date(transaction.dateTime);
-            const fromDate = new Date(dateFrom);
-            const toDate = new Date(dateTo);
-            
-            fromDate.setHours(0, 0, 0, 0);
-            toDate.setHours(23, 59, 59, 999);
-            
-            matchesDate = transactionDate >= fromDate && transactionDate <= toDate;
-          } catch (error) {
-            matchesDate = true;
-          }
+        // Filtro tipo (mais rápido, verificar primeiro)
+        if (hasTypeFilter) {
+          if (transactionTypeFilter === "debito" && tx.type !== "DÉBITO") continue;
+          if (transactionTypeFilter === "credito" && tx.type !== "CRÉDITO") continue;
         }
-
-        // ✅ FILTRO 6: Busca geral (searchTerm) - apenas se não aplicado na API
-        const matchesSearch = !searchTerm || 
-          transaction.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          transaction.document?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          transaction.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          transaction.descCliente?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          Math.abs(transaction.value).toString().includes(searchTerm);
-
-        // ✅ FILTRO 7: Valor mínimo (refinamento - aceita valores negativos)
-        const matchesMinAmount = !minAmount || minAmount.trim() === '' || (() => {
-          const minValue = parseFloat(minAmount);
-          if (isNaN(minValue)) return true;
-          return transaction.value >= minValue; // Aceita valores negativos
-        })();
-
-        // ✅ FILTRO 8: Valor máximo (refinamento - aceita valores negativos)
-        const matchesMaxAmount = !maxAmount || maxAmount.trim() === '' || (() => {
-          const maxValue = parseFloat(maxAmount);
-          if (isNaN(maxValue)) return true;
-          return transaction.value <= maxValue; // Aceita valores negativos
-        })();
-
-        // ✅ FILTRO 9: Valor específico (refinamento - aceita valores negativos)
-        const matchesSpecificAmount = !specificAmount || specificAmount.trim() === '' || (() => {
-          const targetAmount = parseFloat(specificAmount);
-          if (isNaN(targetAmount) || targetAmount === 0) return true;
-          
-          const originalAmount = transaction._original?.amount;
-          let txValue: number;
-          
-          if (originalAmount !== undefined && originalAmount !== null) {
-            txValue = typeof originalAmount === 'string' 
-              ? parseFloat(originalAmount) 
-              : Number(originalAmount) || 0;
-          } else {
-            txValue = typeof transaction.value === 'string' 
-              ? parseFloat(transaction.value) 
-              : Number(transaction.value) || 0;
-          }
-          
-          // Tolerância de 1 centavo (0.01) para comparação
-          // Aceita valores negativos diretamente
-          return Math.abs(txValue - targetAmount) < 0.01;
-        })();
-
-        // ✅ Aplicar TODOS os filtros (AND lógico)
-        return matchesName && matchesValue && matchesDescCliente && matchesType && 
-               matchesDate && matchesSearch && matchesMinAmount && matchesMaxAmount && 
-               matchesSpecificAmount;
-      });
+        
+        // Filtro data (usar timestamps pré-calculados)
+        if (hasDateFilter) {
+          const txTime = new Date(tx.dateTime).getTime();
+          if (txTime < fromTimestamp || txTime > toTimestamp) continue;
+        }
+        
+        // Filtros de valor (mais rápidos que string)
+        if (hasMinAmount && tx.value < minValue) continue;
+        if (hasMaxAmount && tx.value > maxValue) continue;
+        if (hasSpecificAmount) {
+          const originalAmount = tx._original?.amount;
+          const txValue = originalAmount !== undefined && originalAmount !== null
+            ? (typeof originalAmount === 'string' ? parseFloat(originalAmount) : Number(originalAmount) || 0)
+            : tx.value;
+          if (Math.abs(txValue - specificValue) >= 0.01) continue;
+        }
+        
+        // Filtros de string (mais lentos, verificar por último)
+        if (hasSearchName) {
+          const clientLower = tx.client?.toLowerCase() || '';
+          const docLower = tx.document?.toLowerCase() || '';
+          if (!clientLower.includes(searchNameLower) && !docLower.includes(searchNameLower)) continue;
+        }
+        
+        if (hasSearchValue) {
+          if (!Math.abs(tx.value).toString().includes(searchValue)) continue;
+        }
+        
+        if (hasSearchDescCliente) {
+          const descLower = tx.descCliente?.toLowerCase() || '';
+          const clientLower = tx.client?.toLowerCase() || '';
+          const origDescLower = tx._original?.description?.toLowerCase() || '';
+          if (!descLower.includes(searchDescClienteLower) && 
+              !clientLower.includes(searchDescClienteLower) &&
+              !origDescLower.includes(searchDescClienteLower)) continue;
+        }
+        
+        if (hasSearchTerm) {
+          const clientLower = tx.client?.toLowerCase() || '';
+          const docLower = tx.document?.toLowerCase() || '';
+          const codeLower = tx.code?.toLowerCase() || '';
+          const descLower = tx.descCliente?.toLowerCase() || '';
+          const valueStr = Math.abs(tx.value).toString();
+          if (!clientLower.includes(searchTermLower) &&
+              !docLower.includes(searchTermLower) &&
+              !codeLower.includes(searchTermLower) &&
+              !descLower.includes(searchTermLower) &&
+              !valueStr.includes(searchTerm)) continue;
+        }
+        
+        filtered.push(tx);
+      }
     
-      // ✅ Aplicar ordenação
-      if (sortBy === "date" && sortOrder !== "none") {
-        filtered.sort((a, b) => {
-          const dateA = new Date(a.dateTime).getTime();
-          const dateB = new Date(b.dateTime).getTime();
-          return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
-        });
-      } else if (sortBy === "value" && sortOrder !== "none") {
-        filtered.sort((a, b) => (sortOrder === "asc" ? a.value - b.value : b.value - a.value));
+      // Aplicar ordenação
+      if (sortOrder !== "none") {
+        if (sortBy === "date") {
+          filtered.sort((a, b) => {
+            const diff = new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
+            return sortOrder === "asc" ? diff : -diff;
+          });
+        } else if (sortBy === "value") {
+          filtered.sort((a, b) => sortOrder === "asc" ? a.value - b.value : b.value - a.value);
+        }
       }
 
       return filtered;
@@ -379,12 +396,22 @@ export default function ExtractTabCorpX() {
   // ✅ Paginação server-side (sem slice local)
   const displayTransactions = filteredAndSortedTransactions; // Exibir todos os dados da página atual
   
-
-  // ✅ Totalizadores
-  const debitCount = filteredAndSortedTransactions.filter(t => t.type === 'DÉBITO').length;
-  const creditCount = filteredAndSortedTransactions.filter(t => t.type === 'CRÉDITO').length;
-  const totalDebito = filteredAndSortedTransactions.filter(t => t.type === 'DÉBITO').reduce((sum, t) => sum + t.value, 0);
-  const totalCredito = filteredAndSortedTransactions.filter(t => t.type === 'CRÉDITO').reduce((sum, t) => sum + t.value, 0);
+  // 🚀 OTIMIZADO: Totalizadores calculados em uma única passada junto com filteredAndSortedTransactions
+  const { debitCount, creditCount, totalDebito, totalCredito } = useMemo(() => {
+    let dCount = 0, cCount = 0, dTotal = 0, cTotal = 0;
+    const len = filteredAndSortedTransactions.length;
+    for (let i = 0; i < len; i++) {
+      const t = filteredAndSortedTransactions[i];
+      if (t.type === 'DÉBITO') {
+        dCount++;
+        dTotal += t.value;
+      } else {
+        cCount++;
+        cTotal += t.value;
+      }
+    }
+    return { debitCount: dCount, creditCount: cCount, totalDebito: dTotal, totalCredito: cTotal };
+  }, [filteredAndSortedTransactions]);
   
 const totalPagesAvailable = pagination.total_pages || 1;
 const showingFrom = pagination.total === 0 ? 0 : pagination.offset + 1;
@@ -484,47 +511,54 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         const paginationData = response.pagination ?? {};
         const limitFromApi = paginationData.limit && paginationData.limit > 0 ? paginationData.limit : limit;
 
+        // 🚀 OTIMIZADO: Usar array mutável para evitar criação de novos arrays a cada iteração
         let normalizedTransactions = normalizeTransactions(transactions, isAllAccounts, sanitizedCnpj);
-
+        
+        // 🚀 Definir hasMoreFromApi fora do bloco para uso posterior
         let hasMoreFromApi = paginationData.has_more ?? paginationData.hasMore ?? false;
-        let nextOffset = offset + limitFromApi;
-        let guard = 0;
-        const maxExtraRequests = 50;
-        let previousLength = normalizedTransactions.length;
 
-        while (normalizedTransactions.length < limit && hasMoreFromApi && guard < maxExtraRequests) {
-          const extraResponse = await CorpXService.listarTransacoes({
-            ...baseQueryParams,
-            offset: nextOffset,
-          });
+        // 🚀 OTIMIZAÇÃO: Só fazer requisições extras se realmente necessário E se não estiver sem filtros
+        // Quando não há filtros aplicados, aceitar o que a API retornou (geralmente já são os mais recentes)
+        const shouldFetchMore = applyFilters && normalizedTransactions.length < limit;
+        
+        if (shouldFetchMore) {
+          let nextOffset = offset + limitFromApi;
+          let guard = 0;
+          const maxExtraRequests = 10; // 🚀 Reduzido de 50 para 10 para evitar muitas requisições
 
-          if (!extraResponse?.success || !Array.isArray(extraResponse.data) || extraResponse.data.length === 0) {
-            hasMoreFromApi = false;
-            break;
+          while (normalizedTransactions.length < limit && hasMoreFromApi && guard < maxExtraRequests) {
+            const extraResponse = await CorpXService.listarTransacoes({
+              ...baseQueryParams,
+              offset: nextOffset,
+            });
+
+            if (!extraResponse?.success || !Array.isArray(extraResponse.data) || extraResponse.data.length === 0) {
+              break;
+            }
+
+            const extraNormalized = normalizeTransactions(extraResponse.data, isAllAccounts, sanitizedCnpj);
+            if (extraNormalized.length === 0) break;
+
+            // 🚀 Push em vez de spread operator (evita criar novo array)
+            const previousLength = normalizedTransactions.length;
+            for (let i = 0; i < extraNormalized.length; i++) {
+              normalizedTransactions.push(extraNormalized[i]);
+            }
+
+            const extraPagination = extraResponse.pagination ?? {};
+            hasMoreFromApi = extraPagination.has_more ?? extraPagination.hasMore ?? false;
+            const extraLimit = extraPagination.limit && extraPagination.limit > 0 ? extraPagination.limit : limit;
+            nextOffset = (extraPagination.offset ?? nextOffset) + extraLimit;
+            
+            if (normalizedTransactions.length === previousLength) break;
+            guard++;
           }
-
-          const extraNormalized = normalizeTransactions(extraResponse.data, isAllAccounts, sanitizedCnpj);
-
-          if (extraNormalized.length === 0) {
-            hasMoreFromApi = false;
-            break;
-          }
-
-          normalizedTransactions = [...normalizedTransactions, ...extraNormalized];
-
-          const extraPagination = extraResponse.pagination ?? {};
-          hasMoreFromApi = extraPagination.has_more ?? extraPagination.hasMore ?? false;
-          const extraLimit = extraPagination.limit && extraPagination.limit > 0 ? extraPagination.limit : limit;
-          nextOffset = (extraPagination.offset ?? nextOffset) + extraLimit;
-          if (normalizedTransactions.length === previousLength) {
-            hasMoreFromApi = false;
-            break;
-          }
-          previousLength = normalizedTransactions.length;
-          guard += 1;
         }
 
-        const finalTransactions = normalizedTransactions.slice(0, limit);
+        // 🚀 Limitar ao número solicitado (evita processar mais do que necessário)
+        const finalTransactions = normalizedTransactions.length > limit 
+          ? normalizedTransactions.slice(0, limit) 
+          : normalizedTransactions;
 
         // ✅ Se for atualização incremental, fazer merge com transações existentes
         if (incrementalUpdate && allTransactions.length > 0) {
@@ -768,7 +802,10 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       }
 
       const normalized = normalizeTransactions(response.data, isAllAccounts, sanitizedCnpj);
-      aggregated = [...aggregated, ...normalized];
+      // 🚀 OTIMIZADO: Push em vez de spread (evita criar novo array)
+      for (let i = 0; i < normalized.length; i++) {
+        aggregated.push(normalized[i]);
+      }
 
       const paginationData = response.pagination ?? {};
       const limitUsed = paginationData.limit && paginationData.limit > 0 ? paginationData.limit : limitPerRequest;
@@ -911,60 +948,100 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     });
   };
 
-  // ✅ Formatar moeda
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(Math.abs(value));
+  // 🆕 Funções para modo seleção em lote
+  const toggleBulkMode = () => {
+    const newBulkMode = !bulkMode;
+    setBulkMode(newBulkMode);
+    
+    if (!newBulkMode) {
+      clearSelection();
+    } else {
+      toast.info('Modo seleção ativado - clique nas transações para selecioná-las');
+    }
   };
 
+  const toggleTransactionSelection = (transactionId: string) => {
+    setSelectedTransactions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(transactionId)) {
+        newSet.delete(transactionId);
+      } else {
+        newSet.add(transactionId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllVisibleCredits = () => {
+    const creditTransactions = filteredAndSortedTransactions
+      .filter(t => t.type === 'CRÉDITO' && !isRecordCredited(t))
+      .map(t => t.id.toString());
+    
+    setSelectedTransactions(new Set(creditTransactions));
+    toast.success(`${creditTransactions.length} transações selecionadas`);
+  };
+
+  const clearSelection = () => {
+    setSelectedTransactions(new Set());
+  };
+
+  const handleBulkCredit = () => {
+    if (selectedTransactions.size === 0) {
+      toast.error('Selecione pelo menos uma transação');
+      return;
+    }
+    
+    setBulkOTCModalOpen(true);
+  };
+
+  const handleCloseBulkOTCModal = (wasSuccessful?: boolean, successfulIds?: string[]) => {
+    if (wasSuccessful && successfulIds && successfulIds.length > 0) {
+      // Marcar todas as transações creditadas com sucesso
+      setCreditedRecords(prev => {
+        const newSet = new Set(prev);
+        successfulIds.forEach(id => newSet.add(`corpx-${id}`));
+        return newSet;
+      });
+      
+      // Limpar seleção
+      clearSelection();
+    }
+    
+    setBulkOTCModalOpen(false);
+  };
+
+  // Obter transações selecionadas
+  const getSelectedTransactionsData = () => {
+    return filteredAndSortedTransactions.filter(t => selectedTransactions.has(t.id.toString()));
+  };
+
+  // 🚀 OTIMIZADO: Memoizar instância de NumberFormat (caro de criar)
+  const currencyFormatter = useMemo(() => new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }), []);
+  
+  const formatCurrency = React.useCallback((value: number) => {
+    return currencyFormatter.format(Math.abs(value));
+  }, [currencyFormatter]);
+
+  // 🚀 OTIMIZADO: Mover statusConfig para useMemo (evita recriação a cada render)
+  const statusConfig = useMemo(() => ({
+    'SUCCESS': { label: 'Sucesso', variant: 'default' as const, className: 'bg-green-100 text-green-800 border-green-200' },
+    'PENDING': { label: 'Pendente', variant: 'secondary' as const, className: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
+    'PROCESSING': { label: 'Processando', variant: 'secondary' as const, className: 'bg-blue-100 text-blue-800 border-blue-200' },
+    'FAILED': { label: 'Falhou', variant: 'destructive' as const, className: 'bg-red-100 text-red-800 border-red-200' },
+    'ERROR': { label: 'Erro', variant: 'destructive' as const, className: 'bg-red-100 text-red-800 border-red-200' },
+    'CANCELLED': { label: 'Cancelado', variant: 'outline' as const, className: 'bg-gray-100 text-gray-800 border-gray-200' },
+    'UNKNOWN': { label: 'Desconhecido', variant: 'outline' as const, className: 'bg-gray-100 text-gray-600 border-gray-200' }
+  }), []);
+
   // ✅ Formatar status da transação com badge colorido
-  const formatStatus = (status: string | undefined | null): JSX.Element | null => {
+  const formatStatus = React.useCallback((status: string | undefined | null): JSX.Element | null => {
     if (!status) return null;
     
     const statusUpper = String(status).toUpperCase();
-    
-    // Mapear status para cores e labels
-    const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string }> = {
-      'SUCCESS': {
-        label: 'Sucesso',
-        variant: 'default',
-        className: 'bg-green-100 text-green-800 border-green-200'
-      },
-      'PENDING': {
-        label: 'Pendente',
-        variant: 'secondary',
-        className: 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      },
-      'PROCESSING': {
-        label: 'Processando',
-        variant: 'secondary',
-        className: 'bg-blue-100 text-blue-800 border-blue-200'
-      },
-      'FAILED': {
-        label: 'Falhou',
-        variant: 'destructive',
-        className: 'bg-red-100 text-red-800 border-red-200'
-      },
-      'ERROR': {
-        label: 'Erro',
-        variant: 'destructive',
-        className: 'bg-red-100 text-red-800 border-red-200'
-      },
-      'CANCELLED': {
-        label: 'Cancelado',
-        variant: 'outline',
-        className: 'bg-gray-100 text-gray-800 border-gray-200'
-      },
-      'UNKNOWN': {
-        label: 'Desconhecido',
-        variant: 'outline',
-        className: 'bg-gray-100 text-gray-600 border-gray-200'
-      }
-    };
-
-    const config = statusConfig[statusUpper] || statusConfig['UNKNOWN'];
+    const config = statusConfig[statusUpper as keyof typeof statusConfig] || statusConfig['UNKNOWN'];
     
     return (
       <Badge 
@@ -974,6 +1051,155 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         {config.label}
       </Badge>
     );
+  }, [statusConfig]);
+
+  // 🆕 Função para gerar PDF do depósito encontrado
+  const generateDepositoPDF = (depositoInfo: any) => {
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 20;
+      let yPosition = margin;
+
+      const request = depositoInfo?.transacao;
+      if (!request) {
+        toast.error('Dados do depósito não encontrados');
+        return;
+      }
+
+      // Cabeçalho
+      pdf.setFontSize(20);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(255, 140, 0); // Laranja
+      pdf.text('COMPROVANTE DE DEPÓSITO PIX', pageWidth / 2, yPosition, { align: 'center' });
+      yPosition += 10;
+
+      // Linha separadora
+      pdf.setDrawColor(255, 140, 0);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 10;
+
+      // Informações principais
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('INFORMAÇÕES DA TRANSAÇÃO', margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`ID: ${request.id || '-'}`, margin, yPosition);
+      pdf.text(`Status: ${request.status?.toUpperCase() || '-'}`, margin + 90, yPosition);
+      yPosition += 6;
+
+      pdf.text(`End-to-End: ${request.endToEndId || '-'}`, margin, yPosition);
+      yPosition += 6;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(14);
+      pdf.setTextColor(255, 140, 0); // Laranja
+      const valor = (request.amount || 0) / 100; // Converter centavos para reais
+      pdf.text(`Valor: ${formatCurrency(valor)}`, margin, yPosition);
+      yPosition += 10;
+
+      // Dados do Pagador
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('DADOS DO PAGADOR', margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Nome: ${request.senderName || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`CPF/CNPJ: ${request.senderTaxId || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Banco: ${request.senderBankCode || '-'}`, margin, yPosition);
+      pdf.text(`Agência: ${request.senderBranchCode || '-'}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Conta: ${request.senderAccountNumber || '-'}`, margin, yPosition);
+      pdf.text(`Tipo: ${request.senderAccountType || '-'}`, margin + 60, yPosition);
+      yPosition += 10;
+
+      // Dados do Beneficiário
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('DADOS DO BENEFICIÁRIO', margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Nome: ${request.receiverName || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`CPF/CNPJ: ${request.receiverTaxId || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Banco: ${request.receiverBankCode || '-'}`, margin, yPosition);
+      pdf.text(`Agência: ${request.receiverBranchCode || '-'}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Conta: ${request.receiverAccountNumber || '-'}`, margin, yPosition);
+      pdf.text(`Tipo: ${request.receiverAccountType || '-'}`, margin + 60, yPosition);
+      yPosition += 10;
+
+      // Identificadores
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('IDENTIFICADORES', margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`End-to-End: ${request.endToEndId || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Reconciliation ID: ${request.reconciliationId || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Método: ${request.method || '-'}`, margin, yPosition);
+      pdf.text(`Prioridade: ${request.priority || '-'}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Fluxo: ${request.flow || '-'}`, margin, yPosition);
+      yPosition += 10;
+
+      // Informações Adicionais
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('INFORMAÇÕES ADICIONAIS', margin, yPosition);
+      yPosition += 8;
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Descrição: ${request.description || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Taxa: ${formatCurrency((request.fee || 0) / 100)}`, margin, yPosition);
+      pdf.text(`Valor em Dinheiro: ${formatCurrency((request.cashAmount || 0) / 100)}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Criado em: ${request.created ? new Date(request.created).toLocaleString('pt-BR') : '-'}`, margin, yPosition);
+      pdf.text(`Atualizado em: ${request.updated ? new Date(request.updated).toLocaleString('pt-BR') : '-'}`, margin + 60, yPosition);
+
+      // Rodapé
+      yPosition = pdf.internal.pageSize.getHeight() - 20;
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`Documento gerado em ${new Date().toLocaleString('pt-BR')}`, pageWidth / 2, yPosition, { align: 'center' });
+
+      // Salvar PDF
+      const fileName = `comprovante-deposito-corpx-${request.endToEndId || Date.now()}.pdf`;
+      pdf.save(fileName);
+
+      toast.success('PDF gerado com sucesso!', {
+        description: fileName,
+        duration: 3000
+      });
+    } catch (error) {
+      console.error('[CORPX-PDF-DEPOSITO] Erro ao gerar PDF:', error);
+      toast.error('Erro ao gerar PDF', {
+        description: 'Não foi possível gerar o comprovante',
+        duration: 4000
+      });
+    }
   };
 
   // ✅ Exportar comprovante em PDF (apenas informações relevantes para cliente)
@@ -1562,6 +1788,97 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     }
   };
 
+  // 🆕 Função para buscar depósito por EndToEnd
+  const handleBuscarDeposito = async () => {
+    if (!buscarEndToEnd || buscarEndToEnd.trim().length < 10) {
+      toast.error('EndToEnd inválido', {
+        description: 'Digite um código EndToEnd válido (mínimo 10 caracteres)'
+      });
+      return;
+    }
+
+    const endtoend = buscarEndToEnd.trim();
+    
+    // Obter tax_document da conta selecionada
+    let taxDocument = selectedAccount.cnpj;
+
+    // ✅ Se "todas contas" estiver selecionada, mostrar erro pedindo para selecionar uma conta
+    if (!taxDocument || taxDocument === 'ALL') {
+      toast.error('Selecione uma conta', {
+        description: 'Para buscar depósito, é necessário selecionar uma conta específica',
+        duration: 5000
+      });
+      return;
+    }
+
+    // ✅ Limpar formatação do tax_document (remover pontos, barras, hífens)
+    const taxDocumentLimpo = taxDocument.replace(/\D/g, '');
+
+    if (!taxDocumentLimpo || taxDocumentLimpo.length < 11) {
+      toast.error('Documento inválido', {
+        description: `Documento "${taxDocument}" é inválido. Deve ter pelo menos 11 dígitos (CPF) ou 14 dígitos (CNPJ).`
+      });
+      return;
+    }
+
+    setIsBuscandoDeposito(true);
+
+    try {
+      toast.loading('Buscando depósito...', { id: 'buscar-deposito-corpx' });
+      
+      const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
+      
+      toast.dismiss('buscar-deposito-corpx');
+
+      if (!resultado.sucesso) {
+        toast.error('Depósito não encontrado', {
+          description: resultado.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd',
+          duration: 5000
+        });
+        return;
+      }
+
+      if (!resultado.permiteOperacao) {
+        toast.warning('Depósito encontrado, mas operação não permitida', {
+          description: resultado.mensagem,
+          duration: 6000
+        });
+        return;
+      }
+
+      // ✅ Depósito encontrado e verificado - abrir modal com dados
+      setDepositoData(resultado);
+      setDepositoModalOpen(true);
+      
+      // Limpar campo após busca bem-sucedida
+      setBuscarEndToEnd("");
+
+    } catch (error: any) {
+      toast.dismiss('buscar-deposito-corpx');
+      toast.error('Erro ao buscar depósito', {
+        description: error.message || 'Tente novamente',
+        duration: 5000
+      });
+    } finally {
+      setIsBuscandoDeposito(false);
+    }
+  };
+
+  // 🆕 Função auxiliar para abrir modal de crédito OTC diretamente (quando já temos dados verificados)
+  const abrirModalCreditOTC = (transaction: any) => {
+    // Verificar se já foi creditado antes de abrir modal
+    if (isRecordCredited(transaction)) {
+      toast.error('Registro já creditado', {
+        description: 'Este registro do extrato já foi creditado para um cliente OTC'
+      });
+      return;
+    }
+    
+    // Abrir modal de crédito OTC diretamente
+    setSelectedExtractRecord(transaction);
+    setCreditOTCModalOpen(true);
+  };
+
   const handleCloseCreditOTCModal = (wasSuccessful?: boolean) => {
     // Se operação foi realizada com sucesso, marcar como creditado
     if (wasSuccessful && selectedExtractRecord) {
@@ -1640,18 +1957,33 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccount.id]);
 
-  // Calcular métricas
+  // 🚀 OTIMIZADO: Calcular todas as métricas em uma única passada
   const metrics = useMemo(() => {
-    const deposits = filteredAndSortedTransactions.filter(t => t.type === 'CRÉDITO');
-    const withdrawals = filteredAndSortedTransactions.filter(t => t.type === 'DÉBITO');
+    let totalDeposits = 0;
+    let depositAmount = 0;
+    let totalWithdrawals = 0;
+    let withdrawalAmount = 0;
+    
+    const len = filteredAndSortedTransactions.length;
+    for (let i = 0; i < len; i++) {
+      const t = filteredAndSortedTransactions[i];
+      const absValue = Math.abs(t.value);
+      if (t.type === 'CRÉDITO') {
+        totalDeposits++;
+        depositAmount += absValue;
+      } else {
+        totalWithdrawals++;
+        withdrawalAmount += absValue;
+      }
+    }
     
     return {
-      totalDeposits: deposits.length,
-      depositAmount: deposits.reduce((sum, t) => sum + Math.abs(t.value), 0),
-      totalWithdrawals: withdrawals.length,
-      withdrawalAmount: withdrawals.reduce((sum, t) => sum + Math.abs(t.value), 0),
-      netAmount: deposits.reduce((sum, t) => sum + Math.abs(t.value), 0) - withdrawals.reduce((sum, t) => sum + Math.abs(t.value), 0),
-      totalTransactions: filteredAndSortedTransactions.length,
+      totalDeposits,
+      depositAmount,
+      totalWithdrawals,
+      withdrawalAmount,
+      netAmount: depositAmount - withdrawalAmount,
+      totalTransactions: len,
       loading: isLoading
     };
   }, [filteredAndSortedTransactions, isLoading]);
@@ -1985,7 +2317,35 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
           </div>
 
           {/* Botões de ação */}
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3 items-center">
+            {/* 🆕 Buscar Depósito por EndToEnd */}
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Buscar depósito (EndToEnd)"
+                value={buscarEndToEnd}
+                onChange={(e) => setBuscarEndToEnd(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isBuscandoDeposito) {
+                    handleBuscarDeposito();
+                  }
+                }}
+                className="h-12 w-[200px] bg-background border border-yellow-500 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 font-mono text-xs rounded-xl"
+                disabled={isBuscandoDeposito}
+              />
+              <Button
+                onClick={handleBuscarDeposito}
+                disabled={isBuscandoDeposito || !buscarEndToEnd.trim()}
+                variant="outline"
+                size="sm"
+                className="h-12 rounded-xl"
+              >
+                {isBuscandoDeposito ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
             <Button 
               onClick={handleAplicarFiltros} 
               disabled={isLoading}
@@ -2226,6 +2586,62 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
           </div>
         </CardHeader>
 
+        {/* 🆕 Barra de Ações em Lote */}
+        <div className={cn(
+          "px-6 py-4 border-b border-border transition-all",
+          bulkMode ? "bg-purple-50 dark:bg-purple-950/20" : "bg-muted/30"
+        )}>
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant={bulkMode ? "default" : "outline"}
+                onClick={toggleBulkMode}
+                className={bulkMode ? "bg-purple-600 hover:bg-purple-700" : ""}
+              >
+                <CheckSquare className="h-4 w-4 mr-2" />
+                {bulkMode ? "Sair do Modo Lote" : "Modo Seleção em Lote"}
+              </Button>
+              
+              {bulkMode && (
+                <>
+                  <Badge variant="secondary" className="text-sm px-3 py-1">
+                    {selectedTransactions.size} selecionada{selectedTransactions.size !== 1 ? 's' : ''}
+                  </Badge>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={selectAllVisibleCredits}
+                    disabled={filteredAndSortedTransactions.filter(t => t.type === 'CRÉDITO' && !isRecordCredited(t)).length === 0}
+                  >
+                    Selecionar Todas Visíveis
+                  </Button>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearSelection}
+                    disabled={selectedTransactions.size === 0}
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Limpar Seleção
+                  </Button>
+                </>
+              )}
+            </div>
+            
+            {bulkMode && selectedTransactions.size > 0 && (
+              <Button
+                onClick={handleBulkCredit}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Creditar {selectedTransactions.size} em Lote
+              </Button>
+            )}
+          </div>
+        </div>
+
         <CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center p-8">
@@ -2258,6 +2674,22 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                   <Table>
                     <TableHeader className="sticky top-0 bg-muted/40 backdrop-blur-sm z-10">
                       <TableRow className="border-b border-border hover:bg-transparent">
+                        {/* 🆕 Coluna de seleção (só aparece no modo lote) */}
+                        {bulkMode && (
+                          <TableHead className="font-semibold text-card-foreground py-3 w-[50px] text-center">
+                            <Checkbox
+                              checked={selectedTransactions.size > 0 && selectedTransactions.size === filteredAndSortedTransactions.filter(t => t.type === 'CRÉDITO' && !isRecordCredited(t)).length}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  selectAllVisibleCredits();
+                                } else {
+                                  clearSelection();
+                                }
+                              }}
+                              className="h-4 w-4"
+                            />
+                          </TableHead>
+                        )}
                         <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Data/Hora</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Valor</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 min-w-[200px]">Cliente</TableHead>
@@ -2265,7 +2697,9 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                         <TableHead className="font-semibold text-card-foreground py-3 w-[200px]">Descrição</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Código (End-to-End)</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[120px] text-center">Status</TableHead>
-                        <TableHead className="font-semibold text-card-foreground py-3 w-[100px] text-center">Ações</TableHead>
+                        {!bulkMode && (
+                          <TableHead className="font-semibold text-card-foreground py-3 w-[100px] text-center">Ações</TableHead>
+                        )}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -2276,12 +2710,42 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                         return (
                         <TableRow 
                           key={transaction.id}
-                          onClick={() => {
-                            setSelectedTransaction(transaction);
-                            setIsModalOpen(true);
+                          onClick={(e) => {
+                            // Se estiver em modo lote e for transação de crédito, selecionar
+                            if (bulkMode && transaction.type === 'CRÉDITO' && !isRecordCredited(transaction)) {
+                              e.stopPropagation();
+                              toggleTransactionSelection(transaction.id.toString());
+                            } else if (!bulkMode) {
+                              setSelectedTransaction(transaction);
+                              setIsModalOpen(true);
+                            }
                           }}
-                          className="cursor-pointer hover:bg-muted/20 transition-all duration-200 border-b border-border"
+                          className={cn(
+                            "transition-all duration-200 border-b border-border",
+                            bulkMode && selectedTransactions.has(transaction.id.toString()) 
+                              ? "bg-purple-40/40 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800 cursor-pointer hover:bg-purple-100/60 dark:hover:bg-purple-900/30"
+                              : bulkMode && transaction.type === 'CRÉDITO' && !isRecordCredited(transaction)
+                              ? "cursor-pointer hover:bg-muted/30"
+                              : !bulkMode
+                              ? "cursor-pointer hover:bg-muted/20"
+                              : "cursor-default opacity-60"
+                          )}
                         >
+                          {/* 🆕 Checkbox (só aparece no modo lote para créditos não creditados) */}
+                          {bulkMode && (
+                            <TableCell className="py-3 text-center">
+                              {transaction.type === 'CRÉDITO' && !isRecordCredited(transaction) ? (
+                                <Checkbox
+                                  checked={selectedTransactions.has(transaction.id.toString())}
+                                  onCheckedChange={() => toggleTransactionSelection(transaction.id.toString())}
+                                  className="h-4 w-4"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              ) : (
+                                <div className="w-4 h-4" /> // Espaço vazio para manter alinhamento
+                              )}
+                            </TableCell>
+                          )}
                           <TableCell className="font-medium text-card-foreground py-3 text-xs">
                             {formatDate(transaction.dateTime)}
                           </TableCell>
@@ -2360,45 +2824,47 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                             {formatStatus(transaction.status)}
                           </TableCell>
                           
-                          {/* ✅ Coluna de Ações - Botão +OTC */}
-                          <TableCell className="py-3">
-                            <div className="flex items-center justify-center">
-                              {transaction.type === 'CRÉDITO' && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={(e) => handleCreditToOTC(transaction, e)}
-                                  disabled={isRecordCredited(transaction) || isVerifyingTransaction === transaction.id}
-                                  className={cn(
-                                    "h-7 px-2 text-xs transition-all",
-                                    isRecordCredited(transaction)
-                                      ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                      : isVerifyingTransaction === transaction.id
-                                      ? "bg-blue-50 text-blue-600 border-blue-200"
-                                      : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
-                                  )}
-                                  title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : isVerifyingTransaction === transaction.id ? "Verificando transação..." : "Creditar para cliente OTC"}
-                                >
-                                  {isRecordCredited(transaction) ? (
-                                    <>
-                                      <Check className="h-3 w-3 mr-1" />
-                                      Creditado
-                                    </>
-                                  ) : isVerifyingTransaction === transaction.id ? (
-                                    <>
-                                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                      Verificando...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Plus className="h-3 w-3 mr-1" />
-                                      OTC
-                                    </>
-                                  )}
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
+                          {/* ✅ Coluna de Ações - Botão +OTC (oculto no modo lote) */}
+                          {!bulkMode && (
+                            <TableCell className="py-3">
+                              <div className="flex items-center justify-center">
+                                {transaction.type === 'CRÉDITO' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => handleCreditToOTC(transaction, e)}
+                                    disabled={isRecordCredited(transaction) || isVerifyingTransaction === transaction.id}
+                                    className={cn(
+                                      "h-7 px-2 text-xs transition-all",
+                                      isRecordCredited(transaction)
+                                        ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                        : isVerifyingTransaction === transaction.id
+                                        ? "bg-blue-50 text-blue-600 border-blue-200"
+                                        : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
+                                    )}
+                                    title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : isVerifyingTransaction === transaction.id ? "Verificando transação..." : "Creditar para cliente OTC"}
+                                  >
+                                    {isRecordCredited(transaction) ? (
+                                      <>
+                                        <Check className="h-3 w-3 mr-1" />
+                                        Creditado
+                                      </>
+                                    ) : isVerifyingTransaction === transaction.id ? (
+                                      <>
+                                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                        Verificando...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="h-3 w-3 mr-1" />
+                                        OTC
+                                      </>
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          )}
                         </TableRow>
                         );
                       })}
@@ -2694,12 +3160,289 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         </DialogContent>
       </Dialog>
 
-      {/* ✅ Modal OTC */}
+      {/* ✅ Modal OTC (individual) */}
       <CreditExtractToOTCModal
         isOpen={creditOTCModalOpen}
         onClose={handleCloseCreditOTCModal}
         extractRecord={selectedExtractRecord}
       />
+
+      {/* 🆕 Modal de Crédito OTC em Lote */}
+      <BulkCreditOTCModal
+        isOpen={bulkOTCModalOpen}
+        onClose={handleCloseBulkOTCModal}
+        transactions={getSelectedTransactionsData()}
+      />
+
+      {/* 🆕 Modal de Depósito Encontrado */}
+      <Dialog open={depositoModalOpen} onOpenChange={setDepositoModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5 text-purple-600" />
+              Depósito Encontrado
+            </DialogTitle>
+            <DialogDescription>
+              Informações detalhadas do depósito consultado
+            </DialogDescription>
+          </DialogHeader>
+          
+          {depositoData?.transacao && (() => {
+            const request = depositoData.transacao;
+            const valor = (request.amount || 0) / 100;
+            
+            return (
+              <div className="space-y-6">
+                {/* Informações Principais */}
+                <Card className="bg-gradient-to-r from-purple-50 to-purple-100/50 dark:from-purple-950/20 dark:to-purple-900/10 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Valor</p>
+                        <p className="text-2xl font-bold text-purple-600">{formatCurrency(valor)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-muted-foreground">Status</p>
+                        <Badge variant={request.status === 'success' ? 'default' : 'secondary'} className="mt-1">
+                          {request.status === 'success' ? 'Sucesso' : request.status || '-'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Grid de Informações */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Dados do Pagador */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Dados do Pagador</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Nome</label>
+                        <p className="text-sm font-medium">{request.senderName || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">CPF/CNPJ</label>
+                        <p className="text-sm font-mono">{request.senderTaxId || '-'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Banco</label>
+                          <p className="text-sm">{request.senderBankCode || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Agência</label>
+                          <p className="text-sm">{request.senderBranchCode || '-'}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Conta</label>
+                          <p className="text-sm font-mono">{request.senderAccountNumber || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Tipo</label>
+                          <p className="text-sm">{request.senderAccountType || '-'}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Dados do Beneficiário */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Dados do Beneficiário</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Nome</label>
+                        <p className="text-sm font-medium">{request.receiverName || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">CPF/CNPJ</label>
+                        <p className="text-sm font-mono">{request.receiverTaxId || '-'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Banco</label>
+                          <p className="text-sm">{request.receiverBankCode || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Agência</label>
+                          <p className="text-sm">{request.receiverBranchCode || '-'}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Conta</label>
+                          <p className="text-sm font-mono">{request.receiverAccountNumber || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Tipo</label>
+                          <p className="text-sm">{request.receiverAccountType || '-'}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Identificadores */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Identificadores</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground">End-to-End ID</label>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-mono">{request.endToEndId || '-'}</p>
+                          {request.endToEndId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                navigator.clipboard.writeText(request.endToEndId);
+                                toast.success('EndToEnd copiado!');
+                              }}
+                              className="h-6 w-6 p-0"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Reconciliation ID</label>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-mono">{request.reconciliationId || '-'}</p>
+                          {request.reconciliationId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                navigator.clipboard.writeText(request.reconciliationId);
+                                toast.success('Reconciliation ID copiado!');
+                              }}
+                              className="h-6 w-6 p-0"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">ID</label>
+                        <p className="text-sm font-mono">{request.id || '-'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Método</label>
+                          <p className="text-sm">{request.method || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Prioridade</label>
+                          <p className="text-sm">{request.priority || '-'}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Informações Adicionais */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Informações Adicionais</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Descrição</label>
+                        <p className="text-sm">{request.description || '-'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Taxa</label>
+                          <p className="text-sm">{formatCurrency((request.fee || 0) / 100)}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Valor em Dinheiro</label>
+                          <p className="text-sm">{formatCurrency((request.cashAmount || 0) / 100)}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Fluxo</label>
+                        <Badge variant={request.flow === 'in' ? 'default' : 'secondary'}>
+                          {request.flow === 'in' ? 'Entrada' : 'Saída'}
+                        </Badge>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Criado em</label>
+                        <p className="text-sm">{request.created ? new Date(request.created).toLocaleString('pt-BR') : '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Atualizado em</label>
+                        <p className="text-sm">{request.updated ? new Date(request.updated).toLocaleString('pt-BR') : '-'}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Ações */}
+                <DialogFooter className="flex items-center justify-between">
+                  <Button
+                    variant="outline"
+                    onClick={() => generateDepositoPDF(depositoData)}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Baixar Comprovante PDF
+                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setDepositoModalOpen(false)}
+                    >
+                      Fechar
+                    </Button>
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        
+                        // Converter para formato de transação
+                        const transactionData = {
+                          id: request.id,
+                          dateTime: request.created,
+                          value: valor,
+                          type: 'CRÉDITO',
+                          client: request.senderName || '',
+                          document: request.senderTaxId || '',
+                          code: request.endToEndId,
+                          descCliente: request.description || '',
+                          identified: true,
+                          status: request.status,
+                          reconciliationId: request.reconciliationId,
+                          beneficiaryDocument: request.receiverTaxId,
+                          _original: request
+                        };
+                        
+                        // Fechar modal de depósito primeiro
+                        setDepositoModalOpen(false);
+                        
+                        // Abrir modal de crédito OTC diretamente (já temos dados verificados)
+                        setTimeout(() => {
+                          abrirModalCreditOTC(transactionData);
+                        }, 150);
+                      }}
+                      className="bg-purple-600 hover:bg-purple-700"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      +OTC
+                    </Button>
+                  </div>
+                </DialogFooter>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
