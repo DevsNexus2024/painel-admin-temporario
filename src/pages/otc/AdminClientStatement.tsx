@@ -1111,152 +1111,6 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
           </div>
         </TableCell>
         
-        {/* Saldo Anterior */}
-        <TableCell className="text-right">
-          {(() => {
-            // ✅ Usar manual_operation.id se disponível para buscar no histórico (mais preciso)
-            const manualOpId = transaction.manual_operation?.id;
-            const searchId: number | string = (manualOpId !== undefined ? manualOpId : transaction.id) as number | string;
-            
-            // Converter ID para número se necessário
-            let numericSearchId: number;
-            if (typeof searchId === 'string' && searchId.startsWith('conv_')) {
-              numericSearchId = parseInt(searchId.replace('conv_', ''), 10);
-            } else {
-              numericSearchId = typeof searchId === 'string' ? parseInt(searchId, 10) : searchId;
-            }
-            
-            const historyRecord = statement?.historico_saldo?.find(
-              h => h.transaction_id === numericSearchId || 
-                   h.transaction_id === searchId ||
-                   String(h.transaction_id) === String(transaction.id)
-            );
-            const usdValue = getUsdValueFromHistory(transaction.id, manualOpId);
-            const isUsdOperation = transaction.notes?.toLowerCase().includes('usd') || 
-                                 transaction.notes?.includes('Conversão BRL→USD') || 
-                                 transaction.notes?.includes('ESTORNO - Conversão USD→BRL') ||
-                                 transaction.type === 'conversion' ||
-                                 transaction.is_conversion === true;
-            const isConversion = transaction.notes?.includes('Conversão BRL→USD') || 
-                               transaction.notes?.includes('ESTORNO - Conversão USD→BRL') ||
-                               transaction.type === 'conversion' ||
-                               transaction.is_conversion === true;
-            const isUsdOnly = isUsdOperation && transaction.amount === 0 && usdValue !== null && !isConversion;
-            
-            // ✅ CONVERSÕES: Sempre mostrar BRL + USD
-            if (isConversion && historyRecord) {
-              return (
-                <div className="space-y-1">
-                  <div className="text-sm">
-                    {otcService.formatCurrency(historyRecord?.balance_before || 0)}
-                  </div>
-                  <div className="text-xs text-blue-600">
-                    $ {historyRecord?.usd_balance_before?.toFixed(2) || '0.00'}
-                  </div>
-                </div>
-              );
-            }
-            
-            if (isUsdOnly) {
-              return (
-                <div className="text-sm text-blue-600">
-                  $ {historyRecord?.usd_balance_before?.toFixed(2) || '0.00'}
-                </div>
-              );
-            } else if (isUsdOperation && historyRecord?.usd_balance_before !== null) {
-              return (
-                <div className="space-y-1">
-                  <div className="text-sm">
-                    {otcService.formatCurrency(historyRecord?.balance_before || 0)}
-                  </div>
-                  <div className="text-xs text-blue-600">
-                    $ {historyRecord?.usd_balance_before?.toFixed(2) || '0.00'}
-                  </div>
-                </div>
-              );
-            } else {
-              return (
-                <div className="text-sm">
-                  {otcService.formatCurrency(historyRecord?.balance_before || 0)}
-                </div>
-              );
-            }
-          })()}
-        </TableCell>
-
-        {/* Saldo Posterior */}
-        <TableCell className="text-right">
-          {(() => {
-            // ✅ Usar manual_operation.id se disponível para buscar no histórico (mais preciso)
-            const manualOpId = transaction.manual_operation?.id;
-            const searchId: number | string = (manualOpId !== undefined ? manualOpId : transaction.id) as number | string;
-            
-            // Converter ID para número se necessário
-            let numericSearchId: number;
-            if (typeof searchId === 'string' && searchId.startsWith('conv_')) {
-              numericSearchId = parseInt(searchId.replace('conv_', ''), 10);
-            } else {
-              numericSearchId = typeof searchId === 'string' ? parseInt(searchId, 10) : searchId;
-            }
-            
-            const historyRecord = statement?.historico_saldo?.find(
-              h => h.transaction_id === numericSearchId || 
-                   h.transaction_id === searchId ||
-                   String(h.transaction_id) === String(transaction.id)
-            );
-            const usdValue = getUsdValueFromHistory(transaction.id, manualOpId);
-            const isUsdOperation = transaction.notes?.toLowerCase().includes('usd') || 
-                                 transaction.notes?.includes('Conversão BRL→USD') || 
-                                 transaction.notes?.includes('ESTORNO - Conversão USD→BRL') ||
-                                 transaction.type === 'conversion' ||
-                                 transaction.is_conversion === true;
-            const isConversion = transaction.notes?.includes('Conversão BRL→USD') || 
-                               transaction.notes?.includes('ESTORNO - Conversão USD→BRL') ||
-                               transaction.type === 'conversion' ||
-                               transaction.is_conversion === true;
-            const isUsdOnly = isUsdOperation && transaction.amount === 0 && usdValue !== null && !isConversion;
-            
-            // ✅ CONVERSÕES: Sempre mostrar BRL + USD
-            if (isConversion && historyRecord) {
-              return (
-                <div className="space-y-1">
-                  <div className="text-sm">
-                    {otcService.formatCurrency(historyRecord?.balance_after || 0)}
-                  </div>
-                  <div className="text-xs text-blue-600">
-                    $ {historyRecord?.usd_balance_after?.toFixed(2) || '0.00'}
-                  </div>
-                </div>
-              );
-            }
-            
-            if (isUsdOnly) {
-              return (
-                <div className="text-sm text-blue-600">
-                  $ {historyRecord?.usd_balance_after?.toFixed(2) || '0.00'}
-                </div>
-              );
-            } else if (isUsdOperation && historyRecord?.usd_balance_after !== null) {
-              return (
-                <div className="space-y-1">
-                  <div className="text-sm">
-                    {otcService.formatCurrency(historyRecord?.balance_after || 0)}
-                  </div>
-                  <div className="text-xs text-blue-600">
-                    $ {historyRecord?.usd_balance_after?.toFixed(2) || '0.00'}
-                  </div>
-                </div>
-              );
-            } else {
-              return (
-                <div className="text-sm">
-                  {otcService.formatCurrency(historyRecord?.balance_after || 0)}
-                </div>
-              );
-            }
-          })()}
-        </TableCell>
-        
         <TableCell className="text-center">
           {getStatusBadge(transaction.status)}
         </TableCell>
@@ -1343,25 +1197,6 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
         
         <TableCell className="text-right">
           {isUsdOnlyOperation ? (
-            <div className="text-sm text-blue-500">
-              $ {history.usd_balance_before?.toFixed(2) || '0.00'}
-            </div>
-          ) : (
-            <div className="space-y-1">
-              <div className="text-sm text-muted-foreground">
-                BRL: {otcService.formatCurrency(history.balance_before)}
-              </div>
-              {hasUsdChange && (
-                <div className="text-sm text-blue-500">
-                  USD: $ {history.usd_balance_before?.toFixed(2) || '0.00'}
-                </div>
-              )}
-            </div>
-          )}
-        </TableCell>
-        
-        <TableCell className="text-right">
-          {isUsdOnlyOperation ? (
             <div className={`font-semibold text-sm ${
               history.usd_amount_change >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
@@ -1384,25 +1219,6 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                 }`}>
                   {history.usd_amount_change >= 0 ? '+' : ''}
                   $ {Math.abs(history.usd_amount_change).toFixed(2)} USD
-                </div>
-              )}
-            </div>
-          )}
-        </TableCell>
-        
-        <TableCell className="text-right">
-          {isUsdOnlyOperation ? (
-            <div className="font-semibold text-sm text-blue-600">
-              $ {history.usd_balance_after?.toFixed(2) || '0.0000'}
-            </div>
-          ) : (
-            <div className="space-y-1">
-              <div className="font-semibold text-sm">
-                BRL: {otcService.formatCurrency(history.balance_after)}
-              </div>
-              {hasUsdChange && (
-                <div className="font-semibold text-sm text-blue-600">
-                  USD: $ {history.usd_balance_after?.toFixed(2) || '0.0000'}
                 </div>
               )}
             </div>
@@ -1732,8 +1548,6 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                         <TableRow>
                           <TableHead className="w-[180px]">Transação</TableHead>
                           <TableHead className="text-right w-[200px]">Valor</TableHead>
-                          <TableHead className="text-right w-[140px]">Saldo Anterior</TableHead>
-                          <TableHead className="text-right w-[140px]">Saldo Posterior</TableHead>
                           <TableHead className="text-center w-[120px]">Status</TableHead>
                           <TableHead>Detalhes</TableHead>
                         </TableRow>
@@ -1784,9 +1598,7 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Operação</TableHead>
-                          <TableHead className="text-right">Saldo Anterior</TableHead>
                           <TableHead className="text-right">Alteração</TableHead>
-                          <TableHead className="text-right">Saldo Posterior</TableHead>
                           <TableHead>Descrição</TableHead>
                         </TableRow>
                       </TableHeader>
