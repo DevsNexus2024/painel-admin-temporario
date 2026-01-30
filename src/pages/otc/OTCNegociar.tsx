@@ -561,6 +561,9 @@ const OTCNegociar: React.FC = () => {
           
           // Usar originalAmount (valor sem taxa) para o débito
           const valorDebito = parseFloat(data.originalAmount || data.amount);
+          if (Number.isNaN(valorDebito) || valorDebito <= 0) {
+            throw new Error('Valor inválido para débito');
+          }
           
           // Construir descrição com email do usuário
           // O link da blockchain será adicionado depois quando o txId estiver disponível
@@ -581,9 +584,17 @@ const OTCNegociar: React.FC = () => {
             currency: 'USD' as const,
             amount: valorDebito, // Apenas o valor que o cliente deve receber (sem taxa)
             description: description,
+            reference_external_id: withdrawId,
+            reference_provider: 'binance',
+            reference_code: withdrawId,
           };
-          
-          await createOperation(debitOperation);
+          // ✅ Tentar criar operação e permitir retry simples em caso de falha transitória
+          try {
+            await createOperation(debitOperation);
+          } catch (firstError) {
+            console.warn('⚠️ Falha ao criar operação, tentando novamente...', firstError);
+            await createOperation(debitOperation);
+          }
           
           console.log('✅ Operação de débito USD criada automaticamente:', debitOperation);
           

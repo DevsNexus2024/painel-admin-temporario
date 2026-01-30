@@ -92,7 +92,7 @@ export function useOTCOperations(params: OTCOperationsParams = {}) {
     error,
     
     // Mutations
-    createOperation: createOperationMutation.mutate,
+    createOperation: createOperationMutation.mutateAsync,
     
     // Estados das mutations
     isCreating: createOperationMutation.isLoading,
