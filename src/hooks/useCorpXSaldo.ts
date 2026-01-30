@@ -1,7 +1,7 @@
 // hooks/useCorpXSaldo.ts - Hook específico para saldo CorpX
 // Compatível com o padrão dos outros hooks de saldo do projeto
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { CorpXService } from '@/services/corpx';
 import type { CorpXSaldoResponse } from '@/types/corpx';
 
@@ -28,12 +28,18 @@ export function useCorpXSaldo({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchSaldo = useCallback(async () => {
-    if (!cnpj) {
+    const cnpjNumerico = (cnpj || '').replace(/\D/g, '');
+    if (!cnpjNumerico || cnpjNumerico.length !== 14) {
       //console.warn('[useCorpXSaldo] CNPJ não fornecido');
       return;
     }
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     setIsLoading(true);
     setError(null);
@@ -41,7 +47,7 @@ export function useCorpXSaldo({
     try {
       ////console.log('[useCorpXSaldo] Consultando saldo CORPX...', cnpj);
       
-      const response = await CorpXService.consultarSaldo(cnpj);
+      const response = await CorpXService.consultarSaldo(cnpjNumerico, { signal: controller.signal });
       
       if (response?.erro) {
         setError('Erro ao consultar saldo CORPX');
@@ -67,7 +73,8 @@ export function useCorpXSaldo({
 
   // Fetch inicial
   useEffect(() => {
-    if (cnpj) {
+    const cnpjNumerico = (cnpj || '').replace(/\D/g, '');
+    if (cnpjNumerico.length === 14) {
       fetchSaldo();
     }
   }, [cnpj, fetchSaldo]);
@@ -87,6 +94,13 @@ export function useCorpXSaldo({
       clearInterval(intervalId);
     };
   }, [autoRefresh, cnpj, refreshInterval, fetchSaldo]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, []);
 
   return {
     saldo,

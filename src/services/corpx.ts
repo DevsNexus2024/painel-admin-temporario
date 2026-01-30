@@ -125,7 +125,10 @@ async function checkTokenStatus(): Promise<{
  * Consultar Saldo
  * Endpoint: GET /api/corpx/account/saldo?tax_document=CNPJ
  */
-export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoResponse | null> {
+export async function consultarSaldoCorpX(
+  cnpj: string,
+  options?: { signal?: AbortSignal }
+): Promise<CorpXSaldoResponse | null> {
   try {
     
     // ✅ Verificar status do token ANTES da requisição
@@ -153,7 +156,8 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
     
     const response = await fetch(requestUrl, {
       method: 'GET',
-      headers: requestHeaders
+      headers: requestHeaders,
+      signal: options?.signal
     });
 
 
@@ -191,6 +195,10 @@ export async function consultarSaldoCorpX(cnpj: string): Promise<CorpXSaldoRespo
     }
     
   } catch (error: any) {
+    // AbortError não deve virar erro “hard” no UI
+    if (error?.name === 'AbortError') {
+      return null;
+    }
     console.error('[CORPX-SALDO] Erro ao consultar saldo:', error.message);
     
     
@@ -364,7 +372,10 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
  * Listar transações usando a nova API consolidada
  * Endpoint: GET /api/corpx/transactions
  */
-export async function listarTransacoesCorpX(params: CorpXTransactionsParams = {}): Promise<CorpXTransactionsResponse> {
+export async function listarTransacoesCorpX(
+  params: CorpXTransactionsParams = {},
+  options?: { signal?: AbortSignal }
+): Promise<CorpXTransactionsResponse> {
   try {
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
@@ -448,7 +459,8 @@ export async function listarTransacoesCorpX(params: CorpXTransactionsParams = {}
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Authorization': `Bearer ${userToken}`
-      }
+      },
+      signal: options?.signal,
     });
 
     if (!response.ok) {
@@ -459,6 +471,9 @@ export async function listarTransacoesCorpX(params: CorpXTransactionsParams = {}
     const responseData = await response.json();
     return responseData as CorpXTransactionsResponse;
   } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw error;
+    }
     console.error('[CORPX-TRANSACTIONS] Erro ao listar transações:', error.message || error);
     throw error;
   }
