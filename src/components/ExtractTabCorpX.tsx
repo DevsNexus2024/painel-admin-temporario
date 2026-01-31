@@ -224,13 +224,13 @@ export default function ExtractTabCorpX() {
         
         // Filtro 1: tx válido e não deve ser escondido
         if (!tx || shouldHideTransaction(tx)) continue;
-        
+          
         // Filtro 2: Não é depósito da TCR
         if (tx.beneficiaryDocument) {
           const beneficiaryDocNormalized = tx.beneficiaryDocument.replace(/\D/g, '');
           if (beneficiaryDocNormalized === TCR_DOCUMENT) continue;
-        }
-        
+          }
+          
         // Filtro 3: Matches selected account
         if (!isAllAccountsParam && sanitizedCnpjParam) {
           const docNorm = tx.document?.replace(/\D/g, '') || '';
@@ -288,14 +288,14 @@ export default function ExtractTabCorpX() {
       let toTimestamp = 0;
       const hasDateFilter = !!dateFrom && !!dateTo;
       if (hasDateFilter) {
-        const fromDate = new Date(dateFrom);
-        const toDate = new Date(dateTo);
-        fromDate.setHours(0, 0, 0, 0);
-        toDate.setHours(23, 59, 59, 999);
+            const fromDate = new Date(dateFrom);
+            const toDate = new Date(dateTo);
+            fromDate.setHours(0, 0, 0, 0);
+            toDate.setHours(23, 59, 59, 999);
         fromTimestamp = fromDate.getTime();
         toTimestamp = toDate.getTime();
-      }
-      
+        }
+
       // Pré-calcular valores numéricos
       const minValue = minAmount?.trim() ? parseFloat(minAmount) : NaN;
       const maxValue = maxAmount?.trim() ? parseFloat(maxAmount) : NaN;
@@ -310,7 +310,7 @@ export default function ExtractTabCorpX() {
       
       for (let i = 0; i < len; i++) {
         const tx = transactions[i];
-        
+
         // Filtro tipo (mais rápido, verificar primeiro)
         if (hasTypeFilter) {
           if (transactionTypeFilter === "debito" && tx.type !== "DÉBITO") continue;
@@ -343,8 +343,8 @@ export default function ExtractTabCorpX() {
         
         if (hasSearchValue) {
           if (!Math.abs(tx.value).toString().includes(searchValue)) continue;
-        }
-        
+          }
+          
         if (hasSearchDescCliente) {
           const descLower = tx.descCliente?.toLowerCase() || '';
           const clientLower = tx.client?.toLowerCase() || '';
@@ -373,10 +373,10 @@ export default function ExtractTabCorpX() {
       // Aplicar ordenação
       if (sortOrder !== "none") {
         if (sortBy === "date") {
-          filtered.sort((a, b) => {
+        filtered.sort((a, b) => {
             const diff = new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
             return sortOrder === "asc" ? diff : -diff;
-          });
+        });
         } else if (sortBy === "value") {
           filtered.sort((a, b) => sortOrder === "asc" ? a.value - b.value : b.value - a.value);
         }
@@ -513,7 +513,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
         // 🚀 OTIMIZADO: Usar array mutável para evitar criação de novos arrays a cada iteração
         let normalizedTransactions = normalizeTransactions(transactions, isAllAccounts, sanitizedCnpj);
-        
+
         // 🚀 Definir hasMoreFromApi fora do bloco para uso posterior
         let hasMoreFromApi = paginationData.has_more ?? paginationData.hasMore ?? false;
 
@@ -522,21 +522,21 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         const shouldFetchMore = applyFilters && normalizedTransactions.length < limit;
         
         if (shouldFetchMore) {
-          let nextOffset = offset + limitFromApi;
-          let guard = 0;
+        let nextOffset = offset + limitFromApi;
+        let guard = 0;
           const maxExtraRequests = 10; // 🚀 Reduzido de 50 para 10 para evitar muitas requisições
 
-          while (normalizedTransactions.length < limit && hasMoreFromApi && guard < maxExtraRequests) {
-            const extraResponse = await CorpXService.listarTransacoes({
-              ...baseQueryParams,
-              offset: nextOffset,
-            });
+        while (normalizedTransactions.length < limit && hasMoreFromApi && guard < maxExtraRequests) {
+          const extraResponse = await CorpXService.listarTransacoes({
+            ...baseQueryParams,
+            offset: nextOffset,
+          });
 
-            if (!extraResponse?.success || !Array.isArray(extraResponse.data) || extraResponse.data.length === 0) {
-              break;
-            }
+          if (!extraResponse?.success || !Array.isArray(extraResponse.data) || extraResponse.data.length === 0) {
+            break;
+          }
 
-            const extraNormalized = normalizeTransactions(extraResponse.data, isAllAccounts, sanitizedCnpj);
+          const extraNormalized = normalizeTransactions(extraResponse.data, isAllAccounts, sanitizedCnpj);
             if (extraNormalized.length === 0) break;
 
             // 🚀 Push em vez de spread operator (evita criar novo array)
@@ -545,10 +545,10 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
               normalizedTransactions.push(extraNormalized[i]);
             }
 
-            const extraPagination = extraResponse.pagination ?? {};
-            hasMoreFromApi = extraPagination.has_more ?? extraPagination.hasMore ?? false;
-            const extraLimit = extraPagination.limit && extraPagination.limit > 0 ? extraPagination.limit : limit;
-            nextOffset = (extraPagination.offset ?? nextOffset) + extraLimit;
+          const extraPagination = extraResponse.pagination ?? {};
+          hasMoreFromApi = extraPagination.has_more ?? extraPagination.hasMore ?? false;
+          const extraLimit = extraPagination.limit && extraPagination.limit > 0 ? extraPagination.limit : limit;
+          nextOffset = (extraPagination.offset ?? nextOffset) + extraLimit;
             
             if (normalizedTransactions.length === previousLength) break;
             guard++;
@@ -993,7 +993,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     
     setBulkOTCModalOpen(true);
   };
-
+    
   const handleCloseBulkOTCModal = (wasSuccessful?: boolean, successfulIds?: string[]) => {
     if (wasSuccessful && successfulIds && successfulIds.length > 0) {
       // Marcar todas as transações creditadas com sucesso
@@ -1002,7 +1002,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         successfulIds.forEach(id => newSet.add(`corpx-${id}`));
         return newSet;
       });
-      
+    
       // Limpar seleção
       clearSelection();
     }
@@ -2698,7 +2698,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                         <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Código (End-to-End)</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[120px] text-center">Status</TableHead>
                         {!bulkMode && (
-                          <TableHead className="font-semibold text-card-foreground py-3 w-[100px] text-center">Ações</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[100px] text-center">Ações</TableHead>
                         )}
                       </TableRow>
                     </TableHeader>
@@ -2716,8 +2716,8 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                               e.stopPropagation();
                               toggleTransactionSelection(transaction.id.toString());
                             } else if (!bulkMode) {
-                              setSelectedTransaction(transaction);
-                              setIsModalOpen(true);
+                            setSelectedTransaction(transaction);
+                            setIsModalOpen(true);
                             }
                           }}
                           className={cn(
@@ -2826,44 +2826,44 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           
                           {/* ✅ Coluna de Ações - Botão +OTC (oculto no modo lote) */}
                           {!bulkMode && (
-                            <TableCell className="py-3">
-                              <div className="flex items-center justify-center">
-                                {transaction.type === 'CRÉDITO' && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => handleCreditToOTC(transaction, e)}
-                                    disabled={isRecordCredited(transaction) || isVerifyingTransaction === transaction.id}
-                                    className={cn(
-                                      "h-7 px-2 text-xs transition-all",
-                                      isRecordCredited(transaction)
-                                        ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                        : isVerifyingTransaction === transaction.id
-                                        ? "bg-blue-50 text-blue-600 border-blue-200"
-                                        : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
-                                    )}
-                                    title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : isVerifyingTransaction === transaction.id ? "Verificando transação..." : "Creditar para cliente OTC"}
-                                  >
-                                    {isRecordCredited(transaction) ? (
-                                      <>
-                                        <Check className="h-3 w-3 mr-1" />
-                                        Creditado
-                                      </>
-                                    ) : isVerifyingTransaction === transaction.id ? (
-                                      <>
-                                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                        Verificando...
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Plus className="h-3 w-3 mr-1" />
-                                        OTC
-                                      </>
-                                    )}
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
+                          <TableCell className="py-3">
+                            <div className="flex items-center justify-center">
+                              {transaction.type === 'CRÉDITO' && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => handleCreditToOTC(transaction, e)}
+                                  disabled={isRecordCredited(transaction) || isVerifyingTransaction === transaction.id}
+                                  className={cn(
+                                    "h-7 px-2 text-xs transition-all",
+                                    isRecordCredited(transaction)
+                                      ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                      : isVerifyingTransaction === transaction.id
+                                      ? "bg-blue-50 text-blue-600 border-blue-200"
+                                      : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
+                                  )}
+                                  title={isRecordCredited(transaction) ? "Já creditado para cliente OTC" : isVerifyingTransaction === transaction.id ? "Verificando transação..." : "Creditar para cliente OTC"}
+                                >
+                                  {isRecordCredited(transaction) ? (
+                                    <>
+                                      <Check className="h-3 w-3 mr-1" />
+                                      Creditado
+                                    </>
+                                  ) : isVerifyingTransaction === transaction.id ? (
+                                    <>
+                                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                      Verificando...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plus className="h-3 w-3 mr-1" />
+                                      OTC
+                                    </>
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
                           )}
                         </TableRow>
                         );

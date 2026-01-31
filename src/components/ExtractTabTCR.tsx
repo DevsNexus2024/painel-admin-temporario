@@ -98,43 +98,99 @@ export default function ExtractTabTCR() {
   // ✅ Conversão de dados da nova API de transações TCR
   const convertTCRToStandardFormat = (transaction: any) => {
     // ✅ Nova API retorna CorpXTransactionItem com estrutura diferente
-    const transactionType = transaction.transactionType || transaction.type;
-    const type = transactionType === 'C' || transactionType === 'credit' ? 'CRÉDITO' : 'DÉBITO';
+    // Verificar transactionType em múltiplos lugares (pode estar em _original também)
+    let transactionType = transaction.transactionType || 
+                         transaction.type || 
+                         transaction._original?.transactionType ||
+                         transaction._original?.type ||
+                         '';
+    
+    // ✅ Verificar também em rawExtrato (para transferências internas)
+    if (!transactionType && transaction._original?.rawExtrato?.tipo) {
+      transactionType = transaction._original.rawExtrato.tipo;
+    }
+    
+    // ✅ Determinar tipo: 'C' ou 'credit' = CRÉDITO, qualquer outra coisa = DÉBITO
+    // Normalizar para maiúscula para comparação
+    const normalizedType = String(transactionType).toUpperCase().trim();
+    const type = (normalizedType === 'C' || normalizedType === 'CREDIT' || normalizedType === 'CRÉDITO') ? 'CRÉDITO' : 'DÉBITO';
     
     // ✅ Extrair valor (pode vir como string ou number)
-    const amountRaw = transaction.amount ?? transaction.valor ?? 0;
-    const amount = typeof amountRaw === 'string' ? parseFloat(amountRaw) : Number(amountRaw) || 0;
+    const amountRaw = transaction.amount ?? transaction.valor ?? transaction._original?.amount ?? transaction._original?.valor ?? 0;
+    let amount = typeof amountRaw === 'string' ? parseFloat(amountRaw) : Number(amountRaw) || 0;
+    
+    // ✅ Garantir que o valor seja sempre positivo (o tipo já indica se é crédito ou débito)
+    amount = Math.abs(amount);
     
     // ✅ Extrair data/hora (múltiplos campos possíveis)
     const transactionDateTime =
       transaction.transactionDatetime ||
       transaction.transactionDatetimeUtc ||
+      transaction._original?.transactionDatetime ||
+      transaction._original?.transactionDatetimeUtc ||
       transaction.transactionDate ||
       transaction.date ||
       transaction.dateTime ||
       new Date().toISOString();
     
     // ✅ Extrair descrição
-    const description = transaction.description || transaction.transactionDescription || transaction.pixDescription || transaction.label || transaction.descricao || '';
+    const description = transaction.description || 
+                       transaction.transactionDescription || 
+                       transaction.pixDescription || 
+                       transaction.label || 
+                       transaction.descricao ||
+                       transaction._original?.description ||
+                       transaction._original?.rawExtrato?.descricao ||
+                       '';
     
-    // ✅ Extrair cliente (priorizar payerName/beneficiaryName, depois descrição)
-    const payerName = transaction.payerName || transaction.debtorName || '';
-    const beneficiaryName = transaction.beneficiaryName || transaction.creditorName || transaction.destinatario || '';
-    const counterpartyName = type === 'CRÉDITO' ? payerName : beneficiaryName;
+    // ✅ Extrair cliente (priorizar payerName/beneficiaryName baseado no tipo)
+    const payerName = transaction.payerName || 
+                     transaction.debtorName || 
+                     transaction._original?.payerName ||
+                     transaction._original?.rawExtrato?.payer?.fullName ||
+                     '';
+    
+    const beneficiaryName = transaction.beneficiaryName || 
+                           transaction.creditorName || 
+                           transaction.destinatario ||
+                           transaction._original?.beneficiaryName ||
+                           transaction._original?.rawExtrato?.beneficiary?.fullName ||
+                           '';
+    
+    // ✅ Para CRÉDITO: cliente é quem está pagando (payerName)
+    // ✅ Para DÉBITO: cliente é quem está recebendo (beneficiaryName)
+    let cliente = type === 'CRÉDITO' ? payerName : beneficiaryName;
     
     // ✅ Fallback: extrair da descrição se não houver nome
-    let cliente = counterpartyName;
-    if (!cliente && description.includes(' - ')) {
-      cliente = description.split(' - ')[1] || 'Cliente não identificado';
-    }
-    if (!cliente) {
-      cliente = beneficiaryName || payerName || 'Cliente não identificado';
+    if (!cliente || cliente.trim() === '') {
+      if (description.includes(' - ')) {
+        cliente = description.split(' - ')[1] || 'Cliente não identificado';
+      } else {
+        // Último fallback: usar o outro nome disponível
+        cliente = type === 'CRÉDITO' ? beneficiaryName : payerName;
+        if (!cliente || cliente.trim() === '') {
+          cliente = 'Cliente não identificado';
+        }
+      }
     }
     
     // ✅ Extrair documentos
-    const payerDocument = transaction.payerDocument || transaction.debtorDocument || '';
-    const beneficiaryDocument = transaction.beneficiaryDocument || transaction.creditorDocument || transaction.documentoBeneficiario || '';
-    const document = beneficiaryDocument || payerDocument || '';
+    const payerDocument = transaction.payerDocument || 
+                         transaction.debtorDocument || 
+                         transaction._original?.payerDocument ||
+                         transaction._original?.rawExtrato?.payer?.document ||
+                         '';
+    
+    const beneficiaryDocument = transaction.beneficiaryDocument || 
+                                transaction.creditorDocument || 
+                                transaction.documentoBeneficiario ||
+                                transaction._original?.beneficiaryDocument ||
+                                transaction._original?.rawExtrato?.beneficiary?.document ||
+                                '';
+    
+    // ✅ Para CRÉDITO: documento é do pagador (payerDocument)
+    // ✅ Para DÉBITO: documento é do beneficiário (beneficiaryDocument)
+    const document = type === 'CRÉDITO' ? payerDocument : beneficiaryDocument;
     
     // ✅ Extrair código end-to-end
     const endToEnd =
@@ -142,7 +198,10 @@ export default function ExtractTabTCR() {
       transaction.end_to_end ||
       transaction.endToEndId ||
       transaction.idEndToEnd ||
+      transaction._original?.endToEnd ||
+      transaction._original?.idEndToEnd ||
       transaction.nrMovimento ||
+      transaction._original?.nrMovimento ||
       transaction.id ||
       '';
 
@@ -167,10 +226,10 @@ export default function ExtractTabTCR() {
     const resultado = {
       id: (transaction.id ?? transaction.nrMovimento ?? transaction.idEndToEnd ?? Date.now()).toString(),
       dateTime: transactionDateTime,
-      value: amount,
-      type,
-      client: cliente,
-      document,
+      value: amount, // ✅ Valor sempre positivo, o tipo indica se é crédito ou débito
+      type, // ✅ Tipo correto baseado em transactionType
+      client: cliente, // ✅ Cliente correto baseado no tipo
+      document, // ✅ Documento correto baseado no tipo
       beneficiaryDocument,
       payerDocument,
       code: endToEnd || '',
@@ -188,24 +247,62 @@ export default function ExtractTabTCR() {
 
   // ✅ Função para identificar se é transação de tarifa
   const isTarifaTransaction = (transaction: any): boolean => {
-    const descricao = transaction.descCliente?.toLowerCase() || '';
-    const cliente = transaction.client?.toLowerCase() || '';
+    const descricao = (transaction.descCliente || 
+                     transaction.descricaoOperacao ||
+                     transaction.description || 
+                     transaction._original?.description ||
+                     transaction._original?.rawExtrato?.descricao ||
+                     '').toLowerCase();
+    
     const valor = Math.abs(transaction.value || 0);
     
-    // Padrões de identificação de tarifa:
-    // 1. Descrição contendo "TRANSF.ENTRE CTAS" ou similar
-    // 2. Valores muito pequenos (R$ 0,50 ou menos) com descrição de transferência entre contas
-    // 3. Cliente sendo "TCR FINANCE LTDA" ou similar com valores pequenos
+    // ✅ Verificar se é transferência entre contas
     const isTransferenciaEntreContas = descricao.includes('transf.entre ctas') || 
                                        descricao.includes('transf entre ctas') ||
                                        descricao.includes('transferência entre contas') ||
                                        descricao.includes('transferencia entre contas');
     
-    const isValorPequeno = valor <= 0.50; // R$ 0,50 ou menos
-    const isTcrFinance = cliente.includes('tcr finance') || cliente.includes('tcrfinance');
+    if (!isTransferenciaEntreContas) {
+      return false; // Não é transferência interna, então não é tarifa
+    }
     
-    // É tarifa se: transferência entre contas OU (valor pequeno E cliente TCR Finance)
-    return isTransferenciaEntreContas || (isValorPequeno && isTcrFinance);
+    // ✅ Verificar beneficiário e pagador (acessar tanto do objeto convertido quanto do _original)
+    const beneficiaryDocument = transaction.beneficiaryDocument || 
+                               transaction._original?.beneficiaryDocument ||
+                               transaction._original?.rawExtrato?.beneficiary?.document ||
+                               '';
+    
+    const beneficiaryName = (transaction._original?.beneficiaryName ||
+                            transaction._original?.rawExtrato?.beneficiary?.fullName ||
+                            '').toLowerCase();
+    
+    const payerDocument = transaction.payerDocument || 
+                         transaction._original?.payerDocument ||
+                         transaction._original?.rawExtrato?.payer?.document ||
+                         '';
+    
+    const payerName = (transaction._original?.payerName ||
+                       transaction._original?.rawExtrato?.payer?.fullName ||
+                       '').toLowerCase();
+    
+    // ✅ Documento da CORPX BANK (instituição de pagamento)
+    const CORPX_BANK_DOC = '36741675000139';
+    const CORPX_BANK_NAME = 'corpx bank instituicao de pagamento';
+    
+    // ✅ É tarifa se:
+    // 1. É transferência interna (TRANSF.ENTRE CTAS)
+    // 2. E o beneficiário ou pagador é CORPX BANK (instituição de pagamento)
+    // 3. E valor pequeno (R$ 1,00 ou menos) - tarifas geralmente são valores pequenos
+    const isBeneficiaryCorpxBank = beneficiaryDocument === CORPX_BANK_DOC || 
+                                   beneficiaryName.includes(CORPX_BANK_NAME);
+    
+    const isPayerCorpxBank = payerDocument === CORPX_BANK_DOC || 
+                             payerName.includes(CORPX_BANK_NAME);
+    
+    const isValorPequeno = valor <= 1.00; // R$ 1,00 ou menos (tarifas geralmente são pequenas)
+    
+    // É tarifa se é transferência interna para CORPX BANK com valor pequeno
+    return (isBeneficiaryCorpxBank || isPayerCorpxBank) && isValorPequeno;
   };
 
   // ✅ Função para detectar se é transferência interna
@@ -218,28 +315,15 @@ export default function ExtractTabTCR() {
                         '').toUpperCase();
     
     // Verificar se a descrição indica transferência interna
+    // Se a descrição contém "TRANSF.ENTRE CTAS" ou similar, é transferência interna
     const isTransferenciaEntreContas = description.includes('TRANSF.ENTRE CTAS') ||
                                        description.includes('TRANSF ENTRE CTAS') ||
                                        description.includes('TRANSFERÊNCIA ENTRE CONTAS') ||
                                        description.includes('TRANSFERENCIA ENTRE CONTAS');
     
-    // Verificar se não tem endToEnd válido (transferências internas podem ter endToEnd vazio ou hash interno)
-    const endtoend = transaction.code || 
-                     transaction._original?.endToEnd || 
-                     transaction._original?.idEndToEnd ||
-                     transaction._original?.endToEndId ||
-                     '';
-    
-    // Se não tem endToEnd ou endToEnd está vazio, e a descrição indica transferência interna
-    if (isTransferenciaEntreContas && (!endtoend || endtoend.length === 0)) {
-      return true;
-    }
-    
-    // Também verificar pelo pixType null e rawWebhook null (indicadores de transferência interna)
-    const pixType = transaction._original?.pixType;
-    const rawWebhook = transaction._original?.rawWebhook;
-    
-    if (isTransferenciaEntreContas && !pixType && !rawWebhook) {
+    // Se a descrição indica transferência entre contas, é transferência interna
+    // (mesmo que tenha endToEnd, pois transferências internas podem ter hash interno)
+    if (isTransferenciaEntreContas) {
       return true;
     }
     
@@ -1336,8 +1420,8 @@ export default function ExtractTabTCR() {
           duration: 6000
         });
         return;
-      }
-
+    }
+    
       // ✅ Depósito encontrado e verificado - abrir modal com dados
       setDepositoData(resultadoApi);
       setDepositoModalOpen(true);
@@ -2031,9 +2115,9 @@ export default function ExtractTabTCR() {
                       <td className="p-3">
                         <div className="flex items-center gap-2">
                           {expandedRow === tx.id ? (
-                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           )}
                   <div>
                             <div className="text-sm">{formatDate(tx.dateTime).split(' ')[0]}</div>
@@ -2098,8 +2182,8 @@ export default function ExtractTabTCR() {
                       <td className="p-3 text-center">
                         {formatStatus(tx.status) || formatStatus('COMPLETE')}
                       </td>
-                      <td className="p-3">
-                        {tx.type === 'DÉBITO' && (
+                        <td className="p-3">
+                          {tx.type === 'DÉBITO' && (
                                 <Button
                                   variant="outline"
                                   size="sm"

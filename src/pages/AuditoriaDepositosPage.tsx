@@ -848,8 +848,11 @@ function DepositoNormalListItem({
   };
 
   // Determinar se pode reprocessar baseado na situação
+  // Permite reprocessar quando precisa_reprocessar é true E:
+  // - status não é 'finished' OU situação é 'deposito_finalizado_movimentacao_pendente' (caso especial)
+  // - situação não é 'finalizado'
   const podeReprocessar = deposito.precisa_reprocessar && 
-    deposito.status_deposito !== 'finished' &&
+    (deposito.status_deposito !== 'finished' || deposito.situacao === 'deposito_finalizado_movimentacao_pendente') &&
     deposito.situacao !== 'finalizado';
 
   return (
@@ -1361,7 +1364,7 @@ function DepositoNormalDetailsModal({
             Fechar
           </Button>
           {detalhes?.precisa_reprocessar && 
-           detalhes.status_deposito !== 'finished' && 
+           (detalhes.status_deposito !== 'finished' || detalhes.situacao === 'deposito_finalizado_movimentacao_pendente') && 
            detalhes.situacao !== 'finalizado' && (
             <Button 
               onClick={() => onReprocessar(depositoId)} 
