@@ -71,7 +71,8 @@ interface CorpXProviderProps {
 }
 
 export function CorpXProvider({ children }: CorpXProviderProps) {
-  const [selectedAccount, setSelectedAccount] = useState<CorpXAccount>(CORPX_ACCOUNTS[0]); // TTF como padrão
+  // Padrão: consolidado (ALL)
+  const [selectedAccount, setSelectedAccount] = useState<CorpXAccount>(CORPX_ACCOUNTS[0]);
 
   // Função para manter compatibilidade com código existente
   const setTaxDocument = (taxDocument: string) => {

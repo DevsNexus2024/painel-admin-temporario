@@ -1,11 +1,10 @@
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshCcw, Loader2, DollarSign, Lock, CheckCircle, AlertCircle, FileText, Banknote, Wifi, WifiOff } from "lucide-react";
 import { useCorpXSaldo } from "@/hooks/useCorpXSaldo";
 import { CorpXService } from "@/services/corpx";
-import { useCorpX } from "@/contexts/CorpXContext";
-import { toast } from "sonner";
+import { useCorpX, CORPX_ACCOUNTS } from "@/contexts/CorpXContext";
 import AnimatedBalance from "@/components/AnimatedBalance";
 import { useCorpxRealtime } from "@/hooks/useCorpxRealtime";
 
@@ -14,6 +13,20 @@ export default function TopBarCorpX() {
   
   // Remove formatação do CNPJ para usar apenas números na API
   const cnpjNumerico = taxDocument.replace(/\D/g, '');
+
+  const isAllAccounts = selectedAccount.id === 'ALL';
+
+  // Estado para saldo consolidado (ALL)
+  const [consolidatedSaldo, setConsolidatedSaldo] = useState<{
+    globalBalance: number;
+    saldo: number;
+    saldoDisponivel: number;
+    saldoBloqueado: number;
+  } | null>(null);
+  const [consolidatedLastUpdated, setConsolidatedLastUpdated] = useState<Date | null>(null);
+  const [consolidatedLoading, setConsolidatedLoading] = useState(false);
+  const [consolidatedError, setConsolidatedError] = useState<string | null>(null);
+  const consolidatedAbortRef = useRef<AbortController | null>(null);
   
   const {
     saldo: saldoData,
@@ -27,43 +40,133 @@ export default function TopBarCorpX() {
   });
 
   // WebSocket para tempo real (se disponível)
+  const selectedTaxDocumentForRealtime = useMemo(() => {
+    if (isAllAccounts) return null;
+    const digits = (selectedAccount.cnpj || '').replace(/\D/g, '');
+    return digits.length === 14 ? digits : null;
+  }, [isAllAccounts, selectedAccount.cnpj]);
+
   const { isConnected, isReconnecting } = useCorpxRealtime({
-    taxDocument: cnpjNumerico
+    enabled: true,
+    filterTransaction: (tx) => {
+      if (!selectedTaxDocumentForRealtime) return true;
+      return (tx.taxDocument || '').replace(/\D/g, '') === selectedTaxDocumentForRealtime;
+    },
   });
 
-  // 🔄 Recarregar saldo automaticamente quando tax_document mudar
-  useEffect(() => {
-    if (cnpjNumerico && cnpjNumerico.length === 14) {
-      console.log('[CORPX-SALDO] 🔄 Tax document alterado, recarregando saldo...', cnpjNumerico);
-      handleRefresh();
-      toast.info("Atualizando saldo para nova conta...");
+  const accountsForConsolidation = useMemo(
+    () =>
+      CORPX_ACCOUNTS.filter((acc) => acc.id !== 'ALL' && acc.available)
+        .map((acc) => ({ ...acc, cnpjNumerico: (acc.cnpj || '').replace(/\D/g, '') }))
+        .filter((acc) => acc.cnpjNumerico.length === 14),
+    []
+  );
+
+  const refreshConsolidatedSaldo = useCallback(async () => {
+    consolidatedAbortRef.current?.abort();
+    const controller = new AbortController();
+    consolidatedAbortRef.current = controller;
+
+    setConsolidatedLoading(true);
+    setConsolidatedError(null);
+
+    try {
+      const results = await Promise.allSettled(
+        accountsForConsolidation.map(async (acc) => {
+          const resp = await CorpXService.consultarSaldo(acc.cnpjNumerico, { signal: controller.signal });
+          if (!resp || resp.erro) return null;
+          return resp;
+        })
+      );
+
+      const valid = results
+        .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+        .map((r) => r.value)
+        .filter(Boolean);
+
+      const totals = valid.reduce(
+        (sum, item) => {
+          const global = Number(item.globalBalance ?? item.saldo ?? 0) || 0;
+          const saldo = Number(item.saldo ?? 0) || 0;
+          const disponivel = Number(item.saldoDisponivel ?? 0) || 0;
+          const bloqueado = Number(item.saldoBloqueado ?? item.limiteBloqueado ?? 0) || 0;
+
+          return {
+            globalBalance: sum.globalBalance + global,
+            saldo: sum.saldo + saldo,
+            saldoDisponivel: sum.saldoDisponivel + disponivel,
+            saldoBloqueado: sum.saldoBloqueado + bloqueado,
+          };
+        },
+        { globalBalance: 0, saldo: 0, saldoDisponivel: 0, saldoBloqueado: 0 }
+      );
+
+      setConsolidatedSaldo(totals);
+      setConsolidatedLastUpdated(new Date());
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+      setConsolidatedError(err?.message || 'Erro ao consultar saldo consolidado');
+      setConsolidatedSaldo(null);
+    } finally {
+      setConsolidatedLoading(false);
     }
-  }, [cnpjNumerico, handleRefresh]);
+  }, [accountsForConsolidation]);
+
+  // Carregar saldo consolidado quando ALL estiver selecionado
+  useEffect(() => {
+    if (isAllAccounts) {
+      refreshConsolidatedSaldo();
+    }
+    return () => {
+      consolidatedAbortRef.current?.abort();
+      consolidatedAbortRef.current = null;
+    };
+  }, [isAllAccounts, refreshConsolidatedSaldo]);
 
   const formatCurrency = (value: number) => {
     return CorpXService.formatarValor(value);
   };
 
   // Funções para exibir saldos baseadas na nova API
+  const effectiveLoading = isAllAccounts ? consolidatedLoading : isLoadingSaldo;
+  const effectiveError = isAllAccounts ? consolidatedError : errorSaldo;
+  const effectiveLastUpdated = isAllAccounts ? consolidatedLastUpdated : lastUpdated;
+
+  const effectiveGlobalBalance = isAllAccounts
+    ? consolidatedSaldo?.globalBalance ?? 0
+    : (saldoData as any)?.globalBalance ?? saldoData?.saldo ?? 0;
+
+  const effectiveSaldo = isAllAccounts
+    ? consolidatedSaldo?.saldo ?? 0
+    : saldoData?.saldo ?? 0;
+
+  const effectiveSaldoDisponivel = isAllAccounts
+    ? consolidatedSaldo?.saldoDisponivel ?? 0
+    : saldoData?.saldoDisponivel ?? 0;
+
+  const effectiveSaldoBloqueado = isAllAccounts
+    ? consolidatedSaldo?.saldoBloqueado ?? 0
+    : (saldoData as any)?.saldoBloqueado ?? saldoData?.limiteBloqueado ?? 0;
+
   const getSaldoDisplay = () => {
-    if (isLoadingSaldo) return 'Carregando...';
-    if (errorSaldo) return 'Erro ao consultar saldo CORPX';
-    if (saldoData?.erro) return 'Erro na API CORPX';
-    return formatCurrency(saldoData?.saldo || 0);
+    if (effectiveLoading) return 'Carregando...';
+    if (effectiveError) return 'Erro ao consultar saldo CORPX';
+    if (!isAllAccounts && saldoData?.erro) return 'Erro na API CORPX';
+    return formatCurrency(effectiveSaldo);
   };
 
   const getSaldoDisponivelDisplay = () => {
-    if (isLoadingSaldo) return 'Carregando...';
-    if (errorSaldo) return 'Erro';
-    if (saldoData?.erro) return 'Erro';
-    return formatCurrency(saldoData?.saldoDisponivel || 0);
+    if (effectiveLoading) return 'Carregando...';
+    if (effectiveError) return 'Erro';
+    if (!isAllAccounts && saldoData?.erro) return 'Erro';
+    return formatCurrency(effectiveSaldoDisponivel);
   };
 
   const getLimiteBloqueadoDisplay = () => {
-    if (isLoadingSaldo) return 'Carregando...';
-    if (errorSaldo) return 'Erro';
-    if (saldoData?.erro) return 'Erro';
-    return formatCurrency(saldoData?.limiteBloqueado || 0);
+    if (effectiveLoading) return 'Carregando...';
+    if (effectiveError) return 'Erro';
+    if (!isAllAccounts && saldoData?.erro) return 'Erro';
+    return formatCurrency(effectiveSaldoBloqueado);
   };
 
   const parseValue = (value: string | number): number => {
@@ -72,10 +175,10 @@ export default function TopBarCorpX() {
   };
 
   const getStatusIcon = () => {
-    if (isLoadingSaldo) {
+    if (effectiveLoading) {
       return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
     }
-    if (errorSaldo || saldoData?.erro) {
+    if (effectiveError || (!isAllAccounts && saldoData?.erro)) {
       return <AlertCircle className="h-4 w-4 text-red-500" />;
     }
     return <CheckCircle className="h-4 w-4 text-green-500" />;
@@ -127,17 +230,17 @@ export default function TopBarCorpX() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleRefresh}
-            disabled={isLoadingSaldo}
+            onClick={isAllAccounts ? refreshConsolidatedSaldo : handleRefresh}
+            disabled={effectiveLoading}
             className="hover:bg-muted rounded-xl"
           >
-            {isLoadingSaldo ? (
+            {effectiveLoading ? (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             ) : (
               <RefreshCcw className="h-4 w-4 text-muted-foreground" />
             )}
             <span className="ml-2 text-sm text-muted-foreground">
-              {isLoadingSaldo ? "Atualizando..." : "Atualizar"}
+              {effectiveLoading ? "Atualizando..." : "Atualizar"}
             </span>
           </Button>
         </div>
@@ -152,12 +255,12 @@ export default function TopBarCorpX() {
             <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo Global</span>
           </div>
           <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-purple-500 mt-1 overflow-hidden">
-            {isLoadingSaldo ? (
+            {effectiveLoading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
-            ) : errorSaldo ? (
+            ) : effectiveError ? (
               <span className="text-lg text-red-500">Erro</span>
             ) : (
-              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.globalBalance || 0)} /></div>
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(effectiveGlobalBalance)} /></div>
             )}
           </div>
         </div>
@@ -169,12 +272,12 @@ export default function TopBarCorpX() {
             <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo</span>
           </div>
           <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-purple-500 mt-1 overflow-hidden">
-            {isLoadingSaldo ? (
+            {effectiveLoading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
-            ) : errorSaldo ? (
+            ) : effectiveError ? (
               <span className="text-lg text-red-500">Erro</span>
             ) : (
-              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.saldo || 0)} /></div>
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(effectiveSaldo)} /></div>
             )}
           </div>
         </div>
@@ -186,12 +289,12 @@ export default function TopBarCorpX() {
             <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo Disponível</span>
           </div>
           <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-green-500 mt-1 overflow-hidden">
-            {isLoadingSaldo ? (
+            {effectiveLoading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
-            ) : errorSaldo ? (
+            ) : effectiveError ? (
               <span className="text-lg text-red-500">Erro</span>
             ) : (
-              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.saldoDisponivel || 0)} /></div>
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(effectiveSaldoDisponivel)} /></div>
             )}
           </div>
         </div>
@@ -203,12 +306,12 @@ export default function TopBarCorpX() {
             <span className="text-[0.9rem] text-[rgba(255,255,255,0.66)]">Saldo Bloqueado</span>
           </div>
           <div className="text-[1.3rem] lg:text-[1.5rem] font-bold text-orange-500 mt-1 overflow-hidden">
-            {isLoadingSaldo ? (
+            {effectiveLoading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
-            ) : errorSaldo ? (
+            ) : effectiveError ? (
               <span className="text-lg text-red-500">Erro</span>
             ) : (
-              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(saldoData?.saldoBloqueado || saldoData?.limiteBloqueado || 0)} /></div>
+              <div className="whitespace-nowrap">R$ <AnimatedBalance value={parseValue(effectiveSaldoBloqueado)} /></div>
             )}
           </div>
         </div>

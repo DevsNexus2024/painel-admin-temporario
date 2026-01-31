@@ -25,6 +25,7 @@ import { useCorpxRealtime, CorpXTransactionPayload } from "@/hooks/useCorpxRealt
 // Componente completo para o Extrato CorpX (baseado no BMP 531)
 export default function ExtractTabCorpX() {
   const { selectedAccount } = useCorpX();
+  const abortRef = React.useRef<AbortController | null>(null);
 
   const accountNameByDocument = useMemo(() => {
     const map: Record<string, string> = {};
@@ -430,12 +431,34 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     incrementalUpdate: boolean = false // ✅ Novo parâmetro para atualização incremental
   ) => {
     try {
+      // ✅ Cancelar requisição anterior (troca rápida de conta/filtros)
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       setIsLoading(true);
       setError("");
       
       const accountIdParam = selectedAccount.id || 'ALL';
       const isAllAccounts = accountIdParam === 'ALL';
       const sanitizedCnpj = !isAllAccounts && selectedAccount.cnpj ? selectedAccount.cnpj.replace(/\D/g, '') : '';
+
+      // ✅ Guard rail: backend do /api/corpx/transactions filtra por accountId numérico.
+      // Evitar buscar extrato sem filtro de conta (muito pesado e pode vir dados demais).
+      if (!isAllAccounts && !selectedAccount.apiAccountId) {
+        setAllTransactions([]);
+        setPagination({
+          total: 0,
+          limit: Math.min(limitOverride ?? recordsPerPage, 2000),
+          offset: 0,
+          has_more: false,
+          current_page: 1,
+          total_pages: 1,
+        });
+        setCurrentPage(1);
+        setError('Extrato indisponível para esta conta (accountId numérico não configurado).');
+        return;
+      }
       
       // ✅ Se for atualização incremental, buscar apenas transações mais recentes que as já em cache
       let dataInicio: string | undefined;
@@ -503,7 +526,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         baseQueryParams.endDate = dataFim;
       }
 
-      const response = await CorpXService.listarTransacoes(baseQueryParams);
+      const response = await CorpXService.listarTransacoes(baseQueryParams, { signal: controller.signal });
 
       if (response?.success) {
         const transactions = Array.isArray(response.data) ? response.data : [];
@@ -522,21 +545,24 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         const shouldFetchMore = applyFilters && normalizedTransactions.length < limit;
         
         if (shouldFetchMore) {
-        let nextOffset = offset + limitFromApi;
-        let guard = 0;
+          let nextOffset = offset + limitFromApi;
+          let guard = 0;
           const maxExtraRequests = 10; // 🚀 Reduzido de 50 para 10 para evitar muitas requisições
 
-        while (normalizedTransactions.length < limit && hasMoreFromApi && guard < maxExtraRequests) {
-          const extraResponse = await CorpXService.listarTransacoes({
-            ...baseQueryParams,
-            offset: nextOffset,
-          });
+          while (normalizedTransactions.length < limit && hasMoreFromApi && guard < maxExtraRequests) {
+            const extraResponse = await CorpXService.listarTransacoes(
+              {
+                ...baseQueryParams,
+                offset: nextOffset,
+              },
+              { signal: controller.signal }
+            );
 
-          if (!extraResponse?.success || !Array.isArray(extraResponse.data) || extraResponse.data.length === 0) {
-            break;
-          }
+            if (!extraResponse?.success || !Array.isArray(extraResponse.data) || extraResponse.data.length === 0) {
+              break;
+            }
 
-          const extraNormalized = normalizeTransactions(extraResponse.data, isAllAccounts, sanitizedCnpj);
+            const extraNormalized = normalizeTransactions(extraResponse.data, isAllAccounts, sanitizedCnpj);
             if (extraNormalized.length === 0) break;
 
             // 🚀 Push em vez de spread operator (evita criar novo array)
@@ -545,10 +571,10 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
               normalizedTransactions.push(extraNormalized[i]);
             }
 
-          const extraPagination = extraResponse.pagination ?? {};
-          hasMoreFromApi = extraPagination.has_more ?? extraPagination.hasMore ?? false;
-          const extraLimit = extraPagination.limit && extraPagination.limit > 0 ? extraPagination.limit : limit;
-          nextOffset = (extraPagination.offset ?? nextOffset) + extraLimit;
+            const extraPagination = extraResponse.pagination ?? {};
+            hasMoreFromApi = extraPagination.has_more ?? extraPagination.hasMore ?? false;
+            const extraLimit = extraPagination.limit && extraPagination.limit > 0 ? extraPagination.limit : limit;
+            nextOffset = (extraPagination.offset ?? nextOffset) + extraLimit;
             
             if (normalizedTransactions.length === previousLength) break;
             guard++;
@@ -644,6 +670,9 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         });
       }
     } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return;
+      }
       console.error('[CORPX-EXTRATO-UI] ❌ Erro:', err);
       setError(err.message || 'Erro ao carregar extrato');
       setAllTransactions([]);
@@ -655,6 +684,13 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, []);
 
   const handleSyncDialogChange = (open: boolean) => {
     setIsSyncDialogOpen(open);
@@ -1949,11 +1985,6 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     setFiltersAppliedToAPI(false); // Reset filtros ao mudar conta
     // ✅ Carregar sem filtros ao mudar conta (applyFilters = false)
     loadCorpXTransactions(undefined, undefined, 1, recordsPerPage, false);
-    toast.info(
-      selectedAccount.id === 'ALL'
-        ? 'Atualizando extrato consolidado de todas as contas...'
-        : 'Atualizando extrato para nova conta...'
-    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccount.id]);
 

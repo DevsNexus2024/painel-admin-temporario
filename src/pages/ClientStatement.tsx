@@ -1387,7 +1387,7 @@ const ClientStatement: React.FC = () => {
                       </div>
 
                       {/* Dados do Depositante */}
-                      <div className="col-span-4">
+                      <div className="col-span-6">
                         <p className="text-sm font-medium text-foreground">
                           {(() => {
                             const operationType = (item as any).operation_type;
@@ -1419,7 +1419,7 @@ const ClientStatement: React.FC = () => {
                       </div>
 
                       {/* Valor da Transação */}
-                      <div className="col-span-2 text-right">
+                      <div className="col-span-4 text-right">
                         {/* Detectar primeiro se é conversão (tem conversion_rate) */}
                         {(item as any).operation_type === 'manual_debit' && Math.abs(item.amount) < 0.01 && (item as any).conversion_rate ? (
                           // CONVERSÃO BRL → USD (tem conversion_rate)
@@ -1460,31 +1460,6 @@ const ClientStatement: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Saldo Anterior */}
-                      <div className="col-span-2 text-center">
-                        <p className="text-xs text-muted-foreground">
-                          Saldo Anterior{(item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change ? ' USD' : ''}
-                        </p>
-                        <p className="text-sm font-medium text-foreground">
-                          {(item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change 
-                            ? `$ ${formatUSD((item as any).usd_balance_before || 0)}`
-                            : formatCurrency((item as any).saldo_anterior || 0)
-                          }
-                        </p>
-                      </div>
-
-                      {/* Saldo Posterior */}
-                      <div className="col-span-2 text-center">
-                        <p className="text-xs text-muted-foreground">
-                          Saldo Posterior{(item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change ? ' USD' : ''}
-                        </p>
-                        <p className="text-sm font-medium text-foreground">
-                          {(item as any).usd_amount_change && Math.abs((item as any).usd_amount_change) > 0 && !(item as any).amount_change 
-                            ? `$ ${formatUSD((item as any).usd_balance_after || 0)}`
-                            : formatCurrency((item as any).saldo_posterior || 0)
-                          }
-                        </p>
-                      </div>
                     </div>
                     
                     {/* Checkbox de Conferência - Fora do grid */}
