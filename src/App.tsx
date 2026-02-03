@@ -39,6 +39,7 @@ import ClientStatement from "./pages/ClientStatement";
 import EmployeeStatement from "./pages/EmployeeStatement";
 import AnaliseUsuario from "./pages/AnaliseUsuario";
 import AuditoriaDepositosPage from "./pages/AuditoriaDepositosPage";
+import CashClosureDashboard from "./pages/CashClosureDashboard";
 
 // 🚨 IMPORTAR NOVA ARQUITETURA MULTI-BANCO
 import { initializeBankingSystem } from "@/services/banking";
@@ -166,6 +167,7 @@ const App = () => (
                   <Route path="/ip-revy-otc" element={<IpRevyOtcPage />} />
                   <Route path="/ip-revy-tcr" element={<IpRevyTcrPage />} />
                   <Route path="/auditoria-depositos" element={<AuditoriaDepositosPage />} />
+                  <Route path="/dashboard/cash-closure" element={<CashClosureDashboard />} />
                   <Route path="/contas-organizacoes" element={<ContasOrganizacoesLayout />} />
                   <Route path="/suporte" element={<SupportPage />} />
                   <Route path="/contas-organizacoes/organizacao/:id" element={<OrganizacaoDetailsPage />} />

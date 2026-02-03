@@ -57,12 +57,37 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const location = useLocation();
 
   /**
+   * IDs de usuários bloqueados da rota cash-closure
+   */
+  const BLOCKED_USER_IDS = [7, 74, 115];
+
+  /**
+   * Verificar se usuário está bloqueado de acessar rota específica
+   */
+  const isUserBlockedFromRoute = (routePath: string): boolean => {
+    if (!user) return false;
+    
+    // Bloquear IDs específicos da rota cash-closure
+    if (routePath === '/dashboard/cash-closure') {
+      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+      return BLOCKED_USER_IDS.includes(userId);
+    }
+    
+    return false;
+  };
+
+  /**
    * Verificar acesso baseado na configuração automática de rotas
    */
   const checkRouteAccess = (): boolean => {
     if (!isAuthenticated) return false;
 
+    const currentPath = location.pathname;
 
+    // Verificar bloqueio específico por ID de usuário PRIMEIRO
+    if (isUserBlockedFromRoute(currentPath)) {
+      return false;
+    }
 
     // Verificar props manuais do componente PRIMEIRO (prioridade alta)
     if (requireAdmin && !isAdmin()) {
@@ -96,7 +121,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     }
 
     // Se passou nas verificações manuais, verificar configuração de rotas
-    const currentPath = location.pathname;
     const routeAccess = canAccessRoute(currentPath);
     
 

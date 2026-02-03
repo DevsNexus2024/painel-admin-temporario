@@ -10,6 +10,11 @@ rules.mdc
 *.json
 *.md
 
+# Package manager lock files (manter apenas package-lock.json para npm)
+bun.lockb
+yarn.lock
+pnpm-lock.yaml
+
 planejamento-md
 .env
 node_modules

@@ -551,7 +551,7 @@ export interface ConsultarTransacaoResponse {
     ok: boolean;
     data: {
       cursor: string | null;
-      requests: Array<{
+      requests?: Array<{
         amount: number;
         cashAmount: number;
         cashierBankCode: string;
@@ -584,6 +584,21 @@ export interface ConsultarTransacaoResponse {
         tags: string[];
         updated: string;
       }>;
+      reversals?: Array<{
+        amount: number;
+        created: string;
+        description: string;
+        endToEndId: string;
+        externalId: string;
+        fee: number;
+        flow: 'in' | 'out';
+        id: string;
+        reason: string;
+        returnId: string;
+        status: string;
+        tags: string[];
+        updated: string;
+      }>;
     };
     erro_code: string | null;
     erro_message: string | null;
@@ -594,8 +609,9 @@ export interface VerificacaoTransacaoResult {
   sucesso: boolean;
   status?: string;
   mensagem: string;
-  transacao?: ConsultarTransacaoResponse['data']['data']['requests'][0];
+  transacao?: ConsultarTransacaoResponse['data']['data']['requests'][0] | ConsultarTransacaoResponse['data']['data']['reversals'][0];
   permiteOperacao: boolean;
+  rawResponse?: ConsultarTransacaoResponse; // ✅ Adicionar resposta bruta para debug
 }
 
 /**
@@ -663,23 +679,26 @@ export async function consultarTransacaoPorEndToEnd(
       return {
         sucesso: false,
         mensagem: responseData.message || `Erro ao consultar transação: HTTP ${response.status}`,
-        permiteOperacao: false
+        permiteOperacao: false,
+        rawResponse: responseData
       };
     }
 
-    // Verificar se encontrou a transação
+    // Verificar se encontrou a transação (pode estar em requests ou reversals)
     const requests = responseData.data?.data?.requests || [];
+    const reversals = responseData.data?.data?.reversals || [];
     
-    if (requests.length === 0) {
+    // Priorizar requests, mas também verificar reversals
+    let transacao = requests.length > 0 ? requests[0] : (reversals.length > 0 ? reversals[0] : null);
+    
+    if (!transacao) {
       return {
         sucesso: false,
-        mensagem: 'Transação não encontrada na API CorpX. O endtoend pode estar incorreto ou a transação não foi processada.',
-        permiteOperacao: false
+        mensagem: responseData.message || 'Transação não encontrada na API CorpX. O endtoend pode estar incorreto ou a transação não foi processada.',
+        permiteOperacao: false,
+        rawResponse: responseData
       };
     }
-
-    // Pegar a primeira transação (geralmente só tem uma)
-    const transacao = requests[0];
     const status = transacao.status?.toLowerCase();
 
     // Verificar se o status permite operação
@@ -690,17 +709,19 @@ export async function consultarTransacaoPorEndToEnd(
       return {
         sucesso: true,
         status: transacao.status,
-        mensagem: `Transação verificada com sucesso! Status: ${transacao.status.toUpperCase()}`,
+        mensagem: responseData.message || `Transação verificada com sucesso! Status: ${transacao.status.toUpperCase()}`,
         transacao,
-        permiteOperacao: true
+        permiteOperacao: true,
+        rawResponse: responseData
       };
     } else {
       return {
         sucesso: true,
         status: transacao.status,
-        mensagem: `Transação encontrada, porém com status "${transacao.status.toUpperCase()}". Operações de crédito/compensação não são permitidas para transações com este status.`,
+        mensagem: responseData.message || `Transação encontrada, porém com status "${transacao.status.toUpperCase()}". Operações de crédito/compensação não são permitidas para transações com este status.`,
         transacao,
-        permiteOperacao: false
+        permiteOperacao: false,
+        rawResponse: responseData
       };
     }
 

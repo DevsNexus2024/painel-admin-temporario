@@ -442,23 +442,6 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       const accountIdParam = selectedAccount.id || 'ALL';
       const isAllAccounts = accountIdParam === 'ALL';
       const sanitizedCnpj = !isAllAccounts && selectedAccount.cnpj ? selectedAccount.cnpj.replace(/\D/g, '') : '';
-
-      // ✅ Guard rail: backend do /api/corpx/transactions filtra por accountId numérico.
-      // Evitar buscar extrato sem filtro de conta (muito pesado e pode vir dados demais).
-      if (!isAllAccounts && !selectedAccount.apiAccountId) {
-        setAllTransactions([]);
-        setPagination({
-          total: 0,
-          limit: Math.min(limitOverride ?? recordsPerPage, 2000),
-          offset: 0,
-          has_more: false,
-          current_page: 1,
-          total_pages: 1,
-        });
-        setCurrentPage(1);
-        setError('Extrato indisponível para esta conta (accountId numérico não configurado).');
-        return;
-      }
       
       // ✅ Se for atualização incremental, buscar apenas transações mais recentes que as já em cache
       let dataInicio: string | undefined;
@@ -506,6 +489,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       const baseFilters = applyFilters ? buildQueryFilters() : {};
 
       // ✅ Usar apiAccountId numérico quando disponível, ou 'ALL' para todas as contas
+      // Se não tiver apiAccountId, usar CNPJ como filtro alternativo via beneficiaryDocument
       const baseQueryParams: Record<string, any> = {
         limit,
         offset,
@@ -517,6 +501,10 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         baseQueryParams.accountId = 'ALL';
       } else if (selectedAccount.apiAccountId) {
         baseQueryParams.accountId = selectedAccount.apiAccountId;
+      } else if (sanitizedCnpj) {
+        // ✅ Se não tiver apiAccountId, usar CNPJ como filtro alternativo
+        // A API pode filtrar por beneficiaryDocument ou payerDocument
+        baseQueryParams.beneficiaryDocument = sanitizedCnpj;
       }
 
       if (dataInicio) {
@@ -1866,28 +1854,29 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       
       toast.dismiss('buscar-deposito-corpx');
 
+      // ✅ Sempre abrir modal, mesmo em caso de erro
+      setDepositoData(resultado);
+      setDepositoModalOpen(true);
+
+      // Mostrar toast informativo baseado no resultado
       if (!resultado.sucesso) {
         toast.error('Depósito não encontrado', {
           description: resultado.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd',
           duration: 5000
         });
-        return;
-      }
-
-      if (!resultado.permiteOperacao) {
+      } else if (!resultado.permiteOperacao) {
         toast.warning('Depósito encontrado, mas operação não permitida', {
           description: resultado.mensagem,
           duration: 6000
         });
-        return;
+      } else {
+        toast.success('Depósito encontrado!', {
+          description: 'Você pode realizar ações neste depósito',
+          duration: 3000
+        });
+        // Limpar campo apenas após busca bem-sucedida
+        setBuscarEndToEnd("");
       }
-
-      // ✅ Depósito encontrado e verificado - abrir modal com dados
-      setDepositoData(resultado);
-      setDepositoModalOpen(true);
-      
-      // Limpar campo após busca bem-sucedida
-      setBuscarEndToEnd("");
 
     } catch (error: any) {
       toast.dismiss('buscar-deposito-corpx');
@@ -3211,217 +3200,413 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Search className="h-5 w-5 text-purple-600" />
-              Depósito Encontrado
+              {depositoData?.sucesso ? 'Depósito Encontrado' : 'Busca de Depósito'}
             </DialogTitle>
             <DialogDescription>
-              Informações detalhadas do depósito consultado
+              {depositoData?.sucesso 
+                ? 'Informações detalhadas do depósito consultado'
+                : 'Resultado da busca por EndToEnd'}
             </DialogDescription>
           </DialogHeader>
           
-          {depositoData?.transacao && (() => {
+          {!depositoData?.transacao ? (
+            // ✅ Mostrar mensagem de erro e dados retornados pela API (se houver)
+            <div className="space-y-4">
+              <Card className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800">
+                <CardContent className="p-6">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-red-900 dark:text-red-100 mb-2">
+                        {depositoData?.sucesso === false ? 'Depósito não encontrado' : 'Erro ao buscar depósito'}
+                      </h3>
+                      <p className="text-sm text-red-700 dark:text-red-300">
+                        {depositoData?.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd'}
+                      </p>
+                      {depositoData?.status && (
+                        <div className="mt-2">
+                          <Badge variant="secondary" className="text-xs">
+                            Status: {depositoData.status}
+                          </Badge>
+                        </div>
+                      )}
+                      {buscarEndToEnd && (
+                        <div className="mt-3 p-2 bg-red-100 dark:bg-red-900/30 rounded">
+                          <p className="text-xs text-red-600 dark:text-red-400 font-mono">
+                            EndToEnd pesquisado: {buscarEndToEnd}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              {/* ✅ Mostrar dados brutos retornados pela API (se houver) */}
+              {depositoData && Object.keys(depositoData).length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Dados retornados pela API</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <pre className="text-xs bg-muted p-4 rounded overflow-auto max-h-96 font-mono">
+                      {JSON.stringify(depositoData, null, 2)}
+                    </pre>
+                  </CardContent>
+                </Card>
+              )}
+              
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setDepositoModalOpen(false)}
+                >
+                  Fechar
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : depositoData?.transacao && (() => {
             const request = depositoData.transacao;
             const valor = (request.amount || 0) / 100;
+            const permiteOperacao = depositoData?.permiteOperacao ?? false;
+            // ✅ Verificar se é um reversal (estrutura diferente)
+            const isReversal = 'returnId' in request && 'reason' in request;
             
             return (
-              <div className="space-y-6">
-                {/* Informações Principais */}
-                <Card className="bg-gradient-to-r from-purple-50 to-purple-100/50 dark:from-purple-950/20 dark:to-purple-900/10 border-purple-200">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Valor</p>
-                        <p className="text-2xl font-bold text-purple-600">{formatCurrency(valor)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Status</p>
-                        <Badge variant={request.status === 'success' ? 'default' : 'secondary'} className="mt-1">
-                          {request.status === 'success' ? 'Sucesso' : request.status || '-'}
+              <div className="space-y-4">
+                {/* ✅ Aviso quando transação encontrada mas não permite operação */}
+                {!permiteOperacao && depositoData?.sucesso && (
+                  <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-yellow-700 dark:text-yellow-300">
+                        {depositoData.mensagem || 'Esta transação não permite operações de crédito/compensação no momento.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* ✅ Aviso quando é um reversal */}
+                {isReversal && (
+                  <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-blue-700 dark:text-blue-300">
+                        Esta é uma transação de estorno. Alguns dados podem não estar disponíveis.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* ✅ COMPROVANTE - Estilo comprovante bancário */}
+                <Card className="border-2 border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
+                  <CardContent className="p-6 space-y-6">
+                    {/* Cabeçalho do Comprovante */}
+                    <div className="text-center border-b border-gray-300 dark:border-gray-700 pb-4">
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        {isReversal ? 'COMPROVANTE DE ESTORNO' : 'COMPROVANTE DE TRANSFERÊNCIA'}
+                      </h2>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {request.created ? new Date(request.created).toLocaleString('pt-BR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        }) : '-'}
+                      </p>
+                    </div>
+
+                    {/* Valor Principal */}
+                    <div className="text-center py-6 border-b-2 border-dashed border-gray-300 dark:border-gray-700">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">VALOR</p>
+                      <p className="text-4xl font-bold text-purple-600 dark:text-purple-400">
+                        {formatCurrency(valor)}
+                      </p>
+                      <div className="mt-3">
+                        <Badge 
+                          variant={request.status === 'success' ? 'default' : 'secondary'} 
+                          className="text-xs px-3 py-1"
+                        >
+                          {request.status === 'success' ? '✓ CONCLUÍDA' : (request.status ? request.status.toUpperCase() : 'PENDENTE')}
                         </Badge>
                       </div>
+                    </div>
+
+                    {/* Status - Seção Dedicada */}
+                    <div className="border-b border-gray-200 dark:border-gray-800 pb-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Status da Transação:</span>
+                        <Badge 
+                          variant={request.status === 'success' ? 'default' : 'secondary'} 
+                          className="text-xs px-3 py-1"
+                        >
+                          {request.status === 'success' ? '✓ CONCLUÍDA' : (request.status ? request.status.toUpperCase() : 'PENDENTE')}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Informações da Transação */}
+                    <div className="space-y-4">
+                      {/* Dados do Pagador - sempre mostrar se não for reversal */}
+                      {!isReversal && (
+                        <div className="border-b border-gray-200 dark:border-gray-800 pb-3">
+                          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">
+                            Dados do Pagador
+                          </p>
+                          <div className="space-y-1.5">
+                            {(request.senderName || request.senderTaxId || request.senderBankCode || request.senderBranchCode || request.senderAccountNumber) ? (
+                              <>
+                                {request.senderName && (
+                                  <div className="flex justify-between">
+                                    <span className="text-xs text-gray-600 dark:text-gray-400">Nome:</span>
+                                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 text-right">
+                                      {request.senderName}
+                                    </span>
+                                  </div>
+                                )}
+                                {request.senderTaxId && (
+                                  <div className="flex justify-between">
+                                    <span className="text-xs text-gray-600 dark:text-gray-400">CPF/CNPJ:</span>
+                                    <span className="text-sm font-mono text-gray-900 dark:text-gray-100">
+                                      {request.senderTaxId}
+                                    </span>
+                                  </div>
+                                )}
+                                {(request.senderBankCode || request.senderBranchCode || request.senderAccountNumber) && (
+                                  <div className="flex justify-between">
+                                    <span className="text-xs text-gray-600 dark:text-gray-400">Instituição:</span>
+                                    <span className="text-xs text-gray-900 dark:text-gray-100 text-right">
+                                      {[request.senderBankCode, request.senderBranchCode, request.senderAccountNumber]
+                                        .filter(Boolean)
+                                        .join(' / ') || '-'}
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <p className="text-xs text-gray-500 dark:text-gray-400 italic">Dados não disponíveis</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Dados do Beneficiário - sempre mostrar se não for reversal */}
+                      {!isReversal && (
+                        <div className="border-b border-gray-200 dark:border-gray-800 pb-3">
+                          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">
+                            Dados do Beneficiário
+                          </p>
+                          <div className="space-y-1.5">
+                            {(request.receiverName || request.receiverTaxId || request.receiverBankCode || request.receiverBranchCode || request.receiverAccountNumber) ? (
+                              <>
+                                {request.receiverName && (
+                                  <div className="flex justify-between">
+                                    <span className="text-xs text-gray-600 dark:text-gray-400">Nome:</span>
+                                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 text-right">
+                                      {request.receiverName}
+                                    </span>
+                                  </div>
+                                )}
+                                {request.receiverTaxId && (
+                                  <div className="flex justify-between">
+                                    <span className="text-xs text-gray-600 dark:text-gray-400">CPF/CNPJ:</span>
+                                    <span className="text-sm font-mono text-gray-900 dark:text-gray-100">
+                                      {request.receiverTaxId}
+                                    </span>
+                                  </div>
+                                )}
+                                {(request.receiverBankCode || request.receiverBranchCode || request.receiverAccountNumber) && (
+                                  <div className="flex justify-between">
+                                    <span className="text-xs text-gray-600 dark:text-gray-400">Instituição:</span>
+                                    <span className="text-xs text-gray-900 dark:text-gray-100 text-right">
+                                      {[request.receiverBankCode, request.receiverBranchCode, request.receiverAccountNumber]
+                                        .filter(Boolean)
+                                        .join(' / ') || '-'}
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <p className="text-xs text-gray-500 dark:text-gray-400 italic">Dados não disponíveis</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Dados do Estorno */}
+                      {isReversal && (
+                        <div className="border-b border-gray-200 dark:border-gray-800 pb-3">
+                          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">
+                            Informações do Estorno
+                          </p>
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between">
+                              <span className="text-xs text-gray-600 dark:text-gray-400">Motivo:</span>
+                              <span className="text-sm font-medium text-gray-900 dark:text-gray-100 text-right">
+                                {request.reason || '-'}
+                              </span>
+                            </div>
+                            {request.returnId && (
+                              <div className="flex justify-between">
+                                <span className="text-xs text-gray-600 dark:text-gray-400">Return ID:</span>
+                                <span className="text-xs font-mono text-gray-900 dark:text-gray-100 break-all text-right">
+                                  {request.returnId}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Identificadores */}
+                      <div className="border-b border-gray-200 dark:border-gray-800 pb-3">
+                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">
+                          Identificadores
+                        </p>
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">End-to-End ID:</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono text-gray-900 dark:text-gray-100 break-all text-right">
+                                {request.endToEndId || '-'}
+                              </span>
+                              {request.endToEndId && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(request.endToEndId);
+                                    toast.success('EndToEnd copiado!');
+                                  }}
+                                  className="h-5 w-5 p-0"
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          {!isReversal && request.reconciliationId && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-600 dark:text-gray-400">Reconciliation ID:</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-mono text-gray-900 dark:text-gray-100 break-all text-right">
+                                  {request.reconciliationId}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(request.reconciliationId);
+                                    toast.success('Reconciliation ID copiado!');
+                                  }}
+                                  className="h-5 w-5 p-0"
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                          <div className="flex justify-between">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">ID da Transação:</span>
+                            <span className="text-xs font-mono text-gray-900 dark:text-gray-100">
+                              {request.id || '-'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Informações Adicionais */}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-xs text-gray-600 dark:text-gray-400">Descrição:</span>
+                          <span className="text-xs text-gray-900 dark:text-gray-100 text-right max-w-[60%]">
+                            {request.description || '-'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-xs text-gray-600 dark:text-gray-400">Taxa:</span>
+                          <span className="text-xs text-gray-900 dark:text-gray-100">
+                            {formatCurrency((request.fee || 0) / 100)}
+                          </span>
+                        </div>
+                        {!isReversal && request.cashAmount && (
+                          <div className="flex justify-between">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">Valor em Dinheiro:</span>
+                            <span className="text-xs text-gray-900 dark:text-gray-100">
+                              {formatCurrency((request.cashAmount || 0) / 100)}
+                            </span>
+                          </div>
+                        )}
+                        {request.flow && (
+                          <div className="flex justify-between">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">Fluxo:</span>
+                            <Badge variant={request.flow === 'in' ? 'default' : 'secondary'} className="text-xs">
+                              {request.flow === 'in' ? 'Entrada' : 'Saída'}
+                            </Badge>
+                          </div>
+                        )}
+                        {!isReversal && request.method && (
+                          <div className="flex justify-between">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">Método:</span>
+                            <span className="text-xs text-gray-900 dark:text-gray-100">{request.method}</span>
+                          </div>
+                        )}
+                        {request.created && (
+                          <div className="flex justify-between">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">Criado em:</span>
+                            <span className="text-xs text-gray-900 dark:text-gray-100">
+                              {new Date(request.created).toLocaleString('pt-BR')}
+                            </span>
+                          </div>
+                        )}
+                        {request.updated && (
+                          <div className="flex justify-between">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">Atualizado em:</span>
+                            <span className="text-xs text-gray-900 dark:text-gray-100">
+                              {new Date(request.updated).toLocaleString('pt-BR')}
+                            </span>
+                          </div>
+                        )}
+                        {request.externalId && (
+                          <div className="flex justify-between">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">External ID:</span>
+                            <span className="text-xs font-mono text-gray-900 dark:text-gray-100 break-all text-right">
+                              {request.externalId}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Rodapé do Comprovante */}
+                    <div className="pt-4 border-t border-gray-300 dark:border-gray-700 text-center">
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                        Este é um comprovante digital gerado automaticamente
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Grid de Informações */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Dados do Pagador */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Dados do Pagador</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div>
-                        <label className="text-xs text-muted-foreground">Nome</label>
-                        <p className="text-sm font-medium">{request.senderName || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">CPF/CNPJ</label>
-                        <p className="text-sm font-mono">{request.senderTaxId || '-'}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs text-muted-foreground">Banco</label>
-                          <p className="text-sm">{request.senderBankCode || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground">Agência</label>
-                          <p className="text-sm">{request.senderBranchCode || '-'}</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs text-muted-foreground">Conta</label>
-                          <p className="text-sm font-mono">{request.senderAccountNumber || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground">Tipo</label>
-                          <p className="text-sm">{request.senderAccountType || '-'}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Dados do Beneficiário */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Dados do Beneficiário</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div>
-                        <label className="text-xs text-muted-foreground">Nome</label>
-                        <p className="text-sm font-medium">{request.receiverName || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">CPF/CNPJ</label>
-                        <p className="text-sm font-mono">{request.receiverTaxId || '-'}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs text-muted-foreground">Banco</label>
-                          <p className="text-sm">{request.receiverBankCode || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground">Agência</label>
-                          <p className="text-sm">{request.receiverBranchCode || '-'}</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs text-muted-foreground">Conta</label>
-                          <p className="text-sm font-mono">{request.receiverAccountNumber || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground">Tipo</label>
-                          <p className="text-sm">{request.receiverAccountType || '-'}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Identificadores */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Identificadores</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div>
-                        <label className="text-xs text-muted-foreground">End-to-End ID</label>
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-mono">{request.endToEndId || '-'}</p>
-                          {request.endToEndId && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                navigator.clipboard.writeText(request.endToEndId);
-                                toast.success('EndToEnd copiado!');
-                              }}
-                              className="h-6 w-6 p-0"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Reconciliation ID</label>
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-mono">{request.reconciliationId || '-'}</p>
-                          {request.reconciliationId && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                navigator.clipboard.writeText(request.reconciliationId);
-                                toast.success('Reconciliation ID copiado!');
-                              }}
-                              className="h-6 w-6 p-0"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">ID</label>
-                        <p className="text-sm font-mono">{request.id || '-'}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs text-muted-foreground">Método</label>
-                          <p className="text-sm">{request.method || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground">Prioridade</label>
-                          <p className="text-sm">{request.priority || '-'}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Informações Adicionais */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Informações Adicionais</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div>
-                        <label className="text-xs text-muted-foreground">Descrição</label>
-                        <p className="text-sm">{request.description || '-'}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs text-muted-foreground">Taxa</label>
-                          <p className="text-sm">{formatCurrency((request.fee || 0) / 100)}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground">Valor em Dinheiro</label>
-                          <p className="text-sm">{formatCurrency((request.cashAmount || 0) / 100)}</p>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Fluxo</label>
-                        <Badge variant={request.flow === 'in' ? 'default' : 'secondary'}>
-                          {request.flow === 'in' ? 'Entrada' : 'Saída'}
-                        </Badge>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Criado em</label>
-                        <p className="text-sm">{request.created ? new Date(request.created).toLocaleString('pt-BR') : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Atualizado em</label>
-                        <p className="text-sm">{request.updated ? new Date(request.updated).toLocaleString('pt-BR') : '-'}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
+                {/* ✅ Dados brutos retornados pela API */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Dados completos retornados pela API</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <pre className="text-xs bg-muted p-4 rounded overflow-auto max-h-96 font-mono">
+                      {JSON.stringify(depositoData, null, 2)}
+                    </pre>
+                  </CardContent>
+                </Card>
 
                 {/* Ações */}
                 <DialogFooter className="flex items-center justify-between">
                   <Button
                     variant="outline"
                     onClick={() => generateDepositoPDF(depositoData)}
+                    disabled={!depositoData?.permiteOperacao}
+                    title={!depositoData?.permiteOperacao ? 'Operação não permitida para este depósito' : 'Baixar comprovante em PDF'}
                   >
                     <Download className="h-4 w-4 mr-2" />
                     Baixar Comprovante PDF
@@ -3443,14 +3628,14 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           dateTime: request.created,
                           value: valor,
                           type: 'CRÉDITO',
-                          client: request.senderName || '',
-                          document: request.senderTaxId || '',
+                          client: isReversal ? 'Estorno' : (request.senderName || ''),
+                          document: isReversal ? '' : (request.senderTaxId || ''),
                           code: request.endToEndId,
                           descCliente: request.description || '',
                           identified: true,
                           status: request.status,
-                          reconciliationId: request.reconciliationId,
-                          beneficiaryDocument: request.receiverTaxId,
+                          reconciliationId: isReversal ? undefined : request.reconciliationId,
+                          beneficiaryDocument: isReversal ? undefined : request.receiverTaxId,
                           _original: request
                         };
                         
@@ -3463,6 +3648,14 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                         }, 150);
                       }}
                       className="bg-purple-600 hover:bg-purple-700"
+                      disabled={!depositoData?.permiteOperacao || isReversal}
+                      title={
+                        isReversal 
+                          ? 'Estornos não podem ser creditados para OTC' 
+                          : !depositoData?.permiteOperacao 
+                            ? 'Operação não permitida para este depósito' 
+                            : 'Creditar para OTC'
+                      }
                     >
                       <Plus className="h-4 w-4 mr-2" />
                       +OTC

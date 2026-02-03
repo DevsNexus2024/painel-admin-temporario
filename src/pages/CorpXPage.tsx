@@ -1260,16 +1260,6 @@ function AccountSelector() {
       return;
     }
 
-    // ⚠️ Endpoint novo (/api/corpx/transactions) filtra apenas por accountId numérico.
-    // Se a conta não tiver apiAccountId, manter a seleção (saldo/PIX funcionam via CNPJ),
-    // mas avisar que o extrato via nova API ficará indisponível.
-    if (account.id !== 'ALL' && !account.apiAccountId) {
-      toast.warning('Extrato indisponível para esta conta', {
-        description: 'Conta sem accountId numérico configurado para a API de transações.',
-        duration: 3500,
-      });
-    }
-
     setSelectedAccount(account);
     toast.success(account.id === 'ALL' ? 'Exibindo todas as contas' : `Conta alterada para: ${account.razaoSocial}`);
   };
@@ -1337,9 +1327,6 @@ function AccountSelector() {
                         )}
                         {account.id === 'ALL' && (
                           <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs">Consolidado</Badge>
-                        )}
-                        {account.id !== 'ALL' && !account.apiAccountId && account.available && (
-                          <Badge variant="secondary" className="text-xs">Sem extrato</Badge>
                         )}
                       </div>
                       {account.id !== 'ALL' && (

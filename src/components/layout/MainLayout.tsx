@@ -21,7 +21,8 @@ import {
     KeyRound,
     Building2,
     HelpCircle,
-    FileSearch
+    FileSearch,
+    DollarSign
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -99,7 +100,31 @@ export default function MainLayout() {
     const { canAccessRoute } = useRouteGuard();
     const { status: pinStatus } = useOTCPin();
 
-    const canShow = (path: string) => canAccessRoute(path);
+    // IDs de usuários bloqueados da rota cash-closure
+    const BLOCKED_USER_IDS = [7, 74, 115];
+
+    /**
+     * Verifica se usuário está bloqueado de ver/acessar rota específica
+     */
+    const isUserBlockedFromRoute = (routePath: string): boolean => {
+        if (!user) return false;
+        
+        // Bloquear IDs específicos da rota cash-closure
+        if (routePath === '/dashboard/cash-closure') {
+            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+            return BLOCKED_USER_IDS.includes(userId);
+        }
+        
+        return false;
+    };
+
+    const canShow = (path: string) => {
+        // Verificar bloqueio por ID primeiro
+        if (isUserBlockedFromRoute(path)) {
+            return false;
+        }
+        return canAccessRoute(path);
+    };
 
     const showGrupoTcr =
       canShow("/grupo-tcr/saldos") ||
@@ -245,6 +270,25 @@ export default function MainLayout() {
                                             icon={<LayoutDashboard className="h-4 w-4" />}
                                             label="Dashboard"
                                             badge="3"
+                                            isCollapsed={isCollapsed}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ========== DASHBOARDS ========== */}
+                            {canShow("/dashboard/cash-closure") && (
+                                <div className="pb-2">
+                                    {!isCollapsed && (
+                                        <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                            Dashboards
+                                        </h3>
+                                    )}
+                                    <div className="space-y-1">
+                                        <SidebarLink
+                                            to="/dashboard/cash-closure"
+                                            icon={<DollarSign className="h-4 w-4" />}
+                                            label="Cash Closure"
                                             isCollapsed={isCollapsed}
                                         />
                                     </div>

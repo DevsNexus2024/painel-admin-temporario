@@ -313,7 +313,11 @@ export const ROUTE_PERMISSIONS: Record<string, RoutePermissions> = {
 
   // Rotas de funcionários / cliente OTC (mantidas)
   '/employee-statement': { requiredRole: 'otc_employee' },
-  '/client-statement': { requiredRole: 'otc_client' }
+  '/client-statement': { requiredRole: 'otc_client' },
+
+  // ==================== DASHBOARDS ====================
+  // Cash Closure - Apenas super_admin e admin (exceto IDs específicos bloqueados)
+  '/dashboard/cash-closure': { allowedRoles: ['super_admin', 'admin'] }
 };
 
 // ===== UTILITÁRIOS =====

@@ -121,7 +121,7 @@ export const usePermissions = () => {
  * Hook para proteção de rotas
  */
 export const useRouteGuard = () => {
-  const { isAuthenticated, isLoading } = useContext(AuthContext) || {};
+  const { isAuthenticated, isLoading, user } = useContext(AuthContext) || {};
   const { checkPermission, hasRole, hasAnyRole } = usePermissions();
 
   const findRouteConfig = (currentPath: string) => {
@@ -153,11 +153,36 @@ export const useRouteGuard = () => {
   };
 
   /**
+   * IDs de usuários bloqueados da rota cash-closure
+   */
+  const BLOCKED_USER_IDS = [7, 74, 115];
+
+  /**
+   * Verifica se usuário está bloqueado de acessar rota específica
+   */
+  const isUserBlockedFromRoute = (routePath: string): boolean => {
+    if (!user) return false;
+    
+    // Bloquear IDs específicos da rota cash-closure
+    if (routePath === '/dashboard/cash-closure') {
+      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+      return BLOCKED_USER_IDS.includes(userId);
+    }
+    
+    return false;
+  };
+
+  /**
    * Verifica se usuário pode acessar rota específica
    */
   const canAccessRoute = (routePath: string): boolean => {
     if (isLoading) return false;
     if (!isAuthenticated) return false;
+
+    // Verificar bloqueio específico por ID de usuário PRIMEIRO
+    if (isUserBlockedFromRoute(routePath)) {
+      return false;
+    }
 
     const routeConfig = findRouteConfig(routePath);
     if (!routeConfig) return true; // Rota sem restrições

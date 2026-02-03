@@ -344,6 +344,15 @@ export default function ExtractTabTCR() {
         return false;
       }
 
+      // ✅ FILTRO: Ocultar registros com beneficiaryName "PAGAMENTO DE TARIFA"
+      const beneficiaryName = transaction._original?.beneficiaryName || 
+                             transaction.beneficiaryName ||
+                             transaction._original?.rawExtrato?.beneficiary?.fullName ||
+                             '';
+      if (beneficiaryName === 'PAGAMENTO DE TARIFA') {
+        return false;
+      }
+
       const matchesName = !searchName || 
         transaction.client?.toLowerCase().includes(searchName.toLowerCase()) ||
         transaction.document?.toLowerCase().includes(searchName.toLowerCase());
