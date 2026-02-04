@@ -1,8 +1,8 @@
 name: painel-admin-temporario
 static_sites:
-  - name: frontend
+  - name: painel-admin-temporario
     github:
-      repo: seu-usuario/seu-repo
+      repo: DevsNexus2024/painel-admin-temporario
       branch: main
       deploy_on_push: true
     build_command: npm run build
