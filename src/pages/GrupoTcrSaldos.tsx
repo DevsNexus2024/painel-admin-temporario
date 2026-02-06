@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { usePermissions } from '@/hooks/useAuth';
+import { otcService } from '@/services/otc';
 import BrbtcExtratoModal from '@/components/BrbtcExtratoModal';
 
 // Cache para evitar múltiplas chamadas à API
@@ -36,8 +36,7 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
 
 export default function GrupoTcrSaldos() {
   const { user } = useAuth();
-  const { hasRole } = usePermissions();
-  const isSuperAdmin = hasRole('super_admin');
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [allUsers, setAllUsers] = useState<UsuarioSaldo[]>([]);
   const [list, setList] = useState<UsuarioSaldo[]>([]);
@@ -57,6 +56,20 @@ export default function GrupoTcrSaldos() {
     const emailLower = user.email.toLowerCase();
     return emailLower === 'adm@tcr.finance' || emailLower === 'alexandre@tcr.finance';
   }, [user?.email]);
+
+  // Verificar se usuário logado é super_admin via endpoint /admin/check
+  useEffect(() => {
+    const checkSuperAdmin = async () => {
+      try {
+        const result = await otcService.checkUserIsAdmin();
+        const roleName = result?.data?.role_name;
+        setIsSuperAdmin(roleName === 'super_admin');
+      } catch {
+        setIsSuperAdmin(false);
+      }
+    };
+    if (user) checkSuperAdmin();
+  }, [user]);
 
   const loadAllUsers = async (forceRefresh = false) => {
     const now = Date.now();
@@ -480,21 +493,28 @@ function UserCard({
   const isChecked = !!comparacao;
   const isChecking = checkingId === user.id_brasil_bitcoin;
 
-  // Mascaramento LGPD: se NÃO é super_admin e a diferença (TCR > BrBTC) > 500, usar balance_vis
-  const balanceVis = user.balance_vis ?? 0;
-  const shouldMaskBRL = !isSuperAdmin && comparacao && comparacao.brl.diferenca > 500 && balanceVis > 0;
-  const shouldMaskUSDT = !isSuperAdmin && comparacao && comparacao.usdt.diferenca > 500 && balanceVis > 0;
+  
+  // Mascaramento LGPD: converter balance_vis (vem como string do backend)
+  const balanceVis = typeof user.balance_vis === 'string' ? parseFloat(user.balance_vis) : (user.balance_vis ?? 0);
+  const shouldMaskBRL = !isSuperAdmin && comparacao && Math.abs(comparacao.brl.diferenca) > 500 && balanceVis > 0;
+  const shouldMaskUSDT = !isSuperAdmin && comparacao && Math.abs(comparacao.usdt.diferenca) > 500 && balanceVis > 0;
 
   const displayBRL = shouldMaskBRL && comparacao ? {
     local: comparacao.brl.local,
-    externo: comparacao.brl.local - balanceVis,
-    diferenca: balanceVis
+    // Se TCR > BrBTC (diff > 0): externo = local - balanceVis
+    // Se BrBTC > TCR (diff < 0): externo = local + balanceVis
+    externo: comparacao.brl.diferenca > 0
+      ? comparacao.brl.local - balanceVis
+      : comparacao.brl.local + balanceVis,
+    diferenca: comparacao.brl.diferenca > 0 ? balanceVis : -balanceVis
   } : comparacao?.brl;
 
   const displayUSDT = shouldMaskUSDT && comparacao ? {
     local: comparacao.usdt.local,
-    externo: comparacao.usdt.local - balanceVis,
-    diferenca: balanceVis
+    externo: comparacao.usdt.diferenca > 0
+      ? comparacao.usdt.local - balanceVis
+      : comparacao.usdt.local + balanceVis,
+    diferenca: comparacao.usdt.diferenca > 0 ? balanceVis : -balanceVis
   } : comparacao?.usdt;
 
   const hasDiff = displayBRL && displayUSDT && (displayBRL.diferenca !== 0 || displayUSDT.diferenca !== 0);
