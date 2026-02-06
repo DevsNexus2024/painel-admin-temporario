@@ -8,6 +8,7 @@ export interface UsuarioSaldo {
   id_usuario: number;
   nome: string;
   id_brasil_bitcoin: string;
+  balance_vis?: number; // Valor mascarado para LGPD (não-super_admins)
   saldos: {
     BRL: number;
     USDT: number;

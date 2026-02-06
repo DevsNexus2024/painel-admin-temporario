@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/hooks/useAuth';
 import BrbtcExtratoModal from '@/components/BrbtcExtratoModal';
 
 // Cache para evitar múltiplas chamadas à API
@@ -35,6 +36,8 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
 
 export default function GrupoTcrSaldos() {
   const { user } = useAuth();
+  const { hasRole } = usePermissions();
+  const isSuperAdmin = hasRole('super_admin');
   const [loading, setLoading] = useState(false);
   const [allUsers, setAllUsers] = useState<UsuarioSaldo[]>([]);
   const [list, setList] = useState<UsuarioSaldo[]>([]);
@@ -407,6 +410,7 @@ export default function GrupoTcrSaldos() {
                 onConferir={onConferir}
                 index={index}
                 canViewExtrato={canViewExtrato}
+                isSuperAdmin={isSuperAdmin}
                 onOpenExtrato={() => {
                   setSelectedUserForExtrato(user);
                   setExtratoModalOpen(true);
@@ -461,6 +465,7 @@ function UserCard({
   onConferir,
   index,
   canViewExtrato,
+  isSuperAdmin,
   onOpenExtrato
 }: { 
   user: UsuarioSaldo;
@@ -469,11 +474,30 @@ function UserCard({
   onConferir: (u: UsuarioSaldo) => void;
   index: number;
   canViewExtrato: boolean;
+  isSuperAdmin: boolean;
   onOpenExtrato: () => void;
 }) {
-  const hasDiff = comparacao && (comparacao.brl.diferenca !== 0 || comparacao.usdt.diferenca !== 0);
   const isChecked = !!comparacao;
   const isChecking = checkingId === user.id_brasil_bitcoin;
+
+  // Mascaramento LGPD: se NÃO é super_admin e a diferença (TCR > BrBTC) > 500, usar balance_vis
+  const balanceVis = user.balance_vis ?? 0;
+  const shouldMaskBRL = !isSuperAdmin && comparacao && comparacao.brl.diferenca > 500 && balanceVis > 0;
+  const shouldMaskUSDT = !isSuperAdmin && comparacao && comparacao.usdt.diferenca > 500 && balanceVis > 0;
+
+  const displayBRL = shouldMaskBRL && comparacao ? {
+    local: comparacao.brl.local,
+    externo: comparacao.brl.local - balanceVis,
+    diferenca: balanceVis
+  } : comparacao?.brl;
+
+  const displayUSDT = shouldMaskUSDT && comparacao ? {
+    local: comparacao.usdt.local,
+    externo: comparacao.usdt.local - balanceVis,
+    diferenca: balanceVis
+  } : comparacao?.usdt;
+
+  const hasDiff = displayBRL && displayUSDT && (displayBRL.diferenca !== 0 || displayUSDT.diferenca !== 0);
   
   return (
     <Card 
@@ -541,16 +565,16 @@ function UserCard({
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">BRL</p>
             </div>
             
-            {isChecked && comparacao ? (
+            {isChecked && displayBRL ? (
               <div className="grid grid-cols-2 gap-3">
                 {/* TCR */}
                 <div className="space-y-1">
                   <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">TCR</p>
                   <p className={cn(
                     "text-base font-bold money-font",
-                    comparacao.brl.local > 0 ? "text-green-400" : "text-gray-500"
+                    displayBRL.local > 0 ? "text-green-400" : "text-gray-500"
                   )}>
-                    R$ {comparacao.brl.local.toFixed(2)}
+                    R$ {displayBRL.local.toFixed(2)}
                   </p>
                 </div>
                 
@@ -562,16 +586,16 @@ function UserCard({
                   <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Brasil Bitcoin</p>
                   <p className={cn(
                     "text-base font-bold money-font",
-                    comparacao.brl.externo > 0 ? "text-amber-400" : "text-gray-500"
+                    displayBRL.externo > 0 ? "text-amber-400" : "text-gray-500"
                   )}>
-                    R$ {comparacao.brl.externo.toFixed(2)}
+                    R$ {displayBRL.externo.toFixed(2)}
                   </p>
-                  {comparacao.brl.diferenca !== 0 && (
+                  {displayBRL.diferenca !== 0 && (
                     <p className={cn(
                       "text-[10px] money-font mt-0.5",
-                      comparacao.brl.diferenca > 0 ? "text-green-400" : "text-red-400"
+                      displayBRL.diferenca > 0 ? "text-green-400" : "text-red-400"
                     )}>
-                      {comparacao.brl.diferenca > 0 ? '+' : ''}R$ {comparacao.brl.diferenca.toFixed(2)}
+                      {displayBRL.diferenca > 0 ? '+' : ''}R$ {displayBRL.diferenca.toFixed(2)}
                     </p>
                   )}
                 </div>
@@ -598,16 +622,16 @@ function UserCard({
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">USDT</p>
             </div>
             
-            {isChecked && comparacao ? (
+            {isChecked && displayUSDT ? (
               <div className="grid grid-cols-2 gap-3">
                 {/* TCR */}
                 <div className="space-y-1">
                   <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">TCR</p>
                   <p className={cn(
                     "text-base font-bold money-font",
-                    comparacao.usdt.local > 0 ? "text-blue-400" : "text-gray-500"
+                    displayUSDT.local > 0 ? "text-blue-400" : "text-gray-500"
                   )}>
-                    {comparacao.usdt.local.toFixed(8)}
+                    {displayUSDT.local.toFixed(8)}
                   </p>
                 </div>
                 
@@ -619,16 +643,16 @@ function UserCard({
                   <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Brasil Bitcoin</p>
                   <p className={cn(
                     "text-base font-bold money-font",
-                    comparacao.usdt.externo > 0 ? "text-cyan-400" : "text-gray-500"
+                    displayUSDT.externo > 0 ? "text-cyan-400" : "text-gray-500"
                   )}>
-                    {comparacao.usdt.externo.toFixed(8)}
+                    {displayUSDT.externo.toFixed(8)}
                   </p>
-                  {comparacao.usdt.diferenca !== 0 && (
+                  {displayUSDT.diferenca !== 0 && (
                     <p className={cn(
                       "text-[10px] money-font mt-0.5",
-                      comparacao.usdt.diferenca > 0 ? "text-green-400" : "text-red-400"
+                      displayUSDT.diferenca > 0 ? "text-green-400" : "text-red-400"
                     )}>
-                      {comparacao.usdt.diferenca > 0 ? '+' : ''}{comparacao.usdt.diferenca.toFixed(8)}
+                      {displayUSDT.diferenca > 0 ? '+' : ''}{displayUSDT.diferenca.toFixed(8)}
                     </p>
                   )}
                 </div>
