@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 // Lista de contas CorpX disponíveis
+// ✅ IMPORTANTE: apiAccountId deve corresponder ao campo `id` da tabela `corpx_accounts`
 export const CORPX_ACCOUNTS = [
   {
     id: 'ALL',
@@ -13,39 +14,42 @@ export const CORPX_ACCOUNTS = [
     razaoSocial: 'TTF SERVICOS DIGITAIS LTDA',
     cnpj: '14283885000198',
     available: true,
-  },
-  {
-    id: '3', 
-    razaoSocial: 'NEXUS COMERCIO E IMPORTACAO LTDA',
-    cnpj: '62804797000137',
-    available: true,
-  },
-  {
-    id: '4',
-    razaoSocial: 'THE GOOD CELL LTDA',
-    cnpj: '49730998000179',
-    available: true,
-    apiAccountId: 52505, // ID numérico da API
+    apiAccountId: 1, // ✅ ID da tabela corpx_accounts
   },
   {
     id: '2',
     razaoSocial: 'TRKBIT TECNOLOGIA E INFORMACAO LTDA',
     cnpj: '41586874000150',
     available: true,
+    apiAccountId: 2, // ✅ ID da tabela corpx_accounts
+  },
+  {
+    id: '3', 
+    razaoSocial: 'NEXUS COMERCIO E IMPORTACAO LTDA',
+    cnpj: '62804797000137',
+    available: true,
+    apiAccountId: 3, // ✅ ID da tabela corpx_accounts
+  },
+  {
+    id: '4',
+    razaoSocial: 'THE GOOD CELL LTDA',
+    cnpj: '49730998000179',
+    available: true,
+    apiAccountId: 52505, // ✅ ID da tabela corpx_accounts
   },
   {
     id: '5',
     razaoSocial: 'EDITION LIMITED SERVICOS DIGITAIS',
     cnpj: '61504259000164',
     available: true,
-    apiAccountId: 51807, // ID numérico da API
+    apiAccountId: 51807, // ✅ ID da tabela corpx_accounts
   },
   {
     id: '6',
     razaoSocial: 'RXP SERVICOS DIGITAIS LTDA',
     cnpj: '24586576000140',
     available: true,
-    apiAccountId: 52255, // ID numérico da API
+    apiAccountId: 52255, // ✅ ID da tabela corpx_accounts
   }
 ];
 

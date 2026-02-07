@@ -254,24 +254,12 @@ export default function ExtractTabCorpX() {
   );
 
   // 🚀 OTIMIZADO: Pré-calcular valores de filtro fora do loop para melhor performance
+  // ✅ LÓGICA HÍBRIDA: Sempre aplica filtros no frontend (como TCR)
+  // Quando "Aplicar Filtros" é clicado, também envia filtros para API
   const applyFiltersAndSorting = React.useCallback(
     (transactions: any[]) => {
-      // Se os filtros foram aplicados na API, retornar transações sem refiltrar
-      if (filtersAppliedToAPI) {
-        // Apenas aplicar ordenação se não foi aplicada na API
-        if (sortOrder === "none") return transactions;
-        
-        const sorted = [...transactions];
-        if (sortBy === "date") {
-          sorted.sort((a, b) => {
-            const diff = new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
-            return sortOrder === "asc" ? diff : -diff;
-          });
-        } else if (sortBy === "value") {
-          sorted.sort((a, b) => sortOrder === "asc" ? a.value - b.value : b.value - a.value);
-        }
-        return sorted;
-      }
+      // ✅ SEMPRE aplicar filtros no frontend (mesmo quando API também filtra)
+      // Isso garante feedback imediato e refinamento adicional
 
       // 🚀 Pré-calcular todos os valores de filtro ANTES do loop
       const searchNameLower = searchName?.toLowerCase() || '';
@@ -386,7 +374,7 @@ export default function ExtractTabCorpX() {
       return filtered;
     },
     [searchName, searchValue, searchDescCliente, transactionTypeFilter, dateFrom, dateTo, 
-     sortBy, sortOrder, searchTerm, minAmount, maxAmount, specificAmount, filtersAppliedToAPI]
+     sortBy, sortOrder, searchTerm, minAmount, maxAmount, specificAmount]
   );
 
   const filteredAndSortedTransactions = useMemo(
@@ -488,23 +476,30 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       // ✅ Aplicar filtros na API apenas se applyFilters for true
       const baseFilters = applyFilters ? buildQueryFilters() : {};
 
-      // ✅ Usar apiAccountId numérico quando disponível, ou 'ALL' para todas as contas
-      // Se não tiver apiAccountId, usar CNPJ como filtro alternativo via beneficiaryDocument
+      // ✅ CORRIGIDO: Sempre usar accountId (como na tela TCR)
+      // Não usar beneficiaryDocument pois pode trazer dados inconsistentes
       const baseQueryParams: Record<string, any> = {
         limit,
         offset,
         ...baseFilters,
       };
 
-      // Adicionar accountId: 'ALL' para todas as contas, ou apiAccountId numérico para conta específica
+      // ✅ Adicionar accountId: 'ALL' para todas as contas, ou apiAccountId numérico para conta específica
       if (isAllAccounts) {
         baseQueryParams.accountId = 'ALL';
       } else if (selectedAccount.apiAccountId) {
+        // ✅ Usar apiAccountId (corresponde ao campo `id` da tabela corpx_accounts)
         baseQueryParams.accountId = selectedAccount.apiAccountId;
-      } else if (sanitizedCnpj) {
-        // ✅ Se não tiver apiAccountId, usar CNPJ como filtro alternativo
-        // A API pode filtrar por beneficiaryDocument ou payerDocument
-        baseQueryParams.beneficiaryDocument = sanitizedCnpj;
+      } else {
+        // ✅ Se não tiver apiAccountId, lançar erro (não usar fallback para beneficiaryDocument)
+        console.error('[CORPX-EXTRATO] Conta sem apiAccountId:', selectedAccount);
+        toast.error('Erro de configuração', {
+          description: `Conta ${selectedAccount.razaoSocial} não possui apiAccountId configurado. Verifique a configuração.`,
+          duration: 5000
+        });
+        setError('Conta sem apiAccountId configurado');
+        setIsLoading(false);
+        return;
       }
 
       if (dataInicio) {
@@ -528,8 +523,9 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         // 🚀 Definir hasMoreFromApi fora do bloco para uso posterior
         let hasMoreFromApi = paginationData.has_more ?? paginationData.hasMore ?? false;
 
-        // 🚀 OTIMIZAÇÃO: Só fazer requisições extras se realmente necessário E se não estiver sem filtros
-        // Quando não há filtros aplicados, aceitar o que a API retornou (geralmente já são os mais recentes)
+        // 🚀 OTIMIZAÇÃO: Só fazer requisições extras se realmente necessário E se filtros foram aplicados na API
+        // Quando filtros estão na API, pode ser necessário buscar mais páginas para preencher o limite
+        // Nota: Frontend também filtra, então isso é apenas para otimizar a quantidade de dados da API
         const shouldFetchMore = applyFilters && normalizedTransactions.length < limit;
         
         if (shouldFetchMore) {
@@ -633,7 +629,8 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         });
         setCurrentPage(currentPageValue);
         
-        // ✅ Atualizar estado de filtros aplicados
+        // ✅ Atualizar estado de filtros aplicados na API
+        // Nota: Frontend sempre filtra também (lógica híbrida como TCR)
         setFiltersAppliedToAPI(applyFilters);
 
         toast.success(`Página ${currentPageValue}: ${finalTransactions.length} transações`, {
@@ -911,7 +908,9 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     await loadCorpXTransactions(undefined, undefined, newPage, undefined, filtersAppliedToAPI);
   };
 
-  // ✅ Aplicar filtros - ESTRATÉGIA HÍBRIDA: chamar API com filtros
+  // ✅ Aplicar filtros - LÓGICA HÍBRIDA (como TCR):
+  // 1. Frontend sempre filtra (feedback imediato)
+  // 2. Quando clica em "Aplicar Filtros", também envia para API (reduz dados)
   const handleAplicarFiltros = () => {
     setCurrentPage(1);
     
@@ -940,6 +939,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     }
     
     // ✅ Chamar API com filtros aplicados (applyFilters = true)
+    // Frontend continuará filtrando também (lógica híbrida)
     loadCorpXTransactions(undefined, undefined, 1, undefined, true);
     
     toast.success("Filtros aplicados!", {
@@ -965,6 +965,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     setCurrentPage(1);
     setFiltersAppliedToAPI(false);
     // ✅ Carregar sem filtros (applyFilters = false)
+    // Frontend não terá filtros para aplicar também
     loadCorpXTransactions(undefined, undefined, 1, recordsPerPage, false);
     toast.success("Filtros limpos!", {
       description: "Exibindo as últimas transações disponíveis",

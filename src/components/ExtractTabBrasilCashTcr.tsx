@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle } from "lucide-react";
+import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -42,18 +42,14 @@ export default function ExtractTabBrasilCashTcr() {
     total_pages: 1
   });
 
-  // Estados de filtros
+  // Estados de filtros - sem período padrão (igual TCR)
+  const [dateFrom, setDateFrom] = useState<Date | null>(null);
+  const [dateTo, setDateTo] = useState<Date | null>(null);
+  const [dateRange, setDateRange] = useState<{ from: Date | null; to: Date | null }>({
+    from: null,
+    to: null
+  });
   const [searchTerm, setSearchTerm] = useState("");
-  const [dateFilter, setDateFilter] = useState<{ start: string; end: string }>({
-    start: BrasilCashRealtimeService.getDateStringDaysAgo(7),
-    end: BrasilCashRealtimeService.getTodayDateString()
-  });
-  
-  // Estado para o Date Range Picker
-  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
-    from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-    to: new Date()
-  });
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'FUNDING' | 'WITHDRAWAL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'COMPLETE' | 'FAILED' | 'CANCELLED'>('ALL');
   const [methodTypeFilter, setMethodTypeFilter] = useState<'ALL' | 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode'>('ALL');
@@ -89,125 +85,105 @@ export default function ExtractTabBrasilCashTcr() {
     loading: false
   });
 
-  // Buscar transações do BrasilCash
-  const fetchTransactions = async (resetOffset: boolean = false, overrideLimit?: number) => {
+  // ✅ Carregar transações (sem período padrão - igual TCR)
+  const fetchTransactions = async (customDateFrom?: Date | null, customDateTo?: Date | null, page: number = 1, applyFilters: boolean = false) => {
     setLoading(true);
     setError(null);
     
     try {
-      const limit = overrideLimit ?? recordsPerPage;
-      const offset = resetOffset ? 0 : pagination.offset;
+      const limit = recordsPerPage;
+      const offset = (page - 1) * limit;
       
-      // Converter filtros de status
-      // Nota: Quando PENDING, não filtramos na API (busca pending e processing) e filtramos localmente
-      let statusFilterApi: 'pending' | 'processing' | 'paid' | 'refused' | undefined;
-      if (statusFilter === 'COMPLETE') statusFilterApi = 'paid';
-      else if (statusFilter === 'FAILED') statusFilterApi = 'refused';
-      // Para PENDING, não filtramos na API (vai buscar todos e filtrar localmente)
+      // ✅ Usar datas customizadas (dos filtros) ou datas selecionadas, ou null para retornar últimos registros
+      let dataInicio: string | undefined = undefined;
+      let dataFim: string | undefined = undefined;
       
-      // Converter filtros de tipo para method
-      let methodFilter: 'cashin' | 'cashout' | undefined;
-      if (typeFilter === 'FUNDING') methodFilter = 'cashin';
-      else if (typeFilter === 'WITHDRAWAL') methodFilter = 'cashout';
-      
-      // Converter filtro de tipo de método
-      let typeFilterApi: 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode' | undefined;
-      if (methodTypeFilter !== 'ALL') {
-        typeFilterApi = methodTypeFilter;
+      if (customDateFrom && customDateTo) {
+        dataInicio = customDateFrom.toISOString().split('T')[0];
+        dataFim = customDateTo.toISOString().split('T')[0];
+      } else if (dateFrom && dateTo) {
+        dataInicio = dateFrom.toISOString().split('T')[0];
+        dataFim = dateTo.toISOString().split('T')[0];
       }
+      // Se não houver datas, dataInicio e dataFim ficam undefined (API retorna últimos registros)
       
-      // Valor específico - backend já espera em reais
+      // ✅ Aplicar filtros na API apenas se applyFilters for true
+      let statusFilterApi: 'pending' | 'processing' | 'paid' | 'refused' | undefined;
+      let methodFilter: 'cashin' | 'cashout' | undefined;
+      let typeFilterApi: 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode' | undefined;
       let amountFilter: number | undefined;
-      if (specificAmount) {
-        amountFilter = parseFloat(specificAmount);
+      
+      if (applyFilters) {
+        // Converter filtros de status
+        if (statusFilter === 'COMPLETE') statusFilterApi = 'paid';
+        else if (statusFilter === 'FAILED') statusFilterApi = 'refused';
+        // Para PENDING, não filtramos na API (filtra localmente)
+        
+        // Converter filtros de tipo para method
+        if (typeFilter === 'FUNDING') methodFilter = 'cashin';
+        else if (typeFilter === 'WITHDRAWAL') methodFilter = 'cashout';
+        
+        // Converter filtro de tipo de método
+        if (methodTypeFilter !== 'ALL') {
+          typeFilterApi = methodTypeFilter;
+        }
+        
+        // Valor específico - backend já espera em reais
+        if (specificAmount) {
+          amountFilter = parseFloat(specificAmount);
+        }
       }
       
       const filters: BrasilCashTransactionFilters = {
         accountId: TCR_ACCOUNT_ID,
-        startDate: dateFilter.start,
-        endDate: dateFilter.end,
-        status: statusFilterApi,
-        method: methodFilter,
-        type: typeFilterApi,
-        endToEndId: endToEndIdFilter.trim() || undefined,
-        external_id: externalIdFilter.trim() || undefined,
-        amount: amountFilter,
+        ...(dataInicio && { startDate: dataInicio }),
+        ...(dataFim && { endDate: dataFim }),
+        ...(applyFilters && {
+          ...(statusFilterApi && { status: statusFilterApi }),
+          ...(methodFilter && { method: methodFilter }),
+          ...(typeFilterApi && { type: typeFilterApi }),
+          ...(endToEndIdFilter.trim() && { endToEndId: endToEndIdFilter.trim() }),
+          ...(externalIdFilter.trim() && { external_id: externalIdFilter.trim() }),
+          ...(amountFilter && { amount: amountFilter }),
+        }),
         limit,
         offset,
       };
       
-      // Buscar todas as páginas se necessário
-      let allMappedTransactions: BrasilCashTransactionDB[] = [];
-      let currentOffset = offset;
-      let hasMore = true;
-      let totalFromApi = 0;
+      const response = await BrasilCashRealtimeService.getTransactions(filters);
       
-      while (hasMore) {
-        const currentFilters: BrasilCashTransactionFilters = {
-          ...filters,
-          limit,
-          offset: currentOffset,
-        };
-        
-        const response = await BrasilCashRealtimeService.getTransactions(currentFilters);
-        
       // Converter dados do BrasilCash para formato BrasilCashTransactionDB
       const mappedTransactions = (response.data || [])
         .map(BrasilCashRealtimeService.mapBrasilCashToTransactionDB)
         // Filtrar transações com event_type 'tarifa'
         .filter(tx => tx.eventType !== 'tarifa');
-      allMappedTransactions = [...allMappedTransactions, ...mappedTransactions];
-        
-        // Atualizar informações de paginação
-        totalFromApi = response.pagination?.total ?? allMappedTransactions.length;
-        hasMore = response.pagination?.has_more ?? false;
-        
-        // Se não há mais páginas ou já buscamos todas as transações, parar
-        if (!hasMore || allMappedTransactions.length >= totalFromApi) {
-          break;
-        }
-        
-        // Avançar para próxima página
-        currentOffset += limit;
-        
-        // Limite de segurança: não buscar mais de 10 páginas de uma vez
-        if (currentOffset >= limit * 10) {
-          break;
-        }
-      }
       
-      // Aplicar filtros locais que não estão na API (min/max amount)
-      let filtered = allMappedTransactions;
-      
-      // Filtros de valor mínimo e máximo (já que a API só suporta valor exato)
-      if (!specificAmount) {
-        if (minAmount) {
-          const min = parseFloat(minAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
-        }
-        if (maxAmount) {
-          const max = parseFloat(maxAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
-        }
-      }
-      
-      setTransactions(filtered);
+      // ✅ SUBSTITUIR dados para cada página (não acumular)
+      setTransactions(mappedTransactions);
       
       // Atualizar paginação baseada na resposta
-      const total = totalFromApi > 0 ? totalFromApi : filtered.length;
-      const hasMorePages = hasMore;
+      const paginationData = response.pagination || {};
+      const total = paginationData.total || mappedTransactions.length;
+      const hasMore = paginationData.has_more || false;
       const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
+      const currentPage = paginationData.current_page || page;
 
       setPagination({
         total,
         limit,
         offset,
-        has_more: hasMorePages,
-        current_page: Math.floor(offset / limit) + 1,
+        has_more: hasMore,
+        current_page: currentPage,
         total_pages: totalPages
+      });
+      
+      toast.success(`Página ${currentPage}: ${mappedTransactions.length} transações`, {
+        description: "Extrato BrasilCash TCR carregado",
+        duration: 1500
       });
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar transações');
+      setTransactions([]);
       toast.error('Erro ao carregar extrato', {
         description: err.message
       });
@@ -216,84 +192,136 @@ export default function ExtractTabBrasilCashTcr() {
     }
   };
 
-  // Buscar métricas de todas as transações
-  const fetchMetrics = async () => {
-    setMetrics(prev => ({ ...prev, loading: true }));
+  // ✅ Aplicar filtros (com período específico para API)
+  const handleAplicarFiltros = () => {
+    // ✅ Validar datas se ambas foram selecionadas
+    if (dateFrom && dateTo) {
+      if (dateFrom > dateTo) {
+        toast.error("Data inicial não pode ser maior que data final", {
+          description: "Verifique as datas selecionadas",
+          duration: 3000
+        });
+        return;
+      }
+    }
     
-    try {
-      // Converter filtros de status
-      // Nota: Quando PENDING, não filtramos na API (busca pending e processing) e filtramos localmente
-      let statusFilterApi: 'pending' | 'processing' | 'paid' | 'refused' | undefined;
-      if (statusFilter === 'COMPLETE') statusFilterApi = 'paid';
-      else if (statusFilter === 'FAILED') statusFilterApi = 'refused';
-      // Para PENDING, não filtramos na API (vai buscar todos e filtrar localmente)
-      
-      // Converter filtros de tipo para method
-      let methodFilter: 'cashin' | 'cashout' | undefined;
-      if (typeFilter === 'FUNDING') methodFilter = 'cashin';
-      else if (typeFilter === 'WITHDRAWAL') methodFilter = 'cashout';
-      
-      // Converter filtro de tipo de método
-      let typeFilterApi: 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode' | undefined;
-      if (methodTypeFilter !== 'ALL') {
-        typeFilterApi = methodTypeFilter;
+    // ✅ Validar valores mínimo e máximo
+    if (minAmount && maxAmount) {
+      const minValue = parseFloat(minAmount);
+      const maxValue = parseFloat(maxAmount);
+      if (!isNaN(minValue) && !isNaN(maxValue) && minValue > maxValue) {
+        toast.error("Valor mínimo não pode ser maior que valor máximo", {
+          description: "Verifique os valores informados",
+          duration: 3000
+        });
+        return;
       }
-      
-      // Valor específico - backend já espera em reais
-      let amountFilter: number | undefined;
-      if (specificAmount) {
-        amountFilter = parseFloat(specificAmount);
-      }
-      
-      // Buscar TODAS as transações com os filtros aplicados
-      const filters: BrasilCashTransactionFilters = {
-        accountId: TCR_ACCOUNT_ID,
-        startDate: dateFilter.start,
-        endDate: dateFilter.end,
-        status: statusFilterApi,
-        method: methodFilter,
-        type: typeFilterApi,
-        endToEndId: endToEndIdFilter.trim() || undefined,
-        external_id: externalIdFilter.trim() || undefined,
-        amount: amountFilter,
-        limit: 2000, // Máximo permitido pela API
-        offset: 0,
-      };
-      
-      const response = await BrasilCashRealtimeService.getTransactions(filters);
+    }
+    
+    // ✅ Recarregar com todos os filtros aplicados (sempre página 1 para novos filtros)
+    fetchTransactions(dateFrom || null, dateTo || null, 1, true);
+    
+    toast.success("Filtros aplicados!", {
+      description: "Carregando transações com os filtros selecionados",
+      duration: 2000
+    });
+  };
 
-      const allTransactions = (response.data || [])
-        .map(BrasilCashRealtimeService.mapBrasilCashToTransactionDB)
-        // Filtrar transações com event_type 'tarifa'
-        .filter(tx => tx.eventType !== 'tarifa');
-      
-      // Aplicar os mesmos filtros locais
-      let filtered = allTransactions;
-      
-      // Filtrar por status PENDING localmente (inclui pending e processing da API)
-      if (statusFilter === 'PENDING') {
-        filtered = filtered.filter(tx => tx.status === 'PENDING');
-      } else if (statusFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.status === statusFilter);
+  // ✅ Limpar filtros - retornar aos últimos registros
+  const handleLimparFiltros = () => {
+    setDateFrom(null);
+    setDateTo(null);
+    setDateRange({
+      from: null,
+      to: null
+    });
+    setSearchTerm("");
+    setTypeFilter('ALL');
+    setStatusFilter('ALL');
+    setMethodTypeFilter('ALL');
+    setMinAmount("");
+    setMaxAmount("");
+    setSpecificAmount("");
+    setEndToEndIdFilter("");
+    setExternalIdFilter("");
+    setShowReversalsOnly(false);
+    setPagination(prev => ({ ...prev, current_page: 1 }));
+    fetchTransactions(null, null, 1, false);
+    toast.success("Filtros limpos!", {
+      description: "Retornando aos últimos registros",
+      duration: 2000
+    });
+  };
+
+  // ✅ Aplicar filtros no frontend (igual TCR) - sempre aplicados
+  // ✅ IMPORTANTE: Definir ANTES dos useEffects que o usam
+  const filteredTransactions = useMemo(() => {
+    // Filtrar tarifas primeiro
+    let filtered = transactions.filter(tx => tx.eventType !== 'tarifa');
+    
+    // ✅ Filtro de tipo
+    if (typeFilter !== 'ALL') {
+      filtered = filtered.filter(tx => tx.type === typeFilter);
+    }
+    
+    // ✅ Filtro de status (frontend - para PENDING e refinamento)
+    if (statusFilter === 'PENDING') {
+      filtered = filtered.filter(tx => tx.status === 'PENDING');
+    } else if (statusFilter === 'COMPLETE') {
+      filtered = filtered.filter(tx => tx.status === 'COMPLETE');
+    } else if (statusFilter === 'FAILED') {
+      filtered = filtered.filter(tx => tx.status === 'FAILED');
+    }
+    
+    // ✅ Filtro de método
+    if (methodTypeFilter !== 'ALL') {
+      filtered = filtered.filter(tx => tx.methodType === methodTypeFilter);
+    }
+    
+    // ✅ Filtro de valor mínimo
+    if (minAmount && minAmount.trim() !== '') {
+      const min = parseFloat(minAmount);
+      if (!isNaN(min)) {
+        filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
       }
-      
-      if (specificAmount) {
-        const amount = parseFloat(specificAmount);
+    }
+    
+    // ✅ Filtro de valor máximo
+    if (maxAmount && maxAmount.trim() !== '') {
+      const max = parseFloat(maxAmount);
+      if (!isNaN(max)) {
+        filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
+      }
+    }
+    
+    // ✅ Filtro de valor específico
+    if (specificAmount && specificAmount.trim() !== '') {
+      const amount = parseFloat(specificAmount);
+      if (!isNaN(amount) && amount > 0) {
         filtered = filtered.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
-      } else {
-        if (minAmount) {
-          const min = parseFloat(minAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
-        }
-        if (maxAmount) {
-          const max = parseFloat(maxAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
-        }
       }
-      
-      if (searchTerm.trim()) {
-        const searchLower = searchTerm.toLowerCase();
-        filtered = filtered.filter(tx => 
+    }
+    
+    // ✅ Filtro de EndToEnd
+    if (endToEndIdFilter && endToEndIdFilter.trim() !== '') {
+      const endToEndLower = endToEndIdFilter.toLowerCase().trim();
+      filtered = filtered.filter(tx => tx.endToEndId?.toLowerCase().includes(endToEndLower));
+    }
+    
+    // ✅ Filtro de External ID
+    if (externalIdFilter && externalIdFilter.trim() !== '') {
+      const externalLower = externalIdFilter.toLowerCase().trim();
+      filtered = filtered.filter(tx => 
+        tx.reconciliationId?.toLowerCase().includes(externalLower) ||
+        tx.externalId?.toLowerCase().includes(externalLower)
+      );
+    }
+    
+    // ✅ Filtro de busca geral
+    if (searchTerm && searchTerm.trim() !== '') {
+      const searchLower = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(tx => {
+        return (
           tx.payerName?.toLowerCase().includes(searchLower) ||
           tx.payeeName?.toLowerCase().includes(searchLower) ||
           tx.payerTaxId?.toLowerCase().includes(searchLower) ||
@@ -303,93 +331,70 @@ export default function ExtractTabBrasilCashTcr() {
           tx.description?.toLowerCase().includes(searchLower) ||
           tx.amount?.toString().includes(searchLower)
         );
-      }
-      
-      // Calcular métricas
-      const deposits = filtered.filter(tx => tx.type === 'FUNDING');
-      const withdrawals = filtered.filter(tx => tx.type === 'WITHDRAWAL');
-      
-      const depositAmount = deposits.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
-      const withdrawalAmount = withdrawals.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
-      
-      setMetrics({
-        totalDeposits: deposits.length,
-        totalWithdrawals: withdrawals.length,
-        depositAmount: depositAmount,
-        withdrawalAmount: withdrawalAmount,
-        loading: false
       });
-    } catch (err: any) {
-      console.error('Erro ao buscar métricas:', err);
-      setMetrics(prev => ({ ...prev, loading: false }));
     }
-  };
+    
+    // ✅ Filtro de estornos
+    if (showReversalsOnly) {
+      filtered = filtered.filter(tx => 
+        tx.eventType === 'reversal' ||
+        tx.description?.toLowerCase().includes('estorno') ||
+        tx.description?.toLowerCase().includes('reversal')
+      );
+    }
+    
+    // ✅ Filtro de data no frontend (refino adicional após filtro da API)
+    if (dateFrom && dateTo) {
+      try {
+        const fromDate = new Date(dateFrom);
+        const toDate = new Date(dateTo);
+        fromDate.setHours(0, 0, 0, 0);
+        toDate.setHours(23, 59, 59, 999);
+        
+        filtered = filtered.filter(tx => {
+          const txDate = new Date(tx.createdAt);
+          return txDate >= fromDate && txDate <= toDate;
+        });
+      } catch (error) {
+        // Em caso de erro, incluir a transação
+      }
+    }
+    
+    return filtered;
+  }, [transactions, typeFilter, statusFilter, methodTypeFilter, minAmount, maxAmount, specificAmount, endToEndIdFilter, externalIdFilter, searchTerm, showReversalsOnly, dateFrom, dateTo]);
 
+  // ✅ Calcular métricas baseadas em filteredTransactions (igual TCR)
   useEffect(() => {
-    fetchTransactions(true);
-    fetchMetrics();
-  }, []);
+    const deposits = filteredTransactions.filter(tx => tx.type === 'FUNDING');
+    const withdrawals = filteredTransactions.filter(tx => tx.type === 'WITHDRAWAL');
+    
+    const depositAmount = deposits.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+    const withdrawalAmount = withdrawals.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+    
+    setMetrics({
+      totalDeposits: deposits.length,
+      totalWithdrawals: withdrawals.length,
+      depositAmount: depositAmount,
+      withdrawalAmount: withdrawalAmount,
+      loading: loading
+    });
+  }, [filteredTransactions, loading]);
 
-  // Aplicar filtros automaticamente quando mudarem (exceto data e busca)
+  // ✅ Carregar dados ao montar o componente - últimos registros (sem filtro de data)
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchTransactions(true);
-      fetchMetrics();
-    }, 500); // Debounce de 500ms
+    // Sem datas, retorna últimos registros
+    fetchTransactions(null, null, 1, false);
+  }, []); // Manter [] para executar apenas na montagem
 
-    return () => clearTimeout(timer);
-  }, [typeFilter, statusFilter, methodTypeFilter, minAmount, maxAmount, specificAmount, endToEndIdFilter, externalIdFilter, showReversalsOnly, searchTerm]);
-
-  // Sincronizar dateRange com dateFilter
+  // ✅ Sincronizar dateRange com dateFrom/dateTo
   useEffect(() => {
-    if (dateRange.from && dateRange.to) {
-      const formatDate = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      };
-      
-      setDateFilter({
-        start: formatDate(dateRange.from),
-        end: formatDate(dateRange.to)
-      });
+    if (dateRange.from) {
+      setDateFrom(dateRange.from);
+    }
+    if (dateRange.to) {
+      setDateTo(dateRange.to);
     }
   }, [dateRange]);
-
-  // Aplicar filtro de data apenas quando tiver AMBAS as datas
-  useEffect(() => {
-    if (dateFilter.start && dateFilter.end) {
-      const timer = setTimeout(() => {
-        fetchTransactions(true);
-        fetchMetrics();
-      }, 500);
-
-      return () => clearTimeout(timer);
-    }
-  }, [dateFilter.start, dateFilter.end]); // Dependências específicas para evitar disparo individual
-
-  // Filtro de busca local (frontend)
-  const filteredTransactions = useMemo(() => {
-    // Filtrar tarifas primeiro
-    let filtered = transactions.filter(tx => tx.eventType !== 'tarifa');
-    
-    if (!searchTerm.trim()) return filtered;
-
-    const searchLower = searchTerm.toLowerCase().trim();
-    return filtered.filter(tx => {
-      return (
-        tx.payerName?.toLowerCase().includes(searchLower) ||
-        tx.payeeName?.toLowerCase().includes(searchLower) ||
-        tx.payerTaxId?.toLowerCase().includes(searchLower) ||
-        tx.transactionId?.toLowerCase().includes(searchLower) ||
-        tx.endToEndId?.toLowerCase().includes(searchLower) ||
-        tx.reconciliationId?.toLowerCase().includes(searchLower) ||
-        tx.description?.toLowerCase().includes(searchLower) ||
-        tx.amount?.toString().includes(searchLower)
-      );
-    });
-  }, [transactions, searchTerm]);
 
   const formatCurrency = (value: string | number) => {
     return BrasilCashRealtimeService.formatCurrency(value);
@@ -435,16 +440,17 @@ export default function ExtractTabBrasilCashTcr() {
           amountFilter = parseFloat(specificAmount);
         }
         
+        // ✅ Usar dateFrom/dateTo ao invés de dateFilter
         const filters: BrasilCashTransactionFilters = {
           accountId: TCR_ACCOUNT_ID,
-          startDate: dateFilter.start,
-          endDate: dateFilter.end,
-          status: statusFilterApi,
-          method: methodFilter,
-          type: typeFilterApi,
-          endToEndId: endToEndIdFilter.trim() || undefined,
-          external_id: externalIdFilter.trim() || undefined,
-          amount: amountFilter,
+          ...(dateFrom && { startDate: dateFrom.toISOString().split('T')[0] }),
+          ...(dateTo && { endDate: dateTo.toISOString().split('T')[0] }),
+          ...(statusFilterApi && { status: statusFilterApi }),
+          ...(methodFilter && { method: methodFilter }),
+          ...(typeFilterApi && { type: typeFilterApi }),
+          ...(endToEndIdFilter.trim() && { endToEndId: endToEndIdFilter.trim() }),
+          ...(externalIdFilter.trim() && { external_id: externalIdFilter.trim() }),
+          ...(amountFilter && { amount: amountFilter }),
           limit,
           offset,
         };
@@ -461,18 +467,23 @@ export default function ExtractTabBrasilCashTcr() {
         offset += limit;
       }
 
-      // Aplicar filtros locais
+      // ✅ Usar filteredTransactions (já tem todos os filtros aplicados)
+      // Aplicar apenas filtros adicionais que não estão no useMemo (se houver)
       let transactionsToExport = allTransactions;
       
+      // Aplicar os mesmos filtros do useMemo
       if (typeFilter !== 'ALL') {
         transactionsToExport = transactionsToExport.filter(tx => tx.type === typeFilter);
       }
       
-      // Filtrar por status PENDING localmente (inclui pending e processing da API)
       if (statusFilter === 'PENDING') {
         transactionsToExport = transactionsToExport.filter(tx => tx.status === 'PENDING');
       } else if (statusFilter !== 'ALL') {
         transactionsToExport = transactionsToExport.filter(tx => tx.status === statusFilter);
+      }
+      
+      if (methodTypeFilter !== 'ALL') {
+        transactionsToExport = transactionsToExport.filter(tx => tx.methodType === methodTypeFilter);
       }
       
       if (specificAmount) {
@@ -489,6 +500,19 @@ export default function ExtractTabBrasilCashTcr() {
         }
       }
       
+      if (endToEndIdFilter && endToEndIdFilter.trim() !== '') {
+        const endToEndLower = endToEndIdFilter.toLowerCase().trim();
+        transactionsToExport = transactionsToExport.filter(tx => tx.endToEndId?.toLowerCase().includes(endToEndLower));
+      }
+      
+      if (externalIdFilter && externalIdFilter.trim() !== '') {
+        const externalLower = externalIdFilter.toLowerCase().trim();
+        transactionsToExport = transactionsToExport.filter(tx => 
+          tx.reconciliationId?.toLowerCase().includes(externalLower) ||
+          tx.externalId?.toLowerCase().includes(externalLower)
+        );
+      }
+      
       if (searchTerm.trim()) {
         const searchLower = searchTerm.toLowerCase();
         transactionsToExport = transactionsToExport.filter((t: BrasilCashTransactionDB) => {
@@ -501,6 +525,30 @@ export default function ExtractTabBrasilCashTcr() {
             t.amount.toString().includes(searchLower)
           );
         });
+      }
+      
+      if (showReversalsOnly) {
+        transactionsToExport = transactionsToExport.filter(tx => 
+          tx.eventType === 'reversal' ||
+          tx.description?.toLowerCase().includes('estorno') ||
+          tx.description?.toLowerCase().includes('reversal')
+        );
+      }
+      
+      if (dateFrom && dateTo) {
+        try {
+          const fromDate = new Date(dateFrom);
+          const toDate = new Date(dateTo);
+          fromDate.setHours(0, 0, 0, 0);
+          toDate.setHours(23, 59, 59, 999);
+          
+          transactionsToExport = transactionsToExport.filter(tx => {
+            const txDate = new Date(tx.createdAt);
+            return txDate >= fromDate && txDate <= toDate;
+          });
+        } catch (error) {
+          // Em caso de erro, incluir a transação
+        }
       }
 
       // Gerar CSV com todas as colunas relevantes para TCR
@@ -675,8 +723,14 @@ export default function ExtractTabBrasilCashTcr() {
         });
         
         // Recarregar dados após sync
-        await fetchTransactions(true);
-        await fetchMetrics();
+        if (syncDateRange.from && syncDateRange.to) {
+          setDateFrom(syncDateRange.from);
+          setDateTo(syncDateRange.to);
+          setDateRange(syncDateRange);
+          await fetchTransactions(syncDateRange.from, syncDateRange.to, 1, false);
+        } else {
+          await fetchTransactions(null, null, 1, false);
+        }
       } else {
         throw new Error(result.errors?.length ? result.errors[0].toString() : 'Erro ao sincronizar');
       }
@@ -689,17 +743,28 @@ export default function ExtractTabBrasilCashTcr() {
     }
   };
 
+  // 🚀 Navegação de página server-side - permite navegar para qualquer página >= 1
+  const handlePageChange = async (newPage: number) => {
+    if (newPage >= 1) {
+      // Manter o filtro de data atual (pode ser null se não houver filtro)
+      await fetchTransactions(dateFrom, dateTo, newPage, false);
+    } else {
+      toast.error("Página inválida", {
+        description: "Digite um número maior ou igual a 1",
+        duration: 3000
+      });
+    }
+  };
+
   const handlePreviousPage = () => {
-    if (pagination.offset > 0) {
-      const newOffset = Math.max(0, pagination.offset - recordsPerPage);
-      fetchTransactionsWithOffset(newOffset);
+    if (pagination.current_page > 1) {
+      handlePageChange(pagination.current_page - 1);
     }
   };
 
   const handleNextPage = () => {
     if (pagination.has_more) {
-      const newOffset = pagination.offset + recordsPerPage;
-      fetchTransactionsWithOffset(newOffset);
+      handlePageChange(pagination.current_page + 1);
     }
   };
 
@@ -716,104 +781,7 @@ export default function ExtractTabBrasilCashTcr() {
       offset: 0,
       current_page: 1
     }));
-    fetchTransactions(true, limit);
-  };
-
-  const fetchTransactionsWithOffset = async (offset: number, overrideLimit?: number) => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const limit = overrideLimit ?? recordsPerPage;
-      
-      // Converter filtros de status
-      // Nota: Quando PENDING, não filtramos na API (busca pending e processing) e filtramos localmente
-      let statusFilterApi: 'pending' | 'processing' | 'paid' | 'refused' | undefined;
-      if (statusFilter === 'COMPLETE') statusFilterApi = 'paid';
-      else if (statusFilter === 'FAILED') statusFilterApi = 'refused';
-      // Para PENDING, não filtramos na API (vai buscar todos e filtrar localmente)
-      
-      // Converter filtros de tipo para method
-      let methodFilter: 'cashin' | 'cashout' | undefined;
-      if (typeFilter === 'FUNDING') methodFilter = 'cashin';
-      else if (typeFilter === 'WITHDRAWAL') methodFilter = 'cashout';
-      
-      // Converter filtro de tipo de método
-      let typeFilterApi: 'manual' | 'dict' | 'staticQrcode' | 'dynamicQrcode' | undefined;
-      if (methodTypeFilter !== 'ALL') {
-        typeFilterApi = methodTypeFilter;
-      }
-      
-      // Valor específico - backend já espera em reais
-      let amountFilter: number | undefined;
-      if (specificAmount) {
-        amountFilter = parseFloat(specificAmount);
-      }
-      
-      const filters: BrasilCashTransactionFilters = {
-        accountId: TCR_ACCOUNT_ID,
-        startDate: dateFilter.start,
-        endDate: dateFilter.end,
-        status: statusFilterApi,
-        method: methodFilter,
-        type: typeFilterApi,
-        endToEndId: endToEndIdFilter.trim() || undefined,
-        external_id: externalIdFilter.trim() || undefined,
-        amount: amountFilter,
-        limit,
-        offset,
-      };
-      
-      const response = await BrasilCashRealtimeService.getTransactions(filters);
-
-      // Converter dados do BrasilCash para formato BrasilCashTransactionDB
-      const mappedTransactions = (response.data || [])
-        .map(BrasilCashRealtimeService.mapBrasilCashToTransactionDB)
-        // Filtrar transações com event_type 'tarifa'
-        .filter(tx => tx.eventType !== 'tarifa');
-      
-      // Aplicar filtros locais que não estão na API (min/max amount e status PENDING)
-      let filtered = mappedTransactions;
-      
-      // Filtrar por status PENDING localmente (inclui pending e processing da API)
-      if (statusFilter === 'PENDING') {
-        filtered = filtered.filter(tx => tx.status === 'PENDING');
-      }
-      
-      // Filtros de valor mínimo e máximo (já que a API só suporta valor exato)
-      if (!specificAmount) {
-        if (minAmount) {
-          const min = parseFloat(minAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
-        }
-        if (maxAmount) {
-          const max = parseFloat(maxAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
-        }
-      }
-      
-      setTransactions(filtered);
-      
-      const total = response.pagination?.total ?? filtered.length;
-      const hasMore = response.pagination?.has_more ?? false;
-      const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
-
-      setPagination({
-        total,
-        limit,
-        offset,
-        has_more: hasMore,
-        current_page: Math.floor(offset / limit) + 1,
-        total_pages: totalPages
-      });
-    } catch (err: any) {
-      setError(err.message || 'Erro ao carregar transações');
-      toast.error('Erro ao carregar extrato', {
-        description: err.message
-      });
-    } finally {
-      setLoading(false);
-    }
+    fetchTransactions(dateFrom, dateTo, 1, false);
   };
 
   return (
@@ -1218,7 +1186,7 @@ export default function ExtractTabBrasilCashTcr() {
             </div>
           </div>
 
-          {/* Linha 3: Checkbox e Limpar Filtros */}
+          {/* Linha 3: Checkbox e Botões de Ação */}
           <div className="flex items-center justify-between pt-2">
             <div className="flex items-center gap-6">
               <div className="flex items-center space-x-2">
@@ -1241,34 +1209,25 @@ export default function ExtractTabBrasilCashTcr() {
               )}
             </div>
           
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSearchTerm("");
-                setTypeFilter('ALL');
-                setStatusFilter('ALL');
-                setMethodTypeFilter('ALL');
-                setMinAmount("");
-                setMaxAmount("");
-                setSpecificAmount("");
-                setEndToEndIdFilter("");
-                setExternalIdFilter("");
-                setShowReversalsOnly(false);
-                setDateRange({
-                  from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-                  to: new Date()
-                });
-                setDateFilter({
-                  start: BrasilCashRealtimeService.getDateStringDaysAgo(7),
-                  end: BrasilCashRealtimeService.getTodayDateString()
-                });
-              }}
-              className="h-10 bg-black border border-orange-500 text-white hover:bg-orange-500 hover:text-white transition-all duration-200 rounded-md px-3 lg:px-4"
-              disabled={loading}
-            >
-              <X className="h-4 w-4 mr-2" />
-              Limpar Filtros
-            </Button>
+            <div className="flex gap-2 items-center flex-wrap">
+              <Button 
+                onClick={handleAplicarFiltros}
+                className="h-10 bg-orange-600 hover:bg-orange-700 text-white transition-all duration-200 rounded-md px-3 lg:px-4"
+                disabled={loading}
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                Aplicar Filtros
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleLimparFiltros}
+                className="h-10 bg-black border border-orange-500 text-white hover:bg-orange-500 hover:text-white transition-all duration-200 rounded-md px-3 lg:px-4"
+                disabled={loading}
+              >
+                <X className="h-4 w-4 mr-2" />
+                Limpar Filtros
+              </Button>
+            </div>
           </div>
         </div>
       </Card>
@@ -1283,7 +1242,7 @@ export default function ExtractTabBrasilCashTcr() {
         ) : error ? (
           <div className="p-6 text-center">
             <p className="text-red-500 mb-4">Erro ao carregar extrato</p>
-            <Button onClick={() => fetchTransactions(true)} variant="outline">
+            <Button onClick={() => fetchTransactions(dateFrom, dateTo, pagination.current_page, false)} variant="outline">
               Tentar Novamente
             </Button>
           </div>
