@@ -1409,34 +1409,49 @@ export default function ExtractTabTCR() {
     setIsBuscandoDeposito(true);
 
     try {
-      toast.loading('Buscando depósito...', { id: 'buscar-deposito' });
+      // ⚠️ TEMPORARIAMENTE DESABILITADO: Busca de depósito na API
+      // toast.loading('Buscando depósito...', { id: 'buscar-deposito' });
       
-      const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
+      // const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
       
-      toast.dismiss('buscar-deposito');
+      // toast.dismiss('buscar-deposito');
 
-      if (!resultadoApi.sucesso) {
-        toast.error('Depósito não encontrado', {
-          description: resultadoApi.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd',
-          duration: 5000
-        });
-        return;
-      }
+      // ⚠️ TEMPORÁRIO: Criar resultado mock para permitir abertura do modal
+      const resultadoApi = {
+        sucesso: true,
+        mensagem: 'Modal aberto sem verificação na API (temporariamente desabilitado)',
+        permiteOperacao: true,
+        status: 'UNKNOWN'
+      };
 
-      if (!resultadoApi.permiteOperacao) {
-        toast.warning('Depósito encontrado, mas operação não permitida', {
-          description: resultadoApi.mensagem,
-          duration: 6000
-        });
-        return;
-    }
-    
+      // ⚠️ TEMPORÁRIO: Sempre abrir modal sem verificação
+      toast.info('Modal aberto (verificação desabilitada temporariamente)', {
+        description: 'A busca na API está temporariamente desabilitada',
+        duration: 3000
+      });
+
       // ✅ Depósito encontrado e verificado - abrir modal com dados
       setDepositoData(resultadoApi);
       setDepositoModalOpen(true);
       
       // Limpar campo após busca bem-sucedida
       setBuscarEndToEnd("");
+
+      // if (!resultadoApi.sucesso) {
+      //   toast.error('Depósito não encontrado', {
+      //     description: resultadoApi.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd',
+      //     duration: 5000
+      //   });
+      //   return;
+      // }
+
+      // if (!resultadoApi.permiteOperacao) {
+      //   toast.warning('Depósito encontrado, mas operação não permitida', {
+      //     description: resultadoApi.mensagem,
+      //     duration: 6000
+      //   });
+      //   return;
+      // }
 
     } catch (error: any) {
       toast.dismiss('buscar-deposito');
@@ -1505,33 +1520,39 @@ export default function ExtractTabTCR() {
     setIsVerifyingTransaction(transaction.id);
 
     try {
+      // ⚠️ TEMPORARIAMENTE DESABILITADO: Verificação de transação na API
       // 🔍 Verificar transação na API antes de permitir operação
-      toast.loading('Verificando transação na API...', { id: 'verify-tcr-transaction' });
+      // toast.loading('Verificando transação na API...', { id: 'verify-tcr-transaction' });
       
-      const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
+      // const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
       
-      toast.dismiss('verify-tcr-transaction');
+      // toast.dismiss('verify-tcr-transaction');
 
-      if (!resultadoApi.sucesso) {
-        toast.error('Erro na verificação', {
-          description: resultadoApi.mensagem,
-          duration: 5000
-        });
-        return;
-      }
+      // if (!resultadoApi.sucesso) {
+      //   toast.error('Erro na verificação', {
+      //     description: resultadoApi.mensagem,
+      //     duration: 5000
+      //   });
+      //   return;
+      // }
 
-      if (!resultadoApi.permiteOperacao) {
-        toast.error('Operação não permitida', {
-          description: resultadoApi.mensagem,
-          duration: 6000
-        });
-        return;
-      }
+      // if (!resultadoApi.permiteOperacao) {
+      //   toast.error('Operação não permitida', {
+      //     description: resultadoApi.mensagem,
+      //     duration: 6000
+      //   });
+      //   return;
+      // }
 
       // ✅ Transação verificada com sucesso - mostrar feedback positivo
-      toast.success('Transação verificada!', {
-        description: `Status: ${resultadoApi.status?.toUpperCase()} - Operação autorizada`,
-        duration: 3000
+      // toast.success('Transação verificada!', {
+      //   description: `Status: ${resultadoApi.status?.toUpperCase()} - Operação autorizada`,
+      //   duration: 3000
+      // });
+
+      // ⚠️ TEMPORÁRIO: Abrir modal diretamente sem verificação na API
+      toast.info('Abrindo modal (verificação desabilitada temporariamente)', {
+        duration: 2000
       });
 
       // ✅ Converter para formato MovimentoExtrato esperado pelo modal
@@ -1546,7 +1567,7 @@ export default function ExtractTabTCR() {
         descCliente: transaction.descCliente,
         identified: transaction.identified || true,
         descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente,
-        status: resultadoApi.status || transaction.status, // ✅ Usar status da API
+        status: transaction.status, // ⚠️ Usar status da transação (sem API)
         _original: transaction._original || transaction
       };
       
