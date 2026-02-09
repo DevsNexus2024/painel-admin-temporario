@@ -1769,39 +1769,33 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     setIsVerifyingTransaction(transaction.id);
 
     try {
-      // ⚠️ TEMPORARIAMENTE DESABILITADO: Verificação de transação na API
       // 🔍 Verificar transação na API antes de permitir operação
-      // toast.loading('Verificando transação...', { id: 'verify-transaction' });
+      toast.loading('Verificando transação...', { id: 'verify-transaction' });
       
-      // const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
+      const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
       
-      // toast.dismiss('verify-transaction');
+      toast.dismiss('verify-transaction');
 
-      // if (!resultado.sucesso) {
-      //   toast.error('Erro na verificação', {
-      //     description: resultado.mensagem,
-      //     duration: 5000
-      //   });
-      //   return;
-      // }
+      if (!resultado.sucesso) {
+        toast.error('Erro na verificação', {
+          description: resultado.mensagem,
+          duration: 5000
+        });
+        return;
+      }
 
-      // if (!resultado.permiteOperacao) {
-      //   toast.error('Operação não permitida', {
-      //     description: resultado.mensagem,
-      //     duration: 6000
-      //   });
-      //   return;
-      // }
+      if (!resultado.permiteOperacao) {
+        toast.error('Operação não permitida', {
+          description: resultado.mensagem,
+          duration: 6000
+        });
+        return;
+      }
 
       // ✅ Transação verificada com sucesso - mostrar feedback positivo
-      // toast.success('Transação verificada!', {
-      //   description: `Status: ${resultado.status?.toUpperCase()} - Operação autorizada`,
-      //   duration: 3000
-      // });
-
-      // ⚠️ TEMPORÁRIO: Abrir modal diretamente sem verificação na API
-      toast.info('Abrindo modal (verificação desabilitada temporariamente)', {
-        duration: 2000
+      toast.success('Transação verificada!', {
+        description: `Status: ${resultado.status?.toUpperCase()} - Operação autorizada`,
+        duration: 3000
       });
 
       // Abrir modal para creditar
@@ -1855,53 +1849,35 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     setIsBuscandoDeposito(true);
 
     try {
-      // ⚠️ TEMPORARIAMENTE DESABILITADO: Busca de depósito na API
-      // toast.loading('Buscando depósito...', { id: 'buscar-deposito-corpx' });
+      toast.loading('Buscando depósito...', { id: 'buscar-deposito-corpx' });
       
-      // const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
+      const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
       
-      // toast.dismiss('buscar-deposito-corpx');
-
-      // ⚠️ TEMPORÁRIO: Criar resultado mock para permitir abertura do modal
-      const resultado = {
-        sucesso: true,
-        mensagem: 'Modal aberto sem verificação na API (temporariamente desabilitado)',
-        permiteOperacao: true,
-        status: 'UNKNOWN'
-      };
+      toast.dismiss('buscar-deposito-corpx');
 
       // ✅ Sempre abrir modal, mesmo em caso de erro
       setDepositoData(resultado);
       setDepositoModalOpen(true);
 
-      // ⚠️ TEMPORÁRIO: Mostrar aviso de que verificação está desabilitada
-      toast.info('Modal aberto (verificação desabilitada temporariamente)', {
-        description: 'A busca na API está temporariamente desabilitada',
-        duration: 3000
-      });
-
-      // Limpar campo
-      setBuscarEndToEnd("");
-
       // Mostrar toast informativo baseado no resultado
-      // if (!resultado.sucesso) {
-      //   toast.error('Depósito não encontrado', {
-      //     description: resultado.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd',
-      //     duration: 5000
-      //   });
-      // } else if (!resultado.permiteOperacao) {
-      //   toast.warning('Depósito encontrado, mas operação não permitida', {
-      //     description: resultado.mensagem,
-      //     duration: 6000
-      //   });
-      // } else {
-      //   toast.success('Depósito encontrado!', {
-      //     description: 'Você pode realizar ações neste depósito',
-      //     duration: 3000
-      //   });
-      //   // Limpar campo apenas após busca bem-sucedida
-      //   setBuscarEndToEnd("");
-      // }
+      if (!resultado.sucesso) {
+        toast.error('Depósito não encontrado', {
+          description: resultado.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd',
+          duration: 5000
+        });
+      } else if (!resultado.permiteOperacao) {
+        toast.warning('Depósito encontrado, mas operação não permitida', {
+          description: resultado.mensagem,
+          duration: 6000
+        });
+      } else {
+        toast.success('Depósito encontrado!', {
+          description: 'Você pode realizar ações neste depósito',
+          duration: 3000
+        });
+        // Limpar campo apenas após busca bem-sucedida
+        setBuscarEndToEnd("");
+      }
 
     } catch (error: any) {
       toast.dismiss('buscar-deposito-corpx');

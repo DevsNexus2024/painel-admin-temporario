@@ -1394,6 +1394,89 @@ export default function ExtractTabTCR() {
     setCompensationModalOpen(true);
   };
 
+  // 🆕 Função para processar verificação após busca por endtoend (sem chamar API qtran novamente)
+  const handleVerificarDepositoEncontrado = async (depositoData: any) => {
+    try {
+      // Verificar se permite operação (já foi verificado na busca inicial)
+      if (!depositoData.permiteOperacao) {
+        toast.error('Operação não permitida', {
+          description: depositoData.mensagem,
+          duration: 6000
+        });
+        return;
+      }
+
+      // Extrair dados da transação do resultado da API
+      const request = depositoData.transacao;
+      if (!request) {
+        toast.error('Dados da transação não encontrados');
+        return;
+      }
+
+      const valor = (request.amount || 0) / 100;
+      const endtoend = request.endToEndId || '';
+
+      // ✅ Converter para formato MovimentoExtrato esperado pelo modal
+      let extractRecord: any = {
+        id: request.id,
+        dateTime: request.created,
+        value: valor,
+        type: 'CRÉDITO', // Depósitos são sempre créditos
+        client: request.senderName || '',
+        document: request.senderTaxId || '',
+        code: endtoend,
+        descCliente: request.description || '',
+        identified: true,
+        descricaoOperacao: request.description || '',
+        status: depositoData.status || request.status, // ✅ Usar status da API
+        reconciliationId: request.reconciliationId,
+        _original: request
+      };
+
+      // ✅ Buscar id_usuario automaticamente via endtoend (mesmo fluxo do botão verificar)
+      try {
+        // Criar objeto compatível com TCRVerificacaoService
+        const transactionForVerification = {
+          id: request.id,
+          code: endtoend,
+          _original: {
+            idEndToEnd: endtoend,
+            endToEndId: endtoend,
+            endToEnd: endtoend
+          }
+        };
+
+        const resultado = await TCRVerificacaoService.verificarTransacaoTCR(transactionForVerification);
+        
+        if (resultado.encontrou && resultado.id_usuario) {
+          // ✅ ENCONTROU! Modificar descCliente para incluir o ID do usuário
+          extractRecord.descCliente = `Usuario ${resultado.id_usuario}; ${extractRecord.descCliente}`;
+          toast.success(`Usuário ID ${resultado.id_usuario} identificado`, {
+            duration: 3000
+          });
+        }
+      } catch (error) {
+        console.error('[TCR-VERIFICACAO] Erro ao buscar usuário:', error);
+        // Não bloquear o fluxo se falhar a busca do usuário
+      }
+      
+      // ✅ Fechar modal de depósito primeiro
+      setDepositoModalOpen(false);
+      
+      // ✅ Abrir o modal de compensação (mesmo fluxo do botão verificar)
+      setTimeout(() => {
+        setSelectedCompensationRecord(extractRecord);
+        setCompensationModalOpen(true);
+      }, 150);
+
+    } catch (error: any) {
+      toast.error('Erro ao processar verificação', {
+        description: error.message || 'Tente novamente',
+        duration: 5000
+      });
+    }
+  };
+
   // 🆕 Função para buscar depósito por EndToEnd
   const handleBuscarDeposito = async () => {
     if (!buscarEndToEnd || buscarEndToEnd.trim().length < 10) {
@@ -1409,49 +1492,34 @@ export default function ExtractTabTCR() {
     setIsBuscandoDeposito(true);
 
     try {
-      // ⚠️ TEMPORARIAMENTE DESABILITADO: Busca de depósito na API
-      // toast.loading('Buscando depósito...', { id: 'buscar-deposito' });
+      toast.loading('Buscando depósito...', { id: 'buscar-deposito' });
       
-      // const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
+      const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
       
-      // toast.dismiss('buscar-deposito');
+      toast.dismiss('buscar-deposito');
 
-      // ⚠️ TEMPORÁRIO: Criar resultado mock para permitir abertura do modal
-      const resultadoApi = {
-        sucesso: true,
-        mensagem: 'Modal aberto sem verificação na API (temporariamente desabilitado)',
-        permiteOperacao: true,
-        status: 'UNKNOWN'
-      };
+      if (!resultadoApi.sucesso) {
+        toast.error('Depósito não encontrado', {
+          description: resultadoApi.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd',
+          duration: 5000
+        });
+        return;
+      }
 
-      // ⚠️ TEMPORÁRIO: Sempre abrir modal sem verificação
-      toast.info('Modal aberto (verificação desabilitada temporariamente)', {
-        description: 'A busca na API está temporariamente desabilitada',
-        duration: 3000
-      });
-
+      if (!resultadoApi.permiteOperacao) {
+        toast.warning('Depósito encontrado, mas operação não permitida', {
+          description: resultadoApi.mensagem,
+          duration: 6000
+        });
+        return;
+    }
+    
       // ✅ Depósito encontrado e verificado - abrir modal com dados
       setDepositoData(resultadoApi);
       setDepositoModalOpen(true);
       
       // Limpar campo após busca bem-sucedida
       setBuscarEndToEnd("");
-
-      // if (!resultadoApi.sucesso) {
-      //   toast.error('Depósito não encontrado', {
-      //     description: resultadoApi.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd',
-      //     duration: 5000
-      //   });
-      //   return;
-      // }
-
-      // if (!resultadoApi.permiteOperacao) {
-      //   toast.warning('Depósito encontrado, mas operação não permitida', {
-      //     description: resultadoApi.mensagem,
-      //     duration: 6000
-      //   });
-      //   return;
-      // }
 
     } catch (error: any) {
       toast.dismiss('buscar-deposito');
@@ -1520,39 +1588,33 @@ export default function ExtractTabTCR() {
     setIsVerifyingTransaction(transaction.id);
 
     try {
-      // ⚠️ TEMPORARIAMENTE DESABILITADO: Verificação de transação na API
       // 🔍 Verificar transação na API antes de permitir operação
-      // toast.loading('Verificando transação na API...', { id: 'verify-tcr-transaction' });
+      toast.loading('Verificando transação na API...', { id: 'verify-tcr-transaction' });
       
-      // const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
+      const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
       
-      // toast.dismiss('verify-tcr-transaction');
+      toast.dismiss('verify-tcr-transaction');
 
-      // if (!resultadoApi.sucesso) {
-      //   toast.error('Erro na verificação', {
-      //     description: resultadoApi.mensagem,
-      //     duration: 5000
-      //   });
-      //   return;
-      // }
+      if (!resultadoApi.sucesso) {
+        toast.error('Erro na verificação', {
+          description: resultadoApi.mensagem,
+          duration: 5000
+        });
+        return;
+      }
 
-      // if (!resultadoApi.permiteOperacao) {
-      //   toast.error('Operação não permitida', {
-      //     description: resultadoApi.mensagem,
-      //     duration: 6000
-      //   });
-      //   return;
-      // }
+      if (!resultadoApi.permiteOperacao) {
+        toast.error('Operação não permitida', {
+          description: resultadoApi.mensagem,
+          duration: 6000
+        });
+        return;
+      }
 
       // ✅ Transação verificada com sucesso - mostrar feedback positivo
-      // toast.success('Transação verificada!', {
-      //   description: `Status: ${resultadoApi.status?.toUpperCase()} - Operação autorizada`,
-      //   duration: 3000
-      // });
-
-      // ⚠️ TEMPORÁRIO: Abrir modal diretamente sem verificação na API
-      toast.info('Abrindo modal (verificação desabilitada temporariamente)', {
-        duration: 2000
+      toast.success('Transação verificada!', {
+        description: `Status: ${resultadoApi.status?.toUpperCase()} - Operação autorizada`,
+        duration: 3000
       });
 
       // ✅ Converter para formato MovimentoExtrato esperado pelo modal
@@ -1567,7 +1629,7 @@ export default function ExtractTabTCR() {
         descCliente: transaction.descCliente,
         identified: transaction.identified || true,
         descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente,
-        status: transaction.status, // ⚠️ Usar status da transação (sem API)
+        status: resultadoApi.status || transaction.status, // ✅ Usar status da API
         _original: transaction._original || transaction
       };
       
@@ -2918,30 +2980,8 @@ export default function ExtractTabTCR() {
                     <Button
                       onClick={(e) => {
                         e.stopPropagation();
-                        
-                        // Converter para formato de transação
-                        const transactionData = {
-                          id: request.id,
-                          dateTime: request.created,
-                          value: valor,
-                          type: 'CRÉDITO',
-                          client: request.senderName || '',
-                          document: request.senderTaxId || '',
-                          code: request.endToEndId,
-                          descCliente: request.description || '',
-                          identified: true,
-                          status: request.status,
-                          reconciliationId: request.reconciliationId,
-                          _original: request
-                        };
-                        
-                        // Fechar modal de depósito primeiro
-                        setDepositoModalOpen(false);
-                        
-                        // Abrir modal de compensação diretamente (já temos dados verificados)
-                        setTimeout(() => {
-                          abrirModalCompensacao(transactionData);
-                        }, 150);
+                        // ✅ Usar função que segue o mesmo fluxo do botão verificar (sem chamar API qtran novamente)
+                        handleVerificarDepositoEncontrado(depositoData);
                       }}
                       className="bg-green-600 hover:bg-green-700"
                     >
