@@ -229,6 +229,48 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
     refetch
   } = useOTCStatement(clientId ? parseInt(clientId) : 0, filters);
 
+  // ✅ MAPEAR TRANSAÇÕES COM HISTÓRICO DE SALDO (mesmo que ClientStatement)
+  // Combinar dados do histórico com as transações para ter saldo anterior/posterior
+  const transacoesComSaldo = useMemo(() => {
+    if (!statement?.transacoes || !statement?.historico_saldo) {
+      return statement?.transacoes || [];
+    }
+
+    const historicoSaldo = statement.historico_saldo;
+    const transacoes = statement.transacoes;
+
+    // Criar um mapa do histórico por transaction_id para busca rápida
+    const historicoMap = new Map();
+    historicoSaldo.forEach(historico => {
+      if (historico.transaction_id) {
+        historicoMap.set(historico.transaction_id, historico);
+      }
+    });
+
+    // Combinar transações com histórico
+    return transacoes.map(transacao => {
+      const historico = historicoMap.get(transacao.id);
+      
+      if (historico) {
+        // Combinar dados da transação com dados do histórico
+        return {
+          ...transacao,
+          saldo_anterior: historico.balance_before,
+          saldo_posterior: historico.balance_after,
+          usd_balance_before: historico.usd_balance_before,
+          usd_balance_after: historico.usd_balance_after,
+          amount_change: historico.amount_change,
+          usd_amount_change: historico.usd_amount_change,
+          conversion_rate: historico.conversion_rate,
+          history_id: historico.id,
+        };
+      }
+      
+      // Se não encontrar histórico, retornar transação sem saldos
+      return transacao;
+    });
+  }, [statement?.transacoes, statement?.historico_saldo]);
+
   // Resetar filtros quando página carregar
   useEffect(() => {
     setShowOnlyToday(false);
@@ -459,9 +501,8 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
 
   // Filtrar e ordenar transações
   const filteredAndSortedTransactions = useMemo(() => {
-    // ✅ CONSTRUIR TRANSAÇÕES A PARTIR DO HISTÓRICO quando necessário
-    // Quando o filtro de withdrawal está ativo e não há transações, usar histórico
-    let transactions = statement?.transacoes || [];
+    // ✅ USAR TRANSAÇÕES COM SALDO (já mapeadas com histórico)
+    let transactions = transacoesComSaldo;
     
     // ✅ CONSTRUIR TRANSAÇÕES A PARTIR DO HISTÓRICO quando filtro de withdrawal está ativo
     // Se o filtro de withdrawal está ativo e não há transações, construir do histórico
@@ -491,6 +532,15 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
             processed_by: (history as any).created_by || null,
             is_conversion: false,
             description: history.description || '',
+            // ✅ INCLUIR SALDOS DO HISTÓRICO
+            saldo_anterior: history.balance_before,
+            saldo_posterior: history.balance_after,
+            usd_balance_before: history.usd_balance_before,
+            usd_balance_after: history.usd_balance_after,
+            amount_change: history.amount_change,
+            usd_amount_change: history.usd_amount_change,
+            conversion_rate: history.conversion_rate,
+            history_id: history.id,
             manual_operation: history.operation_type === 'manual_debit' ? {
               id: history.transaction_id || history.id,
               operation_type: 'debit',
@@ -694,7 +744,7 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
     });
 
     return filtered;
-  }, [statement?.transacoes, searchName, searchValue, statement?.historico_saldo]);
+  }, [transacoesComSaldo, searchName, searchValue, filters.operationType, statement?.historico_saldo]);
 
   // Filtrar histórico de saldo
   const filteredBalanceHistory = useMemo(() => {
@@ -1111,6 +1161,74 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
           </div>
         </TableCell>
         
+        <TableCell className="text-right">
+          {(() => {
+            // Verificar se tem saldo USD (não apenas movimento, mas saldo mesmo)
+            const hasUsdBalanceBefore = transaction.usd_balance_before !== undefined && transaction.usd_balance_before !== null;
+            const hasBrlBalanceBefore = transaction.saldo_anterior !== undefined && transaction.saldo_anterior !== null;
+            const isUsdOnlyOperation = hasUsdBalanceBefore && !hasBrlBalanceBefore;
+            
+            if (isUsdOnlyOperation) {
+              // Operação USD pura - mostrar apenas saldo USD anterior
+              return (
+                <div className="text-sm text-blue-500">
+                  $ {transaction.usd_balance_before.toFixed(4)}
+                </div>
+              );
+            } else {
+              // Operação BRL ou conversão - mostrar ambos quando disponíveis
+              return (
+                <div className="space-y-1">
+                  {hasBrlBalanceBefore && (
+                    <div className="text-sm text-muted-foreground">
+                      BRL: {otcService.formatCurrency(transaction.saldo_anterior)}
+                    </div>
+                  )}
+                  {hasUsdBalanceBefore && (
+                    <div className="text-sm text-blue-500">
+                      USD: $ {transaction.usd_balance_before.toFixed(4)}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+          })()}
+        </TableCell>
+        
+        <TableCell className="text-right">
+          {(() => {
+            // Verificar se tem saldo USD (não apenas movimento, mas saldo mesmo)
+            const hasUsdBalanceAfter = transaction.usd_balance_after !== undefined && transaction.usd_balance_after !== null;
+            const hasBrlBalanceAfter = transaction.saldo_posterior !== undefined && transaction.saldo_posterior !== null;
+            const isUsdOnlyOperation = hasUsdBalanceAfter && !hasBrlBalanceAfter;
+            
+            if (isUsdOnlyOperation) {
+              // Operação USD pura - mostrar apenas saldo USD posterior
+              return (
+                <div className="font-semibold text-sm text-blue-600">
+                  $ {transaction.usd_balance_after.toFixed(4)}
+                </div>
+              );
+            } else {
+              // Operação BRL ou conversão - mostrar ambos quando disponíveis
+              return (
+                <div className="space-y-1">
+                  {hasBrlBalanceAfter && (
+                    <div className="font-semibold text-sm">
+                      BRL: {otcService.formatCurrency(transaction.saldo_posterior)}
+                    </div>
+                  )}
+                  {hasUsdBalanceAfter && (
+                    <div className="font-semibold text-sm text-blue-600">
+                      USD: $ {transaction.usd_balance_after.toFixed(4)}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+          })()}
+        </TableCell>
+        
         <TableCell className="text-center">
           {getStatusBadge(transaction.status)}
         </TableCell>
@@ -1173,8 +1291,11 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
 
   // Componente para histórico de saldo
   const BalanceHistoryRow = ({ history }: { history: OTCBalanceHistory }) => {
+    // Verificar se tem movimentação USD
     const hasUsdChange = history.usd_amount_change && history.usd_amount_change !== 0;
     const hasBrlChange = history.amount_change && history.amount_change !== 0;
+    
+    // Determinar se é operação exclusivamente USD (sem mudança BRL)
     const isUsdOnlyOperation = hasUsdChange && !hasBrlChange;
     
     return (
@@ -1197,13 +1318,36 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
         
         <TableCell className="text-right">
           {isUsdOnlyOperation ? (
+            // Para operações USD puras, mostrar apenas saldo USD anterior
+            <div className="text-sm text-blue-500">
+              $ {history.usd_balance_before?.toFixed(4) || '0.0000'}
+            </div>
+          ) : (
+            // Para operações BRL ou conversões, mostrar ambos
+            <div className="space-y-1">
+              <div className="text-sm text-muted-foreground">
+                BRL: {otcService.formatCurrency(history.balance_before)}
+              </div>
+              {hasUsdChange && (
+                <div className="text-sm text-blue-500">
+                  USD: $ {history.usd_balance_before?.toFixed(4) || '0.0000'}
+                </div>
+              )}
+            </div>
+          )}
+        </TableCell>
+        
+        <TableCell className="text-right">
+          {isUsdOnlyOperation ? (
+            // Para operações USD puras, mostrar apenas alteração USD
             <div className={`font-semibold text-sm ${
               history.usd_amount_change >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
               {history.usd_amount_change >= 0 ? '+' : ''}
-              $ {Math.abs(history.usd_amount_change).toFixed(2)}
+              $ {Math.abs(history.usd_amount_change).toFixed(4)}
             </div>
           ) : (
+            // Para outras operações, mostrar as alterações aplicáveis
             <div className="space-y-1">
               {hasBrlChange && (
                 <div className={`font-semibold text-sm ${
@@ -1218,7 +1362,28 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                   history.usd_amount_change >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
                   {history.usd_amount_change >= 0 ? '+' : ''}
-                  $ {Math.abs(history.usd_amount_change).toFixed(2)} USD
+                  $ {Math.abs(history.usd_amount_change).toFixed(4)} USD
+                </div>
+              )}
+            </div>
+          )}
+        </TableCell>
+        
+        <TableCell className="text-right">
+          {isUsdOnlyOperation ? (
+            // Para operações USD puras, mostrar apenas saldo USD posterior
+            <div className="font-semibold text-sm text-blue-600">
+              $ {history.usd_balance_after?.toFixed(4) || '0.0000'}
+            </div>
+          ) : (
+            // Para outras operações, mostrar ambos os saldos
+            <div className="space-y-1">
+              <div className="font-semibold text-sm">
+                BRL: {otcService.formatCurrency(history.balance_after)}
+              </div>
+              {hasUsdChange && (
+                <div className="font-semibold text-sm text-blue-600">
+                  USD: $ {history.usd_balance_after?.toFixed(4) || '0.0000'}
                 </div>
               )}
             </div>
@@ -1548,6 +1713,8 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                         <TableRow>
                           <TableHead className="w-[180px]">Transação</TableHead>
                           <TableHead className="text-right w-[200px]">Valor</TableHead>
+                          <TableHead className="text-right w-[150px]">Saldo Anterior</TableHead>
+                          <TableHead className="text-right w-[150px]">Saldo Posterior</TableHead>
                           <TableHead className="text-center w-[120px]">Status</TableHead>
                           <TableHead>Detalhes</TableHead>
                         </TableRow>
@@ -1598,7 +1765,9 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Operação</TableHead>
+                          <TableHead className="text-right">Saldo Anterior</TableHead>
                           <TableHead className="text-right">Alteração</TableHead>
+                          <TableHead className="text-right">Saldo Posterior</TableHead>
                           <TableHead>Descrição</TableHead>
                         </TableRow>
                       </TableHeader>
