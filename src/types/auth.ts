@@ -292,7 +292,7 @@ export const ROUTE_PERMISSIONS: Record<string, RoutePermissions> = {
   // ==================== GRUPO TCR ====================
   '/grupo-tcr/tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
   '/brasilcash-tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
-  '/ip-revy-tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
+  '/belmontx-tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
   '/auditoria-depositos': { allowedRoles: ['super_admin', 'tcr_user'] },
 
   // (Feature-flagged hoje, mas protegidas)
@@ -308,7 +308,7 @@ export const ROUTE_PERMISSIONS: Record<string, RoutePermissions> = {
   '/otc/negociar': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
   '/otc/admin-statement/:clientId': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
   '/bitso': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
-  '/ip-revy-otc': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
+  '/belmontx-otc': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
   '/corpx': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
 
   // Rotas de funcionários / cliente OTC (mantidas)

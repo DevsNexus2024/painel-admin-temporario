@@ -2,18 +2,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshCcw, Loader2, Wifi, WifiOff, CheckCircle, AlertCircle, FileText, Banknote, Lock, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useRevyRealtime } from "@/hooks/useRevyRealtime";
+import { useBelmontXRealtime } from "@/hooks/useBelmontXRealtime";
 import AnimatedBalance from "@/components/AnimatedBalance";
-import { fetchRevyTransactions } from "@/services/revy";
+import { consultarSaldoBelmontX, consultarExtratoBelmontX } from "@/services/belmontx";
 
-// Constantes para IP Revy OTC
-const IP_REVY_TENANT_ID = 3;
-const IP_REVY_ACCOUNT_ID = 100;
-
-export default function TopBarIpRevyOtc() {
-  // WebSocket para IP Revy
-  const { isConnected, isReconnecting } = useRevyRealtime({
-    tenantId: IP_REVY_TENANT_ID,
+export default function TopBarBelmontXTcr() {
+  // WebSocket para BelmontX TCR (não disponível no momento)
+  const { isConnected, isReconnecting } = useBelmontXRealtime({
+    tenantId: 2, // BelmontX TCR
   });
 
   const [balanceData, setBalanceData] = useState({
@@ -28,105 +24,68 @@ export default function TopBarIpRevyOtc() {
   const [isLoadingSaldo, setIsLoadingSaldo] = useState(false);
   const [errorSaldo, setErrorSaldo] = useState<string | null>(null);
 
-  // Buscar saldo do último registro da API de extrato
+  // Buscar saldo usando API BelmontX
   const fetchSaldo = async () => {
     setIsLoadingSaldo(true);
     setErrorSaldo(null);
     
     try {
-      // ✅ Buscar com accountId 100 para obter transações da conta correta
-      const response = await fetchRevyTransactions({
-        tenantId: IP_REVY_TENANT_ID,
-        accountId: IP_REVY_ACCOUNT_ID, // AccountId 100 para IP Revy OTC
-        limit: 1,
-        offset: 0,
-        includePostings: true,
-      });
+      // ✅ Usar endpoint específico de saldo da BelmontX
+      const saldoResponse = await consultarSaldoBelmontX();
       
-      console.log('[IP-REVY-OTC] Resposta completa:', response);
+      console.log('[BELMONTX-TCR] Resposta de saldo:', saldoResponse);
       
-      if (response?.data && response.data.length > 0) {
-        const firstTransaction = response.data[0];
+      if (saldoResponse?.response?.success) {
+        const saldoReais = parseFloat(saldoResponse.response.saldoReais || '0');
         
-        console.log('[IP-REVY-OTC] Primeira transação:', {
-          id: firstTransaction.id,
-          journalType: firstTransaction.journalType || firstTransaction.type,
-          postingsCount: firstTransaction.postings?.length,
-          postings: firstTransaction.postings
-        });
-        
-        // ✅ Buscar o posting da LIQUIDITY_POOL da última transação
-        // Pode ser accountId "100" OU accountType "LIQUIDITY_POOL"
-        const liquidityPoolPosting = firstTransaction.postings?.find(
-          (p: any) => 
-            p.account?.accountType === 'LIQUIDITY_POOL' || 
-            p.accountId === '100' ||
-            (p.account?.id === '100' && p.account?.accountType === 'LIQUIDITY_POOL')
-        );
-        
-        // Debug: log para verificar estrutura
-        if (!liquidityPoolPosting) {
-          console.log('[IP-REVY-OTC] Postings disponíveis:', firstTransaction.postings?.map((p: any) => ({
-            accountId: p.accountId,
-            accountType: p.account?.accountType,
-            accountIdFromAccount: p.account?.id,
-            balance: p.account?.balance
-          })));
-        }
-        
-        if (liquidityPoolPosting?.account?.balance !== undefined && liquidityPoolPosting?.account?.balance !== null) {
-          const balanceStr = String(liquidityPoolPosting.account.balance);
-          const balance = parseFloat(balanceStr);
-          const currency = liquidityPoolPosting.account.currency || 'BRL';
-          
-          console.log('[IP-REVY-OTC] ✅ Balance encontrado:', {
-            balanceStr,
-            balance,
-            currency,
-            accountId: liquidityPoolPosting.accountId,
-            accountIdFromAccount: liquidityPoolPosting.account?.id,
-            accountType: liquidityPoolPosting.account?.accountType
+        if (!isNaN(saldoReais)) {
+          setBalanceData({
+            currency: 'BRL',
+            total: String(Math.abs(saldoReais)),
+            available: String(Math.abs(saldoReais)),
+            locked: '0',
+            pendingDeposit: '0',
+            pendingWithdrawal: '0'
           });
-          
-          if (!isNaN(balance)) {
-            setBalanceData({
-              currency: currency,
-              total: String(Math.abs(balance)),
-              available: String(Math.abs(balance)), // Disponível = total (não há bloqueio separado no ledger)
-              locked: '0',
-              pendingDeposit: '0',
-              pendingWithdrawal: '0'
-            });
-            setErrorSaldo(null); // Limpar erro se encontrou
-          } else {
-            console.warn('[IP-REVY-OTC] Balance inválido:', liquidityPoolPosting.account.balance);
-            setErrorSaldo('Balance inválido na resposta da API');
-          }
+          setErrorSaldo(null);
         } else {
-          console.warn('[IP-REVY-OTC] Posting da LIQUIDITY_POOL não encontrado na transação:', {
-            transactionId: firstTransaction.id,
-            postingsCount: firstTransaction.postings?.length,
-            postings: firstTransaction.postings
-          });
-          setErrorSaldo('Posting da LIQUIDITY_POOL não encontrado');
+          console.warn('[BELMONTX-TCR] Saldo inválido:', saldoResponse.response.saldoReais);
+          setErrorSaldo('Saldo inválido na resposta da API');
         }
-        
-        // Total de transações
-        setTotalTransacoes(response.pagination?.total || response.total || 0);
       } else {
-        // Se não houver transações, inicializar com zero
-        setBalanceData({
-          currency: 'BRL',
-          total: '0',
-          available: '0',
-          locked: '0',
-          pendingDeposit: '0',
-          pendingWithdrawal: '0'
+        setErrorSaldo('Resposta inválida da API');
+      }
+      
+      // Buscar total de transações (últimos 30 dias para contagem)
+      const hoje = new Date();
+      const dataInicio = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const dataFim = hoje.toISOString().split('T')[0];
+      
+      try {
+        const extratoResponse = await consultarExtratoBelmontX({
+          dataInicio,
+          dataFim,
+          porPagina: 1, // Apenas para obter total
         });
+        
+        setTotalTransacoes(extratoResponse.response.paginacao?.total || 0);
+      } catch (extratoErr) {
+        // Se falhar ao buscar extrato, não é crítico
+        console.warn('[BELMONTX-TCR] Erro ao buscar total de transações:', extratoErr);
         setTotalTransacoes(0);
       }
     } catch (err: any) {
       setErrorSaldo(err.message || 'Erro ao consultar saldo');
+      // Se falhar, inicializar com zero
+      setBalanceData({
+        currency: 'BRL',
+        total: '0',
+        available: '0',
+        locked: '0',
+        pendingDeposit: '0',
+        pendingWithdrawal: '0'
+      });
+      setTotalTransacoes(0);
     } finally {
       setIsLoadingSaldo(false);
     }
@@ -167,7 +126,7 @@ export default function TopBarIpRevyOtc() {
           <div>
             <div className="flex items-center gap-3">
               <Banknote className="h-5 w-5 text-[#9333ea]" />
-              <h1 className="text-2xl font-bold text-foreground">IP Revy</h1>
+              <h1 className="text-2xl font-bold text-foreground">BelmontX</h1>
               <Badge className="bg-[rgba(147,51,234,0.2)] text-[#9333ea] border-[rgba(147,51,234,0.4)] text-xs font-medium">
                 Banking
               </Badge>
@@ -193,7 +152,7 @@ export default function TopBarIpRevyOtc() {
               </div>
             </div>
             <p className="text-muted-foreground text-sm">
-              Central de transferências PIX {isConnected && '• Atualizações em tempo real'}
+              Central de transferências PIX BelmontX {isConnected && '• Atualizações em tempo real'}
             </p>
           </div>
         </div>
@@ -306,4 +265,3 @@ export default function TopBarIpRevyOtc() {
     </div>
   );
 }
-

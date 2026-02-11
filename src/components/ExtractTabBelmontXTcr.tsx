@@ -14,19 +14,19 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
 import { TCRVerificacaoService } from "@/services/tcrVerificacao";
-import { useRevyRealtime } from "@/hooks/useRevyRealtime";
+import { useBelmontXRealtime } from "@/hooks/useBelmontXRealtime";
 import { BitsoRealtimeService, type BitsoTransactionDB } from "@/services/bitso-realtime";
-import { fetchRevyTransactions, type LedgerTransaction } from "@/services/revy";
+import { consultarExtratoBelmontX } from "@/services/belmontx";
 import type { MovimentoExtrato } from "@/services/extrato";
 
-// Constantes para IP Revy TCR
-const IP_REVY_TENANT_ID = 2;
-const IP_REVY_ACCOUNT_ID = 35; // TODO: Confirmar accountId correto para TCR
+// Constantes para BelmontX TCR
+const BELMONTX_TENANT_ID = 2;
+const BELMONTX_ACCOUNT_ID = 35; // TODO: Confirmar accountId correto para TCR
 
-export default function ExtractTabIpRevyTcr() {
-  // WebSocket para IP Revy TCR
-  const { isConnected } = useRevyRealtime({
-    tenantId: IP_REVY_TENANT_ID,
+export default function ExtractTabBelmontXTcr() {
+  // WebSocket para BelmontX TCR (não disponível no momento)
+  const { isConnected } = useBelmontXRealtime({
+    tenantId: BELMONTX_TENANT_ID,
   });
 
   // Estados de transações
@@ -80,93 +80,66 @@ export default function ExtractTabIpRevyTcr() {
     loading: false
   });
 
-  // Função para converter LedgerTransaction (Revy) para BitsoTransactionDB
-  const mapRevyToBitsoTransaction = (ledgerTx: LedgerTransaction): BitsoTransactionDB => {
-    const metadata = ledgerTx.metadata || {};
-    const posting = ledgerTx.postings?.find((p: any) => p.accountId === IP_REVY_ACCOUNT_ID.toString() && p.side === 'PAY_IN') || ledgerTx.postings?.[0];
+  // Função para converter transação BelmontX para BitsoTransactionDB
+  // Estrutura real da API BelmontX conforme resposta recebida
+  const mapBelmontXToBitsoTransaction = (tx: any): BitsoTransactionDB => {
+    // Mapear tipo: "credito" = FUNDING, "debito" = WITHDRAWAL
+    const isDeposit = tx.tipo === 'credito';
     
-    // ✅ CORREÇÃO: Usar journalType (campo real da API) ou type (fallback)
-    const journalType = ledgerTx.journalType || ledgerTx.type;
-    
-    // Para DEPOSIT: payer_name vem do metadata
-    // Para WITHDRAWAL: verificar se há payee_name nos metadados
-    const isDeposit = journalType === 'DEPOSIT';
-    let payerName = '';
-    let payeeName = '';
-    
-    if (isDeposit) {
-      // Para DEPOSIT: payer vem de metadata.payer.name (estrutura aninhada)
-      payerName = metadata.payer?.name || metadata.payer_name || metadata.payerName || '';
-      payeeName = metadata.beneficiary?.name || metadata.payee_name || metadata.payeeName || '';
-    } else {
-      // Para saques, verificar se há payee_name nos metadados
-      payeeName = metadata.payee_name || metadata.payeeName || '';
-      
-      // Se não houver, tentar extrair da description se houver padrão " - NOME"
-      if (!payeeName) {
-        const description = ledgerTx.description || '';
-        const nameMatch = description.match(/ - (.+)$/);
-        if (nameMatch && nameMatch[1]) {
-          payeeName = nameMatch[1].trim();
-        }
-      }
-    }
-    
-    // Determinar status real baseado nos metadados
+    // Mapear status: "Sucesso" = COMPLETE, outros podem ser PENDING, FAILED, etc.
     let status: 'PENDING' | 'COMPLETE' | 'FAILED' | 'CANCELLED' = 'COMPLETE';
-    
-    if (journalType === 'WITHDRAWAL') {
-      const withdrawalStatus = metadata.withdrawal_status?.toUpperCase();
-      if (withdrawalStatus === 'FAILED') {
-        status = 'FAILED';
-      } else if (withdrawalStatus === 'PENDING' || withdrawalStatus === 'IN_PROGRESS') {
-        status = 'PENDING';
-      } else if (withdrawalStatus === 'CANCELLED') {
-        status = 'CANCELLED';
-      } else if (withdrawalStatus === 'COMPLETE' || withdrawalStatus === 'COMPLETED') {
+    if (tx.tipoStatusTransacao) {
+      const statusUpper = tx.tipoStatusTransacao.toUpperCase();
+      if (statusUpper.includes('SUCESSO') || statusUpper.includes('COMPLETO')) {
         status = 'COMPLETE';
-      }
-      if (metadata.failed_at && !withdrawalStatus) {
-        status = 'FAILED';
-      }
-    } else if (journalType === 'DEPOSIT') {
-      const depositStatus = metadata.deposit_status?.toUpperCase();
-      if (depositStatus === 'FAILED') {
-        status = 'FAILED';
-      } else if (depositStatus === 'PENDING' || depositStatus === 'IN_PROGRESS') {
+      } else if (statusUpper.includes('PENDENTE') || statusUpper.includes('PENDING')) {
         status = 'PENDING';
-      } else if (depositStatus === 'CANCELLED') {
+      } else if (statusUpper.includes('FALHA') || statusUpper.includes('FAILED') || statusUpper.includes('ERRO')) {
+        status = 'FAILED';
+      } else if (statusUpper.includes('CANCELADO') || statusUpper.includes('CANCELLED')) {
         status = 'CANCELLED';
-      } else if (depositStatus === 'COMPLETE' || depositStatus === 'COMPLETED') {
-        status = 'COMPLETE';
       }
     }
+    
+    // Valor: negativo para débito, positivo para crédito
+    // API BelmontX retorna valores em centavos (inteiros)
+    // Exemplo: 402 = R$ 4,02, 1100 = R$ 11,00, -3 = R$ 0,03
+    const valorAbsoluto = Math.abs(tx.valor);
+    const amount = (valorAbsoluto / 100).toFixed(2); // Converter centavos para reais
+    
+    // Para depósitos (crédito): nome é o pagador
+    // Para saques (débito): nome é o beneficiário
+    const payerName = isDeposit ? tx.nome : '';
+    const payeeName = !isDeposit ? tx.nome : '';
+    
+    // ID único: usar codigoTransacao
+    const transactionId = tx.codigoTransacao;
     
     return {
-      id: parseInt(ledgerTx.id),
-      type: journalType === 'DEPOSIT' ? 'FUNDING' : 'WITHDRAWAL',
-      transactionId: ledgerTx.providerTxId || ledgerTx.externalId || ledgerTx.id,
-      endToEndId: ledgerTx.endToEndId || '',
-      reconciliationId: metadata.reconciliation_id || metadata.idempotencyKey || '',
+      id: parseInt(transactionId.split('-')[0].replace(/\D/g, '').slice(0, 9)) || 0, // Extrair números do UUID
+      type: isDeposit ? 'FUNDING' : 'WITHDRAWAL',
+      transactionId: transactionId,
+      endToEndId: tx.endToEnd || '',
+      reconciliationId: tx.idEnvio || tx.codigoTransacao || '',
       status: status,
-      amount: metadata.net_amount || metadata.gross_amount || posting?.amount || '0',
-      fee: metadata.fee || '0',
-      currency: ledgerTx.functionalCurrency || 'BRL',
-      method: 'pixrevy',
-      methodName: 'Pix Revy',
+      amount: amount,
+      fee: tx.tipoTransacao === 'Tarifa' ? amount : '0', // Se for tarifa, o valor já é a taxa
+      currency: 'BRL',
+      method: 'pixbelmontx',
+      methodName: 'Pix BelmontX',
       payerName: payerName,
-      payerTaxId: metadata.payer_tax_id || metadata.payerTaxId || '',
+      payerTaxId: tx.documento || '',
       payerBankName: '',
       payeeName: payeeName,
-      createdAt: ledgerTx.createdAt,
-      receivedAt: ledgerTx.createdAt,
-      updatedAt: ledgerTx.updatedAt || ledgerTx.createdAt,
+      createdAt: tx.dataHoraTransacao || new Date().toISOString(),
+      receivedAt: tx.dataHoraTransacao || new Date().toISOString(),
+      updatedAt: tx.dataHoraTransacao || new Date().toISOString(),
       isReversal: false,
       originEndToEndId: null
     };
   };
 
-  // Buscar transações do Revy
+  // Buscar transações do BelmontX
   const fetchTransactions = async (resetOffset: boolean = false, overrideLimit?: number) => {
     setLoading(true);
     setError(null);
@@ -175,18 +148,17 @@ export default function ExtractTabIpRevyTcr() {
       const limit = overrideLimit ?? recordsPerPage;
       const offset = resetOffset ? 0 : pagination.offset;
       
-      const response = await fetchRevyTransactions({
-        tenantId: IP_REVY_TENANT_ID,
-        accountId: IP_REVY_ACCOUNT_ID,
-        startDate: dateFilter.start,
-        endDate: dateFilter.end,
-        limit,
-        offset,
-        includePostings: true,
+      // Chamada conforme documentação API BelmontX: GET /api/belmontx/extrato
+      // Parâmetros: dataInicio (obrigatório), dataFim (opcional), pagina (opcional), porPagina (opcional, máx: 100)
+      const response = await consultarExtratoBelmontX({
+        dataInicio: dateFilter.start,
+        dataFim: dateFilter.end,
+        pagina: Math.floor(offset / limit) + 1,
+        porPagina: Math.min(limit, 100), // Máximo 100 conforme documentação
       });
 
-      // Converter dados do Revy para formato BitsoTransactionDB
-      const mappedTransactions = (response.data || []).map(mapRevyToBitsoTransaction);
+      // Converter dados da API BelmontX para formato BitsoTransactionDB
+      const mappedTransactions = (response.response?.transacoes || []).map(mapBelmontXToBitsoTransaction);
       
       // Aplicar filtros locais que não estão na API
       let filtered = mappedTransactions;
@@ -215,17 +187,23 @@ export default function ExtractTabIpRevyTcr() {
       
       setTransactions(filtered);
       
-      // Atualizar paginação baseada na resposta
-      const total = response.pagination?.total ?? response.total ?? filtered.length;
-      const hasMore = (response.pagination?.totalPages ?? 0) > (Math.floor(offset / limit) + 1);
-      const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
+      // Calcular métricas a partir das transações já carregadas (sem nova chamada)
+      calculateMetrics(mappedTransactions);
+      
+      // Atualizar paginação baseada na resposta da API BelmontX
+      // Estrutura da resposta: response = { qtdRegistros, paginaAtual, qtdPaginas }
+      const total = response.response?.qtdRegistros ?? filtered.length;
+      const paginaAtual = response.response?.paginaAtual ?? Math.floor(offset / limit) + 1;
+      const totalPages = response.response?.qtdPaginas ?? 1;
+      const hasMore = paginaAtual < totalPages;
+      const porPagina = Math.min(limit, 100);
 
       setPagination({
         total,
-        limit,
-        offset,
+        limit: porPagina,
+        offset: (paginaAtual - 1) * porPagina,
         has_more: hasMore,
-        current_page: Math.floor(offset / limit) + 1,
+        current_page: paginaAtual,
         total_pages: totalPages
       });
     } catch (err: any) {
@@ -238,76 +216,79 @@ export default function ExtractTabIpRevyTcr() {
     }
   };
 
-  // Buscar métricas de todas as transações
+  // Calcular métricas a partir das transações já carregadas (sem nova chamada à API)
+  const calculateMetrics = (transactionsToCalculate: BitsoTransactionDB[]) => {
+    // Aplicar os mesmos filtros locais
+    let filtered = transactionsToCalculate;
+    
+    if (typeFilter !== 'ALL') {
+      filtered = filtered.filter(tx => tx.type === typeFilter);
+    }
+    
+    if (statusFilter !== 'ALL') {
+      filtered = filtered.filter(tx => tx.status === statusFilter);
+    }
+    
+    if (specificAmount) {
+      const amount = parseFloat(specificAmount);
+      filtered = filtered.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
+    } else {
+      if (minAmount) {
+        const min = parseFloat(minAmount);
+        filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
+      }
+      if (maxAmount) {
+        const max = parseFloat(maxAmount);
+        filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
+      }
+    }
+    
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(tx => 
+        tx.payerName?.toLowerCase().includes(searchLower) ||
+        tx.payeeName?.toLowerCase().includes(searchLower) ||
+        tx.payerTaxId?.toLowerCase().includes(searchLower) ||
+        tx.transactionId?.toLowerCase().includes(searchLower) ||
+        tx.endToEndId?.toLowerCase().includes(searchLower) ||
+        tx.reconciliationId?.toLowerCase().includes(searchLower) ||
+        tx.amount?.toString().includes(searchLower)
+      );
+    }
+    
+    // Calcular métricas
+    const deposits = filtered.filter(tx => tx.type === 'FUNDING');
+    const withdrawals = filtered.filter(tx => tx.type === 'WITHDRAWAL');
+    
+    const depositAmount = deposits.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+    const withdrawalAmount = withdrawals.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+    
+    setMetrics({
+      totalDeposits: deposits.length,
+      totalWithdrawals: withdrawals.length,
+      depositAmount: depositAmount,
+      withdrawalAmount: withdrawalAmount,
+      loading: false
+    });
+  };
+
+  // Buscar métricas de todas as transações (apenas quando necessário, com uma chamada separada)
   const fetchMetrics = async () => {
     setMetrics(prev => ({ ...prev, loading: true }));
     
     try {
       // Buscar TODAS as transações com os filtros aplicados
-      const response = await fetchRevyTransactions({
-        tenantId: IP_REVY_TENANT_ID,
-        accountId: IP_REVY_ACCOUNT_ID,
-        startDate: dateFilter.start,
-        endDate: dateFilter.end,
-        limit: 999999,
-        offset: 0,
-        includePostings: true,
+      // Chamada conforme documentação API BelmontX: GET /api/belmontx/extrato
+      // Nota: API tem limite de 100 por página, então precisamos fazer múltiplas chamadas se necessário
+      const response = await consultarExtratoBelmontX({
+        dataInicio: dateFilter.start,
+        dataFim: dateFilter.end,
+        pagina: 1,
+        porPagina: 100, // Máximo conforme documentação
       });
 
-      const allTransactions = (response.data || []).map(mapRevyToBitsoTransaction);
-      
-      // Aplicar os mesmos filtros locais
-      let filtered = allTransactions;
-      
-      if (typeFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.type === typeFilter);
-      }
-      
-      if (statusFilter !== 'ALL') {
-        filtered = filtered.filter(tx => tx.status === statusFilter);
-      }
-      
-      if (specificAmount) {
-        const amount = parseFloat(specificAmount);
-        filtered = filtered.filter(tx => Math.abs(parseFloat(tx.amount) - amount) < 0.01);
-      } else {
-        if (minAmount) {
-          const min = parseFloat(minAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) >= min);
-        }
-        if (maxAmount) {
-          const max = parseFloat(maxAmount);
-          filtered = filtered.filter(tx => parseFloat(tx.amount) <= max);
-        }
-      }
-      
-      if (searchTerm.trim()) {
-        const searchLower = searchTerm.toLowerCase();
-        filtered = filtered.filter(tx => 
-          tx.payerName?.toLowerCase().includes(searchLower) ||
-          tx.payeeName?.toLowerCase().includes(searchLower) ||
-          tx.payerTaxId?.toLowerCase().includes(searchLower) ||
-          tx.transactionId?.toLowerCase().includes(searchLower) ||
-          tx.endToEndId?.toLowerCase().includes(searchLower) ||
-          tx.reconciliationId?.toLowerCase().includes(searchLower) ||
-          tx.amount?.toString().includes(searchLower)
-        );
-      }
-      
-      // Calcular métricas
-      const deposits = filtered.filter(tx => tx.type === 'FUNDING');
-      const withdrawals = filtered.filter(tx => tx.type === 'WITHDRAWAL');
-      
-      const depositAmount = deposits.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
-      const withdrawalAmount = withdrawals.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
-      
-      setMetrics({
-        totalDeposits: deposits.length,
-        totalWithdrawals: withdrawals.length,
-        depositAmount: depositAmount,
-        withdrawalAmount: withdrawalAmount,
-        loading: false
-      });
+      const allTransactions = (response.response?.transacoes || []).map(mapBelmontXToBitsoTransaction);
+      calculateMetrics(allTransactions);
     } catch (err: any) {
       console.error('Erro ao buscar métricas:', err);
       setMetrics(prev => ({ ...prev, loading: false }));
@@ -316,14 +297,14 @@ export default function ExtractTabIpRevyTcr() {
 
   useEffect(() => {
     fetchTransactions(true);
-    fetchMetrics();
+    // fetchMetrics removido - será calculado a partir das transações carregadas
   }, []);
 
   // Aplicar filtros automaticamente quando mudarem (exceto data e busca)
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchTransactions(true);
-      fetchMetrics();
+      // fetchMetrics removido - será calculado a partir das transações carregadas
     }, 500); // Debounce de 500ms
 
     return () => clearTimeout(timer);
@@ -351,7 +332,7 @@ export default function ExtractTabIpRevyTcr() {
     if (dateFilter.start && dateFilter.end) {
       const timer = setTimeout(() => {
         fetchTransactions(true);
-        fetchMetrics();
+        // fetchMetrics removido - será calculado a partir das transações carregadas
       }, 500);
 
       return () => clearTimeout(timer);
@@ -388,8 +369,8 @@ export default function ExtractTabIpRevyTcr() {
     }
   };
 
-  // Função customizada para badge de status com tema roxo (apenas para IP Revy TCR)
-  const getStatusBadgeForIpRevyTCR = (status: string) => {
+  // Função customizada para badge de status com tema roxo (apenas para BelmontX TCR)
+  const getStatusBadgeForBelmontXTCR = (status: string) => {
     const baseBadge = BitsoRealtimeService.getStatusBadge(status);
     let customClassName = "";
     
@@ -421,16 +402,15 @@ export default function ExtractTabIpRevyTcr() {
       toast.info('Preparando exportação...', { description: 'Buscando todos os registros filtrados' });
       
       // ✅ Buscar TODOS os registros com os filtros aplicados (sem paginação)
-      const response = await fetchRevyTransactions({
-        tenantId: IP_REVY_TENANT_ID,
-        accountId: IP_REVY_ACCOUNT_ID,
-        startDate: dateFilter.start,
-        endDate: dateFilter.end,
-        limit: 999999,
-        offset: 0,
-        includePostings: true,
+      // Chamada conforme documentação API BelmontX: GET /api/belmontx/extrato
+      // Nota: API tem limite de 100 por página, então precisamos fazer múltiplas chamadas se necessário
+      const response = await consultarExtratoBelmontX({
+        dataInicio: dateFilter.start,
+        dataFim: dateFilter.end,
+        pagina: 1,
+        porPagina: 100, // Máximo conforme documentação
       });
-      const allTransactions = (response.data || []).map(mapRevyToBitsoTransaction);
+      const allTransactions = (response.response?.transacoes || []).map(mapBelmontXToBitsoTransaction);
 
       // Aplicar filtro de busca local (searchTerm)
       let transactionsToExport = allTransactions;
@@ -471,11 +451,11 @@ export default function ExtractTabIpRevyTcr() {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `extrato-ip-revy-tcr-${new Date().toISOString().split('T')[0]}.csv`;
+      link.download = `extrato-belmontx-tcr-${new Date().toISOString().split('T')[0]}.csv`;
       link.click();
       
       toast.success(`${transactionsToExport.length} registros exportados com sucesso!`, {
-        description: `Arquivo: extrato-ip-revy-tcr-${new Date().toISOString().split('T')[0]}.csv`
+        description: `Arquivo: extrato-belmontx-tcr-${new Date().toISOString().split('T')[0]}.csv`
       });
     } catch (error: any) {
       toast.error('Erro ao exportar extrato', {
@@ -485,7 +465,7 @@ export default function ExtractTabIpRevyTcr() {
   };
 
   const isRecordCompensated = (transaction: BitsoTransactionDB): boolean => {
-    const recordKey = `ip-revy-tcr-${transaction.id}`;
+    const recordKey = `belmontx-tcr-${transaction.id}`;
     return compensatedRecords.has(recordKey);
   };
 
@@ -505,11 +485,11 @@ export default function ExtractTabIpRevyTcr() {
       type: transaction.type === 'FUNDING' ? 'CRÉDITO' : 'DÉBITO',
       document: transaction.payerTaxId || '',
       code: transaction.endToEndId,
-      descCliente: `IP Revy TCR - ${transaction.type === 'FUNDING' 
+      descCliente: `BelmontX TCR - ${transaction.type === 'FUNDING' 
         ? (transaction.payerName || 'N/A')
         : (transaction.payeeName || 'N/A')}`,
       identified: true,
-      descricaoOperacao: `IP Revy TCR - ${transaction.type === 'FUNDING' 
+      descricaoOperacao: `BelmontX TCR - ${transaction.type === 'FUNDING' 
         ? (transaction.payerName || 'N/A')
         : (transaction.payeeName || 'N/A')}`,
       _original: transaction
@@ -559,7 +539,7 @@ export default function ExtractTabIpRevyTcr() {
 
   const handleCloseCompensationModal = (wasSuccessful?: boolean) => {
     if (wasSuccessful && selectedCompensationRecord) {
-      const recordKey = `ip-revy-tcr-${selectedCompensationRecord._original.id}`;
+      const recordKey = `belmontx-tcr-${selectedCompensationRecord._original.id}`;
       setCompensatedRecords(prev => new Set(prev).add(recordKey));
       toast.success('Compensação realizada com sucesso!');
       fetchTransactions(true); // Recarregar dados
@@ -578,7 +558,7 @@ export default function ExtractTabIpRevyTcr() {
       
       // Recarregar dados após sync
       await fetchTransactions(true);
-      await fetchMetrics();
+      // fetchMetrics removido - será calculado a partir das transações carregadas
       
       toast.success('Extrato sincronizado!', {
         description: 'Dados atualizados com sucesso'
@@ -639,18 +619,17 @@ export default function ExtractTabIpRevyTcr() {
     
     try {
       const limit = overrideLimit ?? recordsPerPage;
-      const response = await fetchRevyTransactions({
-        tenantId: IP_REVY_TENANT_ID,
-        accountId: IP_REVY_ACCOUNT_ID,
-        startDate: dateFilter.start,
-        endDate: dateFilter.end,
-        limit,
-        offset,
-        includePostings: true,
+      // Chamada conforme documentação API BelmontX: GET /api/belmontx/extrato
+      // Parâmetros: dataInicio (obrigatório), dataFim (opcional), pagina (opcional), porPagina (opcional, máx: 100)
+      const response = await consultarExtratoBelmontX({
+        dataInicio: dateFilter.start,
+        dataFim: dateFilter.end,
+        pagina: Math.floor(offset / limit) + 1,
+        porPagina: Math.min(limit, 100), // Máximo 100 conforme documentação
       });
 
-      // Converter dados do Revy para formato BitsoTransactionDB
-      const mappedTransactions = (response.data || []).map(mapRevyToBitsoTransaction);
+      // Converter dados da API BelmontX para formato BitsoTransactionDB
+      const mappedTransactions = (response.response?.transacoes || []).map(mapBelmontXToBitsoTransaction);
       
       // Aplicar filtros locais
       let filtered = mappedTransactions;
@@ -678,6 +657,9 @@ export default function ExtractTabIpRevyTcr() {
       }
       
       setTransactions(filtered);
+      
+      // Calcular métricas a partir das transações já carregadas (sem nova chamada)
+      calculateMetrics(mappedTransactions);
       
       const total = response.pagination?.total ?? response.total ?? filtered.length;
       const hasMore = (response.pagination?.totalPages ?? 0) > (Math.floor(offset / limit) + 1);
@@ -1122,7 +1104,7 @@ export default function ExtractTabIpRevyTcr() {
                         </div>
                       </td>
                       <td className="p-3">
-                        <Badge {...getStatusBadgeForIpRevyTCR(tx.status)}>
+                        <Badge {...getStatusBadgeForBelmontXTCR(tx.status)}>
                           {BitsoRealtimeService.getStatusBadge(tx.status).label}
                         </Badge>
                       </td>

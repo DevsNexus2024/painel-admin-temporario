@@ -135,7 +135,7 @@ export default function MainLayout() {
       (FEATURE_FLAGS.ENABLE_CORPX_TTF_TCR && canShow("/grupo-tcr/corpx-ttf")) ||
       canShow("/analise-usuario/32") ||
       canShow("/brasilcash-tcr") ||
-      canShow("/ip-revy-tcr") ||
+      canShow("/belmontx-tcr") ||
       canShow("/auditoria-depositos");
 
     const showGrupoOtc =
@@ -143,14 +143,15 @@ export default function MainLayout() {
       canShow("/bot-cotacao") ||
       canShow("/otc") ||
       canShow("/otc/negociar") ||
-      canShow("/bitso") ||
-      canShow("/ip-revy-otc") ||
+      // canShow("/bitso") || // Desabilitado temporariamente
+      canShow("/belmontx-otc") ||
       canShow("/corpx");
 
-    const showContasOrganizacoes =
-      canShow("/contas-organizacoes") ||
-      canShow("/bitso-api") ||
-      canShow("/suporte");
+    // Desabilitado temporariamente
+    const showContasOrganizacoes = false;
+      // canShow("/contas-organizacoes") ||
+      // canShow("/bitso-api") ||
+      // canShow("/suporte");
 
     // Debug: Log do status do PIN
     useEffect(() => {
@@ -379,18 +380,16 @@ export default function MainLayout() {
                                           to="/brasilcash-tcr"
                                           icon={<CreditCard className="h-4 w-4" />}
                                           label="BrasilCash <> TCR"
-                                          badge="NOVO"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}
                                     
                                     {/* ✅ MENU ATIVO */}
-                                    {canShow("/ip-revy-tcr") && (
+                                    {canShow("/belmontx-tcr") && (
                                       <SidebarLink
-                                          to="/ip-revy-tcr"
+                                          to="/belmontx-tcr"
                                           icon={<CreditCard className="h-4 w-4" />}
-                                          label="IP Revy <> TCR"
-                                          badge="NOVO"
+                                          label="BelmontX <> TCR"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}
@@ -401,7 +400,6 @@ export default function MainLayout() {
                                           to="/auditoria-depositos"
                                           icon={<FileSearch className="h-4 w-4" />}
                                           label="Auditoria de Depósitos"
-                                          badge="NOVO"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}
@@ -456,21 +454,20 @@ export default function MainLayout() {
                                           isCollapsed={isCollapsed}
                                       />
                                     )}
-                                    {canShow("/bitso") && (
+                                    {/* Desabilitado temporariamente */}
+                                    {/* {canShow("/bitso") && (
                                       <SidebarLink
                                           to="/bitso"
                                           icon={<CreditCard className="h-4 w-4" />}
                                           label="Bitso <> OTC"
-                                          badge="NOVO"
                                           isCollapsed={isCollapsed}
                                       />
-                                    )}
-                                    {canShow("/ip-revy-otc") && (
+                                    )} */}
+                                    {canShow("/belmontx-otc") && (
                                       <SidebarLink
-                                          to="/ip-revy-otc"
+                                          to="/belmontx-otc"
                                           icon={<CreditCard className="h-4 w-4" />}
-                                          label="IP Revy <> OTC"
-                                          badge="NOVO"
+                                          label="BelmontX <> OTC"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}
@@ -478,7 +475,7 @@ export default function MainLayout() {
                                       <SidebarLink
                                           to="/corpx"
                                           icon={<CreditCard className="h-4 w-4" />}
-                                          label="CORPX TTF"
+                                          label="Central CorpX"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}
@@ -500,7 +497,6 @@ export default function MainLayout() {
                                           to="/contas-organizacoes"
                                           icon={<Building2 className="h-4 w-4" />}
                                           label="Contas e Organizações"
-                                          badge="NOVO"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}
@@ -509,7 +505,6 @@ export default function MainLayout() {
                                           to="/bitso-api"
                                           icon={<CreditCard className="h-4 w-4" />}
                                           label="Bitso <> API"
-                                          badge="NOVO"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}
@@ -518,7 +513,6 @@ export default function MainLayout() {
                                           to="/suporte"
                                           icon={<HelpCircle className="h-4 w-4" />}
                                           label="Suporte"
-                                          badge="NOVO"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}

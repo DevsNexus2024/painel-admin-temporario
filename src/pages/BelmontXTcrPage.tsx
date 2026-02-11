@@ -2,19 +2,19 @@ import React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, SendHorizontal } from "lucide-react";
 
-// Componentes IP Revy
-import TopBarIpRevyOtc from "@/components/TopBarIpRevyOtc";
-import ExtractTabIpRevyOtc from "@/components/ExtractTabIpRevyOtc";
+// Componentes BelmontX TCR
+import TopBarBelmontXTcr from "@/components/TopBarBelmontXTcr";
+import ExtractTabBelmontXTcr from "@/components/ExtractTabBelmontXTcr";
 import MoneyRainEffect from "@/components/MoneyRainEffect";
-import IpRevyPixActions from "@/components/IpRevyPixActions";
+import BelmontXPixActionsTcr from "@/components/BelmontXPixActionsTcr";
 
 // WebSocket Hook
-import { useRevyRealtime } from "@/hooks/useRevyRealtime";
+import { useBelmontXRealtime } from "@/hooks/useBelmontXRealtime";
 
-export default function IpRevyOtcPage() {
-  // WebSocket para IP Revy OTC
-  const { isConnected, lastEvent } = useRevyRealtime({
-    tenantId: 3,
+export default function BelmontXTcrPage() {
+  // WebSocket para BelmontX TCR
+  const { isConnected, lastEvent } = useBelmontXRealtime({
+    tenantId: 2,
     onTransaction: (payload) => {
       // Callback será tratado internamente pelo hook
     },
@@ -39,7 +39,7 @@ export default function IpRevyOtcPage() {
       )}
       
       {/* Top Bar com Saldos */}
-      <TopBarIpRevyOtc />
+      <TopBarBelmontXTcr />
 
       {/* Conteúdo Principal */}
       <div className="container mx-auto px-4 py-6">
@@ -57,12 +57,12 @@ export default function IpRevyOtcPage() {
 
           {/* ABA: Extrato */}
           <TabsContent value="extract">
-            <ExtractTabIpRevyOtc />
+            <ExtractTabBelmontXTcr />
           </TabsContent>
 
           {/* ABA: Ações PIX */}
           <TabsContent value="pix">
-            <IpRevyPixActions />
+            <BelmontXPixActionsTcr />
           </TabsContent>
         </Tabs>
       </div>
