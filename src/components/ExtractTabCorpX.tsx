@@ -1092,29 +1092,11 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         return;
       }
 
-      // ✅ Verificar se é um reversal (devolução)
-      const isReversal = 'returnId' in request && 'reason' in request;
-      const valor = (request.amount || 0) / 100; // Converter centavos para reais
-
       // Cabeçalho
       pdf.setFontSize(20);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(255, 140, 0); // Laranja
-      pdf.text(isReversal ? 'COMPROVANTE DE ESTORNO' : 'COMPROVANTE DE DEPÓSITO PIX', pageWidth / 2, yPosition, { align: 'center' });
-      yPosition += 8;
-
-      // Data e hora
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(100, 100, 100);
-      const dataHora = request.created ? new Date(request.created).toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }) : '-';
-      pdf.text(dataHora, pageWidth / 2, yPosition, { align: 'center' });
+      pdf.text('COMPROVANTE DE DEPÓSITO PIX', pageWidth / 2, yPosition, { align: 'center' });
       yPosition += 10;
 
       // Linha separadora
@@ -1123,108 +1105,68 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       pdf.line(margin, yPosition, pageWidth - margin, yPosition);
       yPosition += 10;
 
-      // Valor Principal
+      // Informações principais
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('INFORMAÇÕES DA TRANSAÇÃO', margin, yPosition);
+      yPosition += 8;
+
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(100, 100, 100);
-      pdf.text('VALOR', margin, yPosition);
+      pdf.text(`ID: ${request.id || '-'}`, margin, yPosition);
+      pdf.text(`Status: ${request.status?.toUpperCase() || '-'}`, margin + 90, yPosition);
+      yPosition += 6;
+
+      pdf.text(`End-to-End: ${request.endToEndId || '-'}`, margin, yPosition);
       yPosition += 6;
 
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(24);
+      pdf.setFontSize(14);
       pdf.setTextColor(255, 140, 0); // Laranja
-      pdf.text(formatCurrency(valor), margin, yPosition);
-      yPosition += 8;
-
-      // Status
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(0, 0, 0);
-      const statusText = request.status === 'success' ? '✓ CONCLUÍDA' : (request.status ? request.status.toUpperCase() : 'PENDENTE');
-      pdf.text(`Status: ${statusText}`, margin, yPosition);
+      const valor = (request.amount || 0) / 100; // Converter centavos para reais
+      pdf.text(`Valor: ${formatCurrency(valor)}`, margin, yPosition);
       yPosition += 10;
 
-      // Linha separadora
-      pdf.setDrawColor(200, 200, 200);
-      pdf.setLineWidth(0.3);
-      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      // Dados do Pagador
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('DADOS DO PAGADOR', margin, yPosition);
       yPosition += 8;
 
-      // ✅ Se for reversal, mostrar informações do estorno
-      if (isReversal) {
-        pdf.setFontSize(12);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(0, 0, 0);
-        pdf.text('INFORMAÇÕES DO ESTORNO', margin, yPosition);
-        yPosition += 8;
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Nome: ${request.senderName || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`CPF/CNPJ: ${request.senderTaxId || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Banco: ${request.senderBankCode || '-'}`, margin, yPosition);
+      pdf.text(`Agência: ${request.senderBranchCode || '-'}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Conta: ${request.senderAccountNumber || '-'}`, margin, yPosition);
+      pdf.text(`Tipo: ${request.senderAccountType || '-'}`, margin + 60, yPosition);
+      yPosition += 10;
 
-        pdf.setFontSize(10);
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(`Motivo: ${request.reason || '-'}`, margin, yPosition);
-        yPosition += 6;
-        
-        if (request.returnId) {
-          pdf.text(`Return ID: ${request.returnId}`, margin, yPosition);
-          yPosition += 6;
-        }
-        yPosition += 5;
-      } else {
-        // Dados do Pagador (apenas se não for reversal)
-        if (request.senderName || request.senderTaxId) {
-          pdf.setFontSize(12);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setTextColor(0, 0, 0);
-          pdf.text('DADOS DO PAGADOR', margin, yPosition);
-          yPosition += 8;
+      // Dados do Beneficiário
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('DADOS DO BENEFICIÁRIO', margin, yPosition);
+      yPosition += 8;
 
-          pdf.setFontSize(10);
-          pdf.setFont('helvetica', 'normal');
-          if (request.senderName) {
-            pdf.text(`Nome: ${request.senderName}`, margin, yPosition);
-            yPosition += 6;
-          }
-          if (request.senderTaxId) {
-            pdf.text(`CPF/CNPJ: ${request.senderTaxId}`, margin, yPosition);
-            yPosition += 6;
-          }
-          if (request.senderBankCode || request.senderBranchCode || request.senderAccountNumber) {
-            const instituicao = [request.senderBankCode, request.senderBranchCode, request.senderAccountNumber]
-              .filter(Boolean)
-              .join(' / ') || '-';
-            pdf.text(`Instituição: ${instituicao}`, margin, yPosition);
-            yPosition += 6;
-          }
-          yPosition += 5;
-        }
-
-        // Dados do Beneficiário (apenas se não for reversal)
-        if (request.receiverName || request.receiverTaxId) {
-          pdf.setFontSize(12);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setTextColor(0, 0, 0);
-          pdf.text('DADOS DO BENEFICIÁRIO', margin, yPosition);
-          yPosition += 8;
-
-          pdf.setFontSize(10);
-          pdf.setFont('helvetica', 'normal');
-          if (request.receiverName) {
-            pdf.text(`Nome: ${request.receiverName}`, margin, yPosition);
-            yPosition += 6;
-          }
-          if (request.receiverTaxId) {
-            pdf.text(`CPF/CNPJ: ${request.receiverTaxId}`, margin, yPosition);
-            yPosition += 6;
-          }
-          if (request.receiverBankCode || request.receiverBranchCode || request.receiverAccountNumber) {
-            const instituicao = [request.receiverBankCode, request.receiverBranchCode, request.receiverAccountNumber]
-              .filter(Boolean)
-              .join(' / ') || '-';
-            pdf.text(`Instituição: ${instituicao}`, margin, yPosition);
-            yPosition += 6;
-          }
-          yPosition += 5;
-        }
-      }
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Nome: ${request.receiverName || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`CPF/CNPJ: ${request.receiverTaxId || '-'}`, margin, yPosition);
+      yPosition += 6;
+      pdf.text(`Banco: ${request.receiverBankCode || '-'}`, margin, yPosition);
+      pdf.text(`Agência: ${request.receiverBranchCode || '-'}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Conta: ${request.receiverAccountNumber || '-'}`, margin, yPosition);
+      pdf.text(`Tipo: ${request.receiverAccountType || '-'}`, margin + 60, yPosition);
+      yPosition += 10;
 
       // Identificadores
       pdf.setFontSize(12);
@@ -1235,22 +1177,15 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(`End-to-End ID: ${request.endToEndId || '-'}`, margin, yPosition);
+      pdf.text(`End-to-End: ${request.endToEndId || '-'}`, margin, yPosition);
       yPosition += 6;
-      
-      if (!isReversal && request.reconciliationId) {
-        pdf.text(`Reconciliation ID: ${request.reconciliationId}`, margin, yPosition);
-        yPosition += 6;
-      }
-      
-      pdf.text(`ID da Transação: ${request.id || '-'}`, margin, yPosition);
+      pdf.text(`Reconciliation ID: ${request.reconciliationId || '-'}`, margin, yPosition);
       yPosition += 6;
-
-      if (request.externalId) {
-        pdf.text(`External ID: ${request.externalId}`, margin, yPosition);
-        yPosition += 6;
-      }
-      yPosition += 5;
+      pdf.text(`Método: ${request.method || '-'}`, margin, yPosition);
+      pdf.text(`Prioridade: ${request.priority || '-'}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Fluxo: ${request.flow || '-'}`, margin, yPosition);
+      yPosition += 10;
 
       // Informações Adicionais
       pdf.setFontSize(12);
@@ -1261,28 +1196,13 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
-      if (request.description) {
-        pdf.text(`Descrição: ${request.description}`, margin, yPosition);
-        yPosition += 6;
-      }
-      
-      pdf.text(`Taxa: ${formatCurrency((request.fee || 0) / 100)}`, margin, yPosition);
+      pdf.text(`Descrição: ${request.description || '-'}`, margin, yPosition);
       yPosition += 6;
-      
-      if (request.flow) {
-        pdf.text(`Fluxo: ${request.flow === 'in' ? 'Entrada' : 'Saída'}`, margin, yPosition);
-        yPosition += 6;
-      }
-      
-      if (request.created) {
-        pdf.text(`Criado em: ${new Date(request.created).toLocaleString('pt-BR')}`, margin, yPosition);
-        yPosition += 6;
-      }
-      
-      if (request.updated) {
-        pdf.text(`Atualizado em: ${new Date(request.updated).toLocaleString('pt-BR')}`, margin, yPosition);
-        yPosition += 6;
-      }
+      pdf.text(`Taxa: ${formatCurrency((request.fee || 0) / 100)}`, margin, yPosition);
+      pdf.text(`Valor em Dinheiro: ${formatCurrency((request.cashAmount || 0) / 100)}`, margin + 60, yPosition);
+      yPosition += 6;
+      pdf.text(`Criado em: ${request.created ? new Date(request.created).toLocaleString('pt-BR') : '-'}`, margin, yPosition);
+      pdf.text(`Atualizado em: ${request.updated ? new Date(request.updated).toLocaleString('pt-BR') : '-'}`, margin + 60, yPosition);
 
       // Rodapé
       yPosition = pdf.internal.pageSize.getHeight() - 20;
@@ -1291,9 +1211,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       pdf.text(`Documento gerado em ${new Date().toLocaleString('pt-BR')}`, pageWidth / 2, yPosition, { align: 'center' });
 
       // Salvar PDF
-      const fileName = isReversal 
-        ? `comprovante-estorno-${request.endToEndId || request.returnId || Date.now()}.pdf`
-        : `comprovante-deposito-corpx-${request.endToEndId || Date.now()}.pdf`;
+      const fileName = `comprovante-deposito-corpx-${request.endToEndId || Date.now()}.pdf`;
       pdf.save(fileName);
 
       toast.success('PDF gerado com sucesso!', {
@@ -1854,17 +1772,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       // 🔍 Verificar transação na API antes de permitir operação
       toast.loading('Verificando transação...', { id: 'verify-transaction' });
       
-      // ⚠️ TEMPORARIAMENTE DESATIVADO: Chamada à API /qtran
-      // const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
-      
-      // ✅ Mock temporário para permitir fluxo sem chamada à API
-      const resultado = {
-        sucesso: true,
-        permiteOperacao: true,
-        status: 'success',
-        mensagem: 'Verificação temporariamente desativada',
-        transacao: transaction._original || transaction
-      };
+      const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
       
       toast.dismiss('verify-transaction');
 
@@ -1943,29 +1851,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     try {
       toast.loading('Buscando depósito...', { id: 'buscar-deposito-corpx' });
       
-      // ⚠️ TEMPORARIAMENTE DESATIVADO: Chamada à API /qtran
-      // const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
-      
-      // ✅ Mock temporário para permitir fluxo sem chamada à API
-      const resultado = {
-        sucesso: true,
-        permiteOperacao: true,
-        status: 'success',
-        mensagem: 'Verificação temporariamente desativada',
-        transacao: {
-          id: `temp-${Date.now()}`,
-          endToEndId: endtoend,
-          amount: 0,
-          status: 'success',
-          created: new Date().toISOString(),
-          description: 'Depósito encontrado (verificação temporariamente desativada)',
-          senderName: '',
-          senderTaxId: '',
-          receiverName: '',
-          receiverTaxId: '',
-          reconciliationId: null
-        }
-      };
+      const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
       
       toast.dismiss('buscar-deposito-corpx');
 
@@ -3559,31 +3445,15 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                             <div className="flex justify-between">
                               <span className="text-xs text-gray-600 dark:text-gray-400">Motivo:</span>
                               <span className="text-sm font-medium text-gray-900 dark:text-gray-100 text-right">
-                                {request.reason === 'customerRequest' ? 'Solicitação do Cliente' : 
-                                 request.reason === 'fraud' ? 'Fraude' :
-                                 request.reason === 'bankError' ? 'Erro do Banco' :
-                                 request.reason || '-'}
+                                {request.reason || '-'}
                               </span>
                             </div>
                             {request.returnId && (
-                              <div className="flex justify-between items-start">
+                              <div className="flex justify-between">
                                 <span className="text-xs text-gray-600 dark:text-gray-400">Return ID:</span>
-                                <div className="flex items-center gap-2 max-w-[60%]">
-                                  <span className="text-xs font-mono text-gray-900 dark:text-gray-100 break-all text-right">
-                                    {request.returnId}
-                                  </span>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(request.returnId);
-                                      toast.success('Return ID copiado!');
-                                    }}
-                                    className="h-5 w-5 p-0 flex-shrink-0"
-                                  >
-                                    <Copy className="h-3 w-3" />
-                                  </Button>
-                                </div>
+                                <span className="text-xs font-mono text-gray-900 dark:text-gray-100 break-all text-right">
+                                  {request.returnId}
+                                </span>
                               </div>
                             )}
                           </div>
@@ -3736,7 +3606,8 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                   <Button
                     variant="outline"
                     onClick={() => generateDepositoPDF(depositoData)}
-                    title="Baixar comprovante em PDF"
+                    disabled={!depositoData?.permiteOperacao}
+                    title={!depositoData?.permiteOperacao ? 'Operação não permitida para este depósito' : 'Baixar comprovante em PDF'}
                   >
                     <Download className="h-4 w-4 mr-2" />
                     Baixar Comprovante PDF

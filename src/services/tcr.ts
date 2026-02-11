@@ -617,29 +617,6 @@ export async function consultarTransacaoPorEndToEndTCR(
   taxDocument: string,
   endtoend: string
 ): Promise<VerificacaoTransacaoResult> {
-  // ⚠️ TEMPORARIAMENTE DESATIVADO: Retornar mock sem chamar API
-  console.log('[TCR-QTRAN] ⚠️ API /qtran temporariamente desativada - retornando mock');
-  return {
-    sucesso: true,
-    permiteOperacao: true,
-    status: 'success',
-    mensagem: 'Verificação temporariamente desativada',
-    transacao: {
-      id: `temp-${Date.now()}`,
-      endToEndId: endtoend,
-      amount: 0,
-      status: 'success',
-      created: new Date().toISOString(),
-      description: 'Transação (verificação temporariamente desativada)',
-      senderName: '',
-      senderTaxId: '',
-      receiverName: '',
-      receiverTaxId: '',
-      reconciliationId: null
-    }
-  };
-  
-  /* COMENTADO TEMPORARIAMENTE
   try {
     console.log('[TCR-QTRAN] Consultando transação...', { taxDocument, endtoend: endtoend.substring(0, 20) + '...' });
     
@@ -745,7 +722,6 @@ export async function consultarTransacaoPorEndToEndTCR(
       permiteOperacao: false
     };
   }
-  */
 }
 
 /**
