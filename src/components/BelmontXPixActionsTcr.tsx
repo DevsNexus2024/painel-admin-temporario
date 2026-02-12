@@ -74,6 +74,7 @@ export default function BelmontXPixActionsTcr() {
         chavePixDestino: data.pixKey.trim(),
         valor: amountNumber,
         descricao: data.descricao || `Transferência via BelmontX TCR`,
+        conta: "tcr", // TCR é padrão, mas especificando explicitamente
       });
 
       if (response?.response?.success) {

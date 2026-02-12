@@ -30,8 +30,8 @@ export default function TopBarBelmontXTcr() {
     setErrorSaldo(null);
     
     try {
-      // ✅ Usar endpoint específico de saldo da BelmontX
-      const saldoResponse = await consultarSaldoBelmontX();
+      // ✅ Usar endpoint específico de saldo da BelmontX (TCR é padrão, não precisa especificar)
+      const saldoResponse = await consultarSaldoBelmontX("tcr");
       
       console.log('[BELMONTX-TCR] Resposta de saldo:', saldoResponse);
       
@@ -66,9 +66,10 @@ export default function TopBarBelmontXTcr() {
           dataInicio,
           dataFim,
           porPagina: 1, // Apenas para obter total
+          conta: "tcr", // TCR é padrão, mas especificando explicitamente
         });
         
-        setTotalTransacoes(extratoResponse.response.paginacao?.total || 0);
+        setTotalTransacoes(extratoResponse.response?.qtdRegistros || 0);
       } catch (extratoErr) {
         // Se falhar ao buscar extrato, não é crítico
         console.warn('[BELMONTX-TCR] Erro ao buscar total de transações:', extratoErr);

@@ -155,6 +155,7 @@ export default function ExtractTabBelmontXTcr() {
         dataFim: dateFilter.end,
         pagina: Math.floor(offset / limit) + 1,
         porPagina: Math.min(limit, 100), // Máximo 100 conforme documentação
+        conta: "tcr", // TCR é padrão, mas especificando explicitamente
       });
 
       // Converter dados da API BelmontX para formato BitsoTransactionDB
@@ -285,6 +286,7 @@ export default function ExtractTabBelmontXTcr() {
         dataFim: dateFilter.end,
         pagina: 1,
         porPagina: 100, // Máximo conforme documentação
+        conta: "tcr", // TCR é padrão, mas especificando explicitamente
       });
 
       const allTransactions = (response.response?.transacoes || []).map(mapBelmontXToBitsoTransaction);
@@ -409,6 +411,7 @@ export default function ExtractTabBelmontXTcr() {
         dataFim: dateFilter.end,
         pagina: 1,
         porPagina: 100, // Máximo conforme documentação
+        conta: "tcr", // TCR é padrão, mas especificando explicitamente
       });
       const allTransactions = (response.response?.transacoes || []).map(mapBelmontXToBitsoTransaction);
 
@@ -626,6 +629,7 @@ export default function ExtractTabBelmontXTcr() {
         dataFim: dateFilter.end,
         pagina: Math.floor(offset / limit) + 1,
         porPagina: Math.min(limit, 100), // Máximo 100 conforme documentação
+        conta: "tcr", // TCR é padrão, mas especificando explicitamente
       });
 
       // Converter dados da API BelmontX para formato BitsoTransactionDB

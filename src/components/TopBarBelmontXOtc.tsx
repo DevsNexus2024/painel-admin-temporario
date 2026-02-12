@@ -30,8 +30,8 @@ export default function TopBarBelmontXOtc() {
     setErrorSaldo(null);
     
     try {
-      // ✅ Usar endpoint específico de saldo da BelmontX
-      const saldoResponse = await consultarSaldoBelmontX();
+      // ✅ Usar endpoint específico de saldo da BelmontX (TTF para OTC)
+      const saldoResponse = await consultarSaldoBelmontX("ttf");
       
       console.log('[BELMONTX-OTC] Resposta de saldo:', saldoResponse);
       
@@ -66,9 +66,10 @@ export default function TopBarBelmontXOtc() {
           dataInicio,
           dataFim,
           porPagina: 1, // Apenas para obter total
+          conta: "ttf", // OTC usa conta TTF
         });
         
-        setTotalTransacoes(extratoResponse.response.paginacao?.total || 0);
+        setTotalTransacoes(extratoResponse.response?.qtdRegistros || 0);
       } catch (extratoErr) {
         // Se falhar ao buscar extrato, não é crítico
         console.warn('[BELMONTX-OTC] Erro ao buscar total de transações:', extratoErr);

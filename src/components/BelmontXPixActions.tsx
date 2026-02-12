@@ -74,6 +74,7 @@ export default function BelmontXPixActions() {
         chavePixDestino: data.pixKey.trim(),
         valor: amountNumber,
         descricao: data.descricao || `Transferência via BelmontX OTC`,
+        conta: "ttf", // OTC usa conta TTF
       });
 
       if (response?.response?.success) {
