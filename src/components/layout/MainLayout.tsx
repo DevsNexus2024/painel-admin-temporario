@@ -144,6 +144,7 @@ export default function MainLayout() {
       canShow("/otc") ||
       canShow("/otc/negociar") ||
       // canShow("/bitso") || // Desabilitado temporariamente
+      canShow("/brasilcash-otc") ||
       canShow("/belmontx-otc") ||
       canShow("/corpx");
 
@@ -463,6 +464,14 @@ export default function MainLayout() {
                                           isCollapsed={isCollapsed}
                                       />
                                     )} */}
+                                    {canShow("/brasilcash-otc") && (
+                                      <SidebarLink
+                                          to="/brasilcash-otc"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="BrasilCash OTC"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
                                     {canShow("/belmontx-otc") && (
                                       <SidebarLink
                                           to="/belmontx-otc"
