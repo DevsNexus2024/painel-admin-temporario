@@ -7,7 +7,7 @@ export const BRASILCASH_OTC_ACCOUNTS = [
   {
     id: 'OTC_7802755',
     name: 'BrasilCash OTC 7802755',
-    accountId: null,
+    accountId: null as string | null,
     tenantId: null,
     otcId: '7802755',
     accountType: 'otc' as const,
@@ -17,7 +17,7 @@ export const BRASILCASH_OTC_ACCOUNTS = [
   {
     id: 'OTC_1715917',
     name: 'BrasilCash OTC 1715917',
-    accountId: null,
+    accountId: null as string | null,
     tenantId: null,
     otcId: '1715917',
     accountType: 'otc' as const,
@@ -29,7 +29,8 @@ export const BRASILCASH_OTC_ACCOUNTS = [
 export interface BrasilCashOtcAccount {
   id: string;
   name: string;
-  accountId: null;
+  /** UUID da conta BrasilCash (mesmo usado como accountId na API de transações). Enviado como X-Account-Id no pagamento por QR Code. */
+  accountId: string | null;
   tenantId: null;
   otcId: string;
   accountType: 'otc';
@@ -75,7 +76,11 @@ export function BrasilCashOtcProvider({ children }: BrasilCashOtcProviderProps) 
     
     // Sempre adicionar header x-otc-id (sempre há uma conta selecionada)
     headers['x-otc-id'] = selectedAccount.otcId;
-    
+    // UUID da conta para endpoints que exigem X-Account-Id (ex.: pagamento por QR Code)
+    if (selectedAccount.accountId) {
+      headers['X-Account-Id'] = selectedAccount.accountId;
+    }
+
     return headers;
   }, [selectedAccount]);
   

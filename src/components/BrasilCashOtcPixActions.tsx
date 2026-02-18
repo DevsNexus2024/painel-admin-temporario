@@ -22,13 +22,15 @@ import {
   Building2,
   Hash,
   List,
-  RefreshCcw
+  RefreshCcw,
+  QrCode
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
@@ -56,8 +58,22 @@ const pixKeySchema = z.object({
   pixKey: z.string().optional(), // Opcional para EVP (chave aleatória)
 });
 
+const qrCodePaymentSchema = z.object({
+  qr_code: z.string().min(1, "Cole o payload do QR Code PIX (EMV)"),
+  external_id: z.string().optional(),
+  amount: z.string().optional(),
+}).refine(
+  (data) => {
+    if (!data.amount || data.amount.trim() === "") return true;
+    const val = parseFloat(data.amount.replace(",", "."));
+    return !isNaN(val) && val > 0;
+  },
+  { message: "Valor deve ser maior que zero", path: ["amount"] }
+);
+
 type PixSendData = z.infer<typeof pixSendSchema>;
 type PixKeyData = z.infer<typeof pixKeySchema>;
+type QrCodePaymentData = z.infer<typeof qrCodePaymentSchema>;
 
 interface PixKey {
   pixKeyId: string;
@@ -77,6 +93,7 @@ export default function BrasilCashOtcPixActions() {
   const [pixKeyResult, setPixKeyResult] = useState<any>(null);
   const [pixKeys, setPixKeys] = useState<PixKey[]>([]);
   const [loadingKeys, setLoadingKeys] = useState(false);
+  const [qrCodeResult, setQrCodeResult] = useState<any>(null);
 
   // Forms
   const sendForm = useForm<PixSendData>({
@@ -94,6 +111,15 @@ export default function BrasilCashOtcPixActions() {
     defaultValues: {
       keyType: undefined,
       pixKey: "",
+    },
+  });
+
+  const qrCodeForm = useForm<QrCodePaymentData>({
+    resolver: zodResolver(qrCodePaymentSchema),
+    defaultValues: {
+      qr_code: "",
+      external_id: "",
+      amount: "",
     },
   });
 
@@ -324,6 +350,83 @@ export default function BrasilCashOtcPixActions() {
     }
   };
 
+  // Pagar QR Code (conta definida por X-Account-Id quando disponível, e x-otc-id)
+  const onPayQrCode = async (data: QrCodePaymentData) => {
+    try {
+      setIsLoading(true);
+      setQrCodeResult(null);
+
+      const headers = getRequestHeaders();
+      const body: { qr_code: string; amount?: number; external_id?: string } = {
+        qr_code: data.qr_code.trim(),
+      };
+      if (data.amount?.trim()) {
+        const value = parseFloat(data.amount.replace(",", "."));
+        if (!isNaN(value) && value > 0) {
+          body.amount = Math.round(value * 100); // reais -> centavos
+        }
+      }
+      if (data.external_id?.trim()) {
+        body.external_id = data.external_id.trim();
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/brasilcash/pix/cashout/payments/qrcode/simple`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        }
+      );
+
+      const responseData = await response.json();
+
+      if (response.ok) {
+        setQrCodeResult({
+          success: true,
+          pix_id: responseData.pix_id || responseData.pixId,
+          endToEndId: responseData.endToEndId || responseData.end_to_end_id,
+          amount: responseData.amount,
+          status: responseData.status,
+          external_id: responseData.external_id || responseData.externalId,
+          message: responseData.message || "Pagamento por QR Code realizado!",
+        });
+        toast.success("Pagamento por QR Code realizado!", {
+          description: `OTC ${selectedAccount.otcId}${data.external_id?.trim() ? ` • ${data.external_id.trim()}` : ""}`,
+          duration: 4000,
+        });
+        qrCodeForm.reset();
+      } else {
+        const errorMessage =
+          responseData.error?.message ||
+          responseData.message ||
+          "Erro ao pagar QR Code";
+        setQrCodeResult({
+          success: false,
+          message: errorMessage,
+          error: responseData.error,
+        });
+        toast.error("Erro ao pagar QR Code", {
+          description: errorMessage,
+          duration: 8000,
+        });
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Erro desconhecido";
+      setQrCodeResult({
+        success: false,
+        message: errorMessage,
+      });
+      toast.error("Erro ao pagar QR Code", {
+        description: errorMessage,
+        duration: 8000,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Carregar chaves ao montar o componente ou mudar de conta
   useEffect(() => {
     listarChavesPix();
@@ -389,10 +492,14 @@ export default function BrasilCashOtcPixActions() {
       </div>
 
       <Tabs defaultValue="send" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="send" className="flex items-center gap-2">
             <SendHorizontal className="h-4 w-4" />
             Enviar PIX
+          </TabsTrigger>
+          <TabsTrigger value="qrcode" className="flex items-center gap-2">
+            <QrCode className="h-4 w-4" />
+            Pagar QR Code
           </TabsTrigger>
           <TabsTrigger value="create-key" className="flex items-center gap-2">
             <Key className="h-4 w-4" />
@@ -561,6 +668,149 @@ export default function BrasilCashOtcPixActions() {
                             <div>
                               <span className="text-muted-foreground">External ID:</span>
                               <code className="text-xs ml-2">{pixResult.transaction.external_id}</code>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab: Pagar QR Code */}
+        <TabsContent value="qrcode">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <QrCode className="h-5 w-5" />
+                Pagar QR Code PIX
+              </CardTitle>
+              <CardDescription>
+                Pague um PIX a partir do payload do QR Code (EMV). Conta: OTC {selectedAccount.otcId}
+                {selectedAccount.accountId ? " • UUID enviado (X-Account-Id)" : ""}.
+                Valor e ID externo são opcionais (enviar apenas quando fizer sentido).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Form {...qrCodeForm}>
+                <form onSubmit={qrCodeForm.handleSubmit(onPayQrCode)} className="space-y-4">
+                  <FormField
+                    control={qrCodeForm.control}
+                    name="qr_code"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Payload do QR Code (EMV)</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="00020126890014BR.GOV.BCB.PIX..."
+                            className="font-mono text-sm min-h-[120px]"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={qrCodeForm.control}
+                    name="external_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ID Externo (Opcional)</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Ex: ordem-12345 (rastreamento)"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={qrCodeForm.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Valor (R$) — Opcional</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            placeholder="0,00 (ex.: QR dinâmico Binance)"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button type="submit" disabled={isLoading} className="w-full">
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processando...
+                      </>
+                    ) : (
+                      <>
+                        <QrCode className="mr-2 h-4 w-4" />
+                        Pagar QR Code
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </Form>
+
+              {qrCodeResult && (
+                <div
+                  className={`mt-6 p-4 rounded-lg border ${
+                    qrCodeResult.success
+                      ? "bg-green-50 border-green-200"
+                      : "bg-red-50 border-red-200"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    {qrCodeResult.success ? (
+                      <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                    )}
+                    <div className="flex-1">
+                      <p
+                        className={`font-medium ${
+                          qrCodeResult.success ? "text-green-900" : "text-red-900"
+                        }`}
+                      >
+                        {qrCodeResult.message}
+                      </p>
+                      {qrCodeResult.success && (
+                        <div className="mt-2 space-y-1 text-sm">
+                          {qrCodeResult.endToEndId && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">EndToEndId:</span>
+                              <code className="text-xs">{qrCodeResult.endToEndId}</code>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleCopyKey(qrCodeResult.endToEndId)}
+                                className="h-6 w-6 p-0"
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
+                          {qrCodeResult.amount != null && (
+                            <div>
+                              <span className="text-muted-foreground">Valor:</span>{" "}
+                              R$ {(qrCodeResult.amount / 100).toFixed(2)}
+                            </div>
+                          )}
+                          {qrCodeResult.external_id && (
+                            <div>
+                              <span className="text-muted-foreground">External ID:</span>{" "}
+                              <code className="text-xs">{qrCodeResult.external_id}</code>
                             </div>
                           )}
                         </div>
