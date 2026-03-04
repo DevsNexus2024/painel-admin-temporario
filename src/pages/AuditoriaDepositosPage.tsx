@@ -525,14 +525,14 @@ function LoteDetailsModal({
             </div>
 
             {/* Histórico de Itens */}
-            {detalhes.historico_itens && detalhes.historico_itens.length > 0 && (
+            {detalhes.items_received_history && detalhes.items_received_history.length > 0 && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4" />
                   <Label className="text-sm font-semibold">Histórico de Itens Confirmados</Label>
                 </div>
                 <div className="space-y-2">
-                  {detalhes.historico_itens.map((item, idx) => (
+                  {detalhes.items_received_history.map((item, idx) => (
                     <div key={idx} className="border rounded-lg p-3 bg-muted/20">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -1426,7 +1426,7 @@ export default function AuditoriaDepositosPage() {
   // Filtros para Depósitos Normais
   const [idUsuarioFilterDepositos, setIdUsuarioFilterDepositos] = useState<string>('');
   const [statusFilterDepositos, setStatusFilterDepositos] = useState<string>('');
-  const [stepFilterDepositos, setStepFilterDepositos] = useState<string>('');
+  const [stepFilterDepositos, setStepFilterDepositos] = useState<ListaDepositosNormaisParams['step'] | ''>('');
   
   // Modais para Depósitos Normais
   const [selectedDepositoId, setSelectedDepositoId] = useState<number | null>(null);
@@ -1525,7 +1525,7 @@ export default function AuditoriaDepositosPage() {
         params.status = statusFilterDepositos as 'processing' | 'error';
       }
       if (stepFilterDepositos) {
-        params.step = stepFilterDepositos as '01newdeposit' | '02internal_transfer_b8cash' | '03bolsao_deposit' | '04internal_transfer_caas';
+        params.step = stepFilterDepositos;
       }
 
       const response = await depositosNormaisService.listarDepositosNormais(params);
@@ -1953,7 +1953,7 @@ export default function AuditoriaDepositosPage() {
                     <Label className="text-xs text-muted-foreground">Step</Label>
                     <Select 
                       value={stepFilterDepositos || "all"} 
-                      onValueChange={(value) => setStepFilterDepositos(value === "all" ? '' : value)}
+                      onValueChange={(value) => setStepFilterDepositos(value === "all" ? '' : value as ListaDepositosNormaisParams['step'])}
                     >
                       <SelectTrigger className="w-[200px]">
                         <SelectValue placeholder="Todos" />

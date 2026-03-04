@@ -396,49 +396,13 @@ export default function ExtractTabBrasilCashOtc() {
     }
   };
 
-  // Atualizar extrato (sincroniza dia atual + recarrega)
+  // Atualizar extrato (apenas recarrega as transações, sem sincronizar)
   const handleRefresh = async () => {
     try {
       setLoading(true);
-      
-      // Sincronizar extrato do dia atual
-      const hoje = new Date();
-      const hojeFormatado = format(hoje, 'yyyy-MM-dd');
-      
-      const headers = getRequestHeaders();
-      const syncResponse = await fetch(
-        `${API_BASE_URL}/api/brasilcash/transactions/sync`,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            startDate: hojeFormatado,
-            endDate: hojeFormatado,
-          }),
-        }
-      );
-
-      if (syncResponse.ok) {
-        const syncResult = await syncResponse.json();
-        toast.success("Extrato sincronizado!", {
-          description: `${syncResult.synced || 0} transações sincronizadas para hoje`,
-          duration: 2000
-        });
-      } else {
-        // Se falhar a sincronização, apenas logar erro mas continuar com atualização
-        console.warn('Erro ao sincronizar extrato:', await syncResponse.json().catch(() => ({})));
-      }
-      
-      // Aguardar um pouco para garantir que a sincronização processou
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Recarregar transações
       await fetchTransactions(dateFrom, dateTo, pagination.current_page, true);
-      
     } catch (err: any) {
-      // Se der erro na sincronização, ainda tenta recarregar as transações
-      console.error('Erro ao sincronizar:', err);
-      await fetchTransactions(dateFrom, dateTo, pagination.current_page, true);
+      toast.error('Erro ao atualizar extrato', { description: err.message });
     } finally {
       setLoading(false);
     }

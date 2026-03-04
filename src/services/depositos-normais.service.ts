@@ -90,7 +90,7 @@ export interface WebhookPayload {
 export interface ListaDepositosNormaisParams {
   id_usuario?: number;
   status?: 'processing' | 'error';
-  step?: '01newdeposit' | '02internal_transfer_b8cash';
+  step?: '01newdeposit' | '02internal_transfer_b8cash' | '03bolsao_deposit' | '04internal_transfer_caas';
   limit?: number;
   offset?: number;
 }

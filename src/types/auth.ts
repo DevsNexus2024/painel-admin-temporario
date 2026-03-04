@@ -317,8 +317,8 @@ export const ROUTE_PERMISSIONS: Record<string, RoutePermissions> = {
   '/client-statement': { requiredRole: 'otc_client' },
 
   // ==================== DASHBOARDS ====================
-  // Cash Closure - Apenas super_admin e admin (exceto IDs específicos bloqueados)
-  '/dashboard/cash-closure': { allowedRoles: ['super_admin', 'admin'] }
+  // Cash Closure - super_admin, admin e otc_user (exceto IDs específicos bloqueados)
+  '/dashboard/cash-closure': { allowedRoles: ['super_admin', 'admin', 'otc_user'] }
 };
 
 // ===== UTILITÁRIOS =====
