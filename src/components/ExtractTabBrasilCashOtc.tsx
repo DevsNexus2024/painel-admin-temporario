@@ -7,12 +7,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle, Filter, AlertCircle } from "lucide-react";
+import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, Plus, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import CompensationModalInteligente from "@/components/CompensationModalInteligente";
+import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
+import type { MovimentoExtrato } from "@/services/extrato";
 import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 import { useBrasilCashOtc } from "@/contexts/BrasilCashOtcContext";
 import { BrasilCashRealtimeService } from "@/services/brasilcash-realtime";
@@ -185,24 +186,51 @@ export default function ExtractTabBrasilCashOtc() {
   });
   const [showSyncDatePicker, setShowSyncDatePicker] = useState(false);
 
-  // Estados para funcionalidade de Compensação
-  const [compensationModalOpen, setCompensationModalOpen] = useState(false);
-  const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<any>(null);
-  const [compensatedRecords, setCompensatedRecords] = useState<Set<string>>(new Set());
+  // Estados para funcionalidade OTC (Creditar Extrato para Cliente OTC)
+  const [creditOTCModalOpen, setCreditOTCModalOpen] = useState(false);
+  const [selectedExtractRecord, setSelectedExtractRecord] = useState<MovimentoExtrato | null>(null);
+  const [creditedRecords, setCreditedRecords] = useState<Set<string>>(new Set());
 
   // Estado para controlar linha expandida
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   
-  // Função para verificar se registro já foi compensado
-  const isRecordCompensated = (tx: BrasilCashTransactionDB): boolean => {
-    return compensatedRecords.has(tx.id.toString());
+  // Função para verificar se registro já foi creditado para OTC
+  const isRecordCredited = (tx: BrasilCashTransactionDB): boolean => {
+    return creditedRecords.has(`brasilcash-otc-${tx.id}`);
   };
-  
-  // Função para lidar com compensação
-  const handleCompensation = (tx: BrasilCashTransactionDB, e: React.MouseEvent) => {
+
+  // Função para lidar com crédito OTC (botão +OTC)
+  const handleCreditToOTC = (tx: BrasilCashTransactionDB, e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedCompensationRecord(tx);
-    setCompensationModalOpen(true);
+    if (isRecordCredited(tx)) {
+      toast.error('Registro já creditado', {
+        description: 'Este registro já foi creditado para um cliente OTC'
+      });
+      return;
+    }
+    // Converter BrasilCashTransactionDB para MovimentoExtrato
+    setSelectedExtractRecord({
+      id: tx.transactionId || tx.id.toString(),
+      dateTime: tx.createdAt,
+      value: parseFloat(tx.amount),
+      type: tx.type === 'FUNDING' ? 'CRÉDITO' : 'DÉBITO',
+      document: tx.type === 'FUNDING' ? (tx.payerTaxId || '') : (tx.payeeTaxId || ''),
+      client: tx.type === 'FUNDING' ? (tx.payerName || 'N/A') : (tx.payeeName || 'N/A'),
+      identified: true,
+      code: tx.endToEndId || tx.transactionId || tx.id.toString(),
+      descCliente: `BrasilCash OTC - ${tx.type === 'FUNDING' ? (tx.payerName || 'N/A') : (tx.payeeName || 'N/A')}`,
+      _original: tx
+    });
+    setCreditOTCModalOpen(true);
+  };
+
+  const handleCloseCreditOTCModal = (wasSuccessful?: boolean) => {
+    if (wasSuccessful && selectedExtractRecord?._original) {
+      const tx = selectedExtractRecord._original as BrasilCashTransactionDB;
+      setCreditedRecords(prev => new Set(prev).add(`brasilcash-otc-${tx.id}`));
+    }
+    setCreditOTCModalOpen(false);
+    setSelectedExtractRecord(null);
   };
 
   // Estado para métricas
@@ -900,7 +928,7 @@ export default function ExtractTabBrasilCashOtc() {
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Status</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">End-to-End</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">External ID</th>
-                    <th className="w-24 p-3"></th>
+                    <th className="w-48 p-3 text-center text-xs font-medium text-muted-foreground">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -981,25 +1009,25 @@ export default function ExtractTabBrasilCashOtc() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={(e) => handleCompensation(tx, e)}
-                            disabled={isRecordCompensated(tx)}
+                            onClick={(e) => handleCreditToOTC(tx, e)}
+                            disabled={isRecordCredited(tx)}
                             className={cn(
                               "h-7 px-2 text-xs transition-all",
-                              isRecordCompensated(tx)
+                              isRecordCredited(tx)
                                 ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                : "bg-[rgba(255,140,0,0.1)] hover:bg-[rgba(255,140,0,0.2)] text-[#ff8c00] border-[rgba(255,140,0,0.4)] hover:border-[rgba(255,140,0,0.6)]"
+                                : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200 hover:border-green-300"
                             )}
-                            title={isRecordCompensated(tx) ? "Já compensado" : "Realizar compensação"}
+                            title={isRecordCredited(tx) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
                           >
-                            {isRecordCompensated(tx) ? (
+                            {isRecordCredited(tx) ? (
                               <>
                                 <Check className="h-3 w-3 mr-1" />
-                                Compensado
+                                Creditado
                               </>
                             ) : (
                               <>
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Compensar
+                                <Plus className="h-3 w-3 mr-1" />
+                                OTC
                               </>
                             )}
                           </Button>
@@ -1014,7 +1042,36 @@ export default function ExtractTabBrasilCashOtc() {
                           <div className="p-6 space-y-4">
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-sm font-semibold text-orange-700">Detalhes da Transação</h4>
-                              <Badge variant="outline" className="text-xs">ID: {tx.id}</Badge>
+                              <div className="flex items-center gap-2">
+                                {tx.type === 'FUNDING' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => handleCreditToOTC(tx, e)}
+                                    disabled={isRecordCredited(tx)}
+                                    className={cn(
+                                      "h-7 px-2 text-xs transition-all",
+                                      isRecordCredited(tx)
+                                        ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                        : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                                    )}
+                                    title={isRecordCredited(tx) ? "Já creditado para cliente OTC" : "Creditar para cliente OTC"}
+                                  >
+                                    {isRecordCredited(tx) ? (
+                                      <>
+                                        <Check className="h-3 w-3 mr-1" />
+                                        Creditado
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="h-3 w-3 mr-1" />
+                                        OTC
+                                      </>
+                                    )}
+                                  </Button>
+                                )}
+                                <Badge variant="outline" className="text-xs">ID: {tx.id}</Badge>
+                              </div>
                             </div>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1304,15 +1361,11 @@ export default function ExtractTabBrasilCashOtc() {
         )}
       </Card>
 
-      {/* Modal de Compensação */}
-      <CompensationModalInteligente
-        open={compensationModalOpen}
-        onOpenChange={setCompensationModalOpen}
-        record={selectedCompensationRecord}
-        onCompensated={(recordId) => {
-          setCompensatedRecords(new Set([...compensatedRecords, recordId]));
-          toast.success("Transação compensada com sucesso!");
-        }}
+      {/* Modal Creditar Extrato para Cliente OTC (+OTC) */}
+      <CreditExtractToOTCModal
+        isOpen={creditOTCModalOpen}
+        onClose={handleCloseCreditOTCModal}
+        extractRecord={selectedExtractRecord}
       />
     </div>
   );
