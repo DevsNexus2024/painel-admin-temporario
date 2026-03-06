@@ -5,8 +5,10 @@ import { useState, useEffect } from "react";
 import { useBelmontXRealtime } from "@/hooks/useBelmontXRealtime";
 import AnimatedBalance from "@/components/AnimatedBalance";
 import { consultarSaldoBelmontX, consultarExtratoBelmontX } from "@/services/belmontx";
+import { useBelmontXOtc } from "@/contexts/BelmontXOtcContext";
 
 export default function TopBarBelmontXOtc() {
+  const { selectedAccount } = useBelmontXOtc();
   // WebSocket para BelmontX (não disponível no momento)
   const { isConnected, isReconnecting } = useBelmontXRealtime({
     tenantId: 3, // BelmontX OTC
@@ -30,8 +32,8 @@ export default function TopBarBelmontXOtc() {
     setErrorSaldo(null);
     
     try {
-      // ✅ Usar endpoint específico de saldo da BelmontX (TTF para OTC)
-      const saldoResponse = await consultarSaldoBelmontX("ttf");
+      // ✅ Usar endpoint específico de saldo da BelmontX (TTF ou RXP conforme conta selecionada)
+      const saldoResponse = await consultarSaldoBelmontX(selectedAccount);
       
       console.log('[BELMONTX-OTC] Resposta de saldo:', saldoResponse);
       
@@ -66,7 +68,7 @@ export default function TopBarBelmontXOtc() {
           dataInicio,
           dataFim,
           porPagina: 1, // Apenas para obter total
-          conta: "ttf", // OTC usa conta TTF
+          conta: selectedAccount,
         });
         
         setTotalTransacoes(extratoResponse.response?.qtdRegistros || 0);
@@ -92,10 +94,10 @@ export default function TopBarBelmontXOtc() {
     }
   };
 
-  // Carregar saldo ao montar
+  // Carregar saldo ao montar e quando a conta mudar
   useEffect(() => {
     fetchSaldo();
-  }, []);
+  }, [selectedAccount]);
 
   const handleRefresh = () => {
     fetchSaldo();

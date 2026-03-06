@@ -30,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { transferirPixBelmontX } from "@/services/belmontx";
+import { useBelmontXOtc } from "@/contexts/BelmontXOtcContext";
 
 // Constantes para BelmontX OTC
 const BELMONTX_TENANT_ID = 3;
@@ -48,6 +49,7 @@ const pixSendSchema = z.object({
 type PixSendData = z.infer<typeof pixSendSchema>;
 
 export default function BelmontXPixActions() {
+  const { selectedAccount } = useBelmontXOtc();
   const [isLoading, setIsLoading] = useState(false);
   const [pixResult, setPixResult] = useState<any>(null);
 
@@ -74,7 +76,7 @@ export default function BelmontXPixActions() {
         chavePixDestino: data.pixKey.trim(),
         valor: amountNumber,
         descricao: data.descricao || `Transferência via BelmontX OTC`,
-        conta: "ttf", // OTC usa conta TTF
+        conta: selectedAccount,
       });
 
       if (response?.response?.success) {
@@ -154,7 +156,7 @@ export default function BelmontXPixActions() {
               <CardDescription className="flex items-center gap-2">
                 Transferência imediata usando chave PIX do destinatário
                 <Badge variant="outline" className="ml-2">
-                  Tenant: OTC (ID: {BELMONTX_TENANT_ID})
+                  Conta: {selectedAccount.toUpperCase()}
                 </Badge>
               </CardDescription>
             </CardHeader>

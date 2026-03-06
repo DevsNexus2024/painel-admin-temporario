@@ -18,7 +18,7 @@ export interface BelmontXExtratoParams {
   txId?: string; // Opcional: Código TxID específico
   pagina?: number; // Opcional: Número da página (padrão: 1)
   porPagina?: number; // Opcional: Registros por página (máx: 100)
-  conta?: "tcr" | "ttf"; // Opcional: "tcr" ou "ttf" (padrão: "tcr")
+  conta?: "tcr" | "ttf" | "rxp"; // Opcional: "tcr", "ttf" ou "rxp" (padrão: "tcr")
 }
 
 export interface BelmontXTransacao {
@@ -68,7 +68,7 @@ export interface BelmontXTransferirPixRequest {
   idEnvio?: string; // Opcional: código de idempotência
   descricao?: string; // Opcional: texto para comprovante (max 140)
   numeroDocumento?: string; // Opcional: CPF/CNPJ do pagador
-  conta?: "tcr" | "ttf"; // Opcional: "tcr" ou "ttf" (padrão: "tcr")
+  conta?: "tcr" | "ttf" | "rxp"; // Opcional: "tcr", "ttf" ou "rxp" (padrão: "tcr")
 }
 
 export interface BelmontXTransferirPixResponse {
@@ -87,7 +87,7 @@ export interface BelmontXDevolverPixRequest {
   endToEnd: string; // Obrigatório: identificador da transação original
   valor: number; // Obrigatório: valor a devolver em reais
   descricao?: string; // Opcional: texto para comprovante (max 140)
-  conta?: "tcr" | "ttf"; // Opcional: "tcr" ou "ttf" (padrão: "tcr")
+  conta?: "tcr" | "ttf" | "rxp"; // Opcional: "tcr", "ttf" ou "rxp" (padrão: "tcr")
 }
 
 export interface BelmontXDevolverPixResponse {
@@ -104,7 +104,7 @@ export interface BelmontXBuscarTransacaoParams {
   codigoTransacao?: string;
   idEnvio?: string;
   endToEnd?: string;
-  conta?: "tcr" | "ttf"; // Opcional: "tcr" ou "ttf" (padrão: "tcr")
+  conta?: "tcr" | "ttf" | "rxp"; // Opcional: "tcr", "ttf" ou "rxp" (padrão: "tcr")
 }
 
 export interface BelmontXBuscarTransacaoResponse {
@@ -174,8 +174,8 @@ export async function consultarExtratoBelmontX(
     queryParams.porPagina = porPaginaValue;
   }
   // Adicionar parâmetro conta se especificado (conforme documentação: query parameter para GET)
-  if (params.conta && params.conta === "ttf") {
-    queryParams.conta = "ttf";
+  if (params.conta && (params.conta === "ttf" || params.conta === "rxp")) {
+    queryParams.conta = params.conta;
   }
   // Se for "tcr" ou não especificado, não adiciona (TCR é o padrão)
 
@@ -209,13 +209,13 @@ export async function consultarExtratoBelmontX(
  * Endpoint conforme documentação: GET /api/belmontx/saldo
  * @param conta Opcional: "tcr" ou "ttf" (padrão: "tcr")
  */
-export async function consultarSaldoBelmontX(conta?: "tcr" | "ttf"): Promise<BelmontXSaldoResponse> {
+export async function consultarSaldoBelmontX(conta?: "tcr" | "ttf" | "rxp"): Promise<BelmontXSaldoResponse> {
   const token = getAuthToken();
 
-  // Construir URL com parâmetro conta se for TTF (TCR é padrão, não precisa especificar)
+  // Construir URL com parâmetro conta se for TTF ou RXP (TCR é padrão, não precisa especificar)
   let endpoint = `${BELMONTX_API_BASE}/saldo`;
-  if (conta === "ttf") {
-    endpoint = `${BELMONTX_API_BASE}/saldo?conta=ttf`;
+  if (conta === "ttf" || conta === "rxp") {
+    endpoint = `${BELMONTX_API_BASE}/saldo?conta=${conta}`;
   }
 
   const response = await fetch(endpoint, {
@@ -261,12 +261,9 @@ export async function transferirPixBelmontX(
   let endpoint = `${BELMONTX_API_BASE}/transferir-pix`;
   const bodyPayload: any = { ...payload };
   
-  // Se conta for TTF, adicionar no body (ou pode ser query, mas body é mais comum para POST)
+  // Se conta for TTF ou RXP, manter no body
   // Se conta for TCR ou não especificado, não adiciona (TCR é padrão)
-  if (payload.conta && payload.conta === "ttf") {
-    // Manter no body
-  } else {
-    // Remover conta do body se for TCR (não precisa enviar, é padrão)
+  if (!payload.conta || payload.conta === "tcr") {
     delete bodyPayload.conta;
   }
 
@@ -312,12 +309,9 @@ export async function devolverPixBelmontX(
   let endpoint = `${BELMONTX_API_BASE}/devolver-pix`;
   const bodyPayload: any = { ...payload };
   
-  // Se conta for TTF, adicionar no body
+  // Se conta for TTF ou RXP, manter no body
   // Se conta for TCR ou não especificado, não adiciona (TCR é padrão)
-  if (payload.conta && payload.conta === "ttf") {
-    // Manter no body
-  } else {
-    // Remover conta do body se for TCR (não precisa enviar, é padrão)
+  if (!payload.conta || payload.conta === "tcr") {
     delete bodyPayload.conta;
   }
 
@@ -359,8 +353,8 @@ export async function buscarTransacaoBelmontX(
   if (params.idEnvio) queryParams.idEnvio = params.idEnvio;
   if (params.endToEnd) queryParams.endToEnd = params.endToEnd;
   // Adicionar parâmetro conta se especificado (conforme documentação: query parameter para GET)
-  if (params.conta && params.conta === "ttf") {
-    queryParams.conta = "ttf";
+  if (params.conta && (params.conta === "ttf" || params.conta === "rxp")) {
+    queryParams.conta = params.conta;
   }
   // Se for "tcr" ou não especificado, não adiciona (TCR é o padrão)
 

@@ -18,12 +18,15 @@ import { useBelmontXRealtime } from "@/hooks/useBelmontXRealtime";
 import { BitsoRealtimeService, type BitsoTransactionDB } from "@/services/bitso-realtime";
 import { consultarExtratoBelmontX } from "@/services/belmontx";
 import type { MovimentoExtrato } from "@/services/extrato";
+import { useBelmontXOtc } from "@/contexts/BelmontXOtcContext";
 
 // Constantes para BelmontX OTC
 const BELMONTX_TENANT_ID = 3;
 const BELMONTX_ACCOUNT_ID = 100;
 
 export default function ExtractTabBelmontXOtc() {
+  const { selectedAccount } = useBelmontXOtc();
+
   // WebSocket para BelmontX OTC (não disponível no momento)
   const { isConnected } = useBelmontXRealtime({
     tenantId: BELMONTX_TENANT_ID,
@@ -160,7 +163,7 @@ export default function ExtractTabBelmontXOtc() {
           dataFim: dateFilter.end,
           pagina: Math.floor(offset / limit) + 1,
           porPagina: Math.min(limit, 100), // Máximo 100 conforme documentação
-          conta: "ttf", // OTC usa conta TTF
+          conta: selectedAccount,
         });
 
       // Converter dados da API BelmontX para formato BitsoTransactionDB
@@ -291,7 +294,7 @@ export default function ExtractTabBelmontXOtc() {
         dataFim: dateFilter.end,
         pagina: 1,
         porPagina: 100, // Máximo conforme documentação
-        conta: "ttf", // OTC usa conta TTF
+        conta: selectedAccount,
       });
 
       const allTransactions = (response.response?.transacoes || []).map(mapBelmontXToBitsoTransaction);
@@ -305,7 +308,7 @@ export default function ExtractTabBelmontXOtc() {
   useEffect(() => {
     fetchTransactions(true);
     // fetchMetrics removido - será calculado a partir das transações carregadas
-  }, []);
+  }, [selectedAccount]);
 
   // Aplicar filtros automaticamente quando mudarem (exceto data e busca)
   useEffect(() => {
@@ -315,7 +318,7 @@ export default function ExtractTabBelmontXOtc() {
     }, 500); // Debounce de 500ms
 
     return () => clearTimeout(timer);
-  }, [typeFilter, statusFilter, minAmount, maxAmount, specificAmount, showReversalsOnly, searchTerm]);
+  }, [typeFilter, statusFilter, minAmount, maxAmount, specificAmount, showReversalsOnly, searchTerm, selectedAccount]);
 
   // Sincronizar dateRange com dateFilter
   useEffect(() => {
@@ -416,7 +419,7 @@ export default function ExtractTabBelmontXOtc() {
         dataFim: dateFilter.end,
         pagina: 1,
         porPagina: 100, // Máximo conforme documentação
-        conta: "ttf", // OTC usa conta TTF
+        conta: selectedAccount,
       });
       const allTransactions = (response.response?.transacoes || []).map(mapBelmontXToBitsoTransaction);
 
@@ -670,6 +673,7 @@ export default function ExtractTabBelmontXOtc() {
         dataFim: dateFilter.end,
         pagina: Math.floor(offset / limit) + 1,
         porPagina: Math.min(limit, 100), // Máximo 100 conforme documentação
+        conta: selectedAccount,
       });
 
       // Converter dados da API BelmontX para formato BitsoTransactionDB
