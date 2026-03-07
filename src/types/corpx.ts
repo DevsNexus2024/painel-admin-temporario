@@ -182,6 +182,7 @@ export interface CorpXPixTransferRequest {
   tipo: number;
   valor: number;
   nome?: string;
+  description?: string;
   banco?: string;
   agencia?: string;
   conta?: string;

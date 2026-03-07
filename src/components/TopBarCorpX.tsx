@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCcw, Loader2, DollarSign, Lock, CheckCircle, AlertCircle, FileText, Banknote, Wifi, WifiOff } from "lucide-react";
 import { useCorpXSaldo } from "@/hooks/useCorpXSaldo";
 import { CorpXService } from "@/services/corpx";
-import { useCorpX, CORPX_ACCOUNTS } from "@/contexts/CorpXContext";
+import { useCorpX, CORPX_ACCOUNTS, getCorpxAliasByCnpj } from "@/contexts/CorpXContext";
 import AnimatedBalance from "@/components/AnimatedBalance";
 import { useCorpxRealtime } from "@/hooks/useCorpxRealtime";
 
@@ -73,7 +73,9 @@ export default function TopBarCorpX() {
     try {
       const results = await Promise.allSettled(
         accountsForConsolidation.map(async (acc) => {
-          const resp = await CorpXService.consultarSaldo(acc.cnpjNumerico, { signal: controller.signal });
+          const alias = acc.corpxAlias || getCorpxAliasByCnpj(acc.cnpj);
+          if (!alias) return null;
+          const resp = await CorpXService.consultarSaldo(alias, { signal: controller.signal });
           if (!resp || resp.erro) return null;
           return resp;
         })

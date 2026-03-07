@@ -46,11 +46,17 @@ const getDiagnosticoUrl = (): string => {
   return import.meta.env.X_DIAGNOSTICO_API_URL;
 };
 
+// Base URL para APIs CorpX v2 (conforme MIGRACAO-FRONTEND-CORPX-V2.md)
+const CORPX_V2_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
+
 // Configurações da API
 export const API_CONFIG = {
   // URL base do backend
   BASE_URL: getBaseUrl(),
-  
+
+  // Base URL CorpX v2 (/api/corpx-v2/*)
+  CORPX_V2_BASE_URL: CORPX_V2_BASE_URL.endsWith('/') ? CORPX_V2_BASE_URL.slice(0, -1) : CORPX_V2_BASE_URL,
+
   // URL específica para diagnóstico
   DIAGNOSTICO_URL: getDiagnosticoUrl(),
   

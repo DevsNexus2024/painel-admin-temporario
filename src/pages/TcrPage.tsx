@@ -188,7 +188,159 @@ function PixQRProgressModal({ isOpen, onClose, progressData }: {
   );
 }
 
-// Componente PIX Programado com QR Codes para TCR
+// BigPIX — PIX > R$ 15k (CorpX v2)
+function BigPixComponentTCR() {
+  const TCR_CNPJ = "53781325000115"; // CNPJ da TCR
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [formData, setFormData] = React.useState({
+    key: '',
+    valor: '',
+    nome: '',
+    description: ''
+  });
+
+  const formatCurrency = (value: string) => {
+    const numbers = value.replace(/\D/g, '');
+    const amount = parseFloat(numbers) / 100;
+    return amount.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+  };
+
+  const handleValorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '');
+    setFormData(prev => ({ ...prev, valor: formatCurrency(value) }));
+  };
+
+  const executarBigPix = async () => {
+    if (!formData.key || !formData.valor) {
+      toast.error("Chave PIX e valor são obrigatórios");
+      return;
+    }
+
+    const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
+
+    if (isNaN(valorNumerico) || valorNumerico <= 0) {
+      toast.error("Valor deve ser um número maior que zero");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { enviarBigPixTCR } = await import('@/services/tcr');
+      const result = await enviarBigPixTCR({
+        key: formData.key,
+        valor: valorNumerico,
+        nome: formData.nome || undefined,
+        description: formData.description || undefined
+      });
+
+      if (result && !result.criacao?.erro) {
+        toast.success("BigPIX executado com sucesso");
+        setFormData({ key: '', valor: '', nome: '', description: '' });
+      } else {
+        toast.error("Erro ao executar BigPIX");
+      }
+    } catch (error) {
+      toast.error("Erro ao executar BigPIX");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-transparent to-purple-600/5"></div>
+      <CardHeader className="relative pb-4">
+        <CardTitle className="text-lg flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-purple-500/10">
+            <SendHorizontal className="h-5 w-5 text-purple-600" />
+          </div>
+          BigPIX
+          <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs font-medium">
+            PIX &gt; R$ 15k
+          </Badge>
+        </CardTitle>
+        <CardDescription>
+          Transferências acima de R$ 15.000 — o backend cuida da lógica
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="relative space-y-4">
+        <div className="p-3 bg-muted/30 rounded-lg border">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">TCR - Grupo TCR</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                CNPJ: {TCR_CNPJ.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="bigpix-key-tcr">Chave PIX Destinatário</Label>
+            <Input
+              id="bigpix-key-tcr"
+              value={formData.key}
+              onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
+              placeholder="email@exemplo.com, CPF, CNPJ, celular ou chave aleatória"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bigpix-valor-tcr">Valor</Label>
+            <Input
+              id="bigpix-valor-tcr"
+              value={formData.valor}
+              onChange={handleValorChange}
+              placeholder="R$ 0,00"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bigpix-nome-tcr">Nome Destinatário (Opcional)</Label>
+            <Input
+              id="bigpix-nome-tcr"
+              value={formData.nome}
+              onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+              placeholder="Nome do destinatário"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bigpix-desc-tcr">Descrição (Opcional)</Label>
+            <Input
+              id="bigpix-desc-tcr"
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Descrição da transferência"
+            />
+          </div>
+        </div>
+
+        <Button
+          onClick={executarBigPix}
+          disabled={isLoading}
+          className="w-full bg-purple-600 hover:bg-purple-700"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Executando BigPIX...
+            </>
+          ) : (
+            'Executar BigPIX'
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Componente PIX Programado com QR Codes para TCR (mantido, não usado na v2)
 function PixProgramadoQRComponent() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [showProgressModal, setShowProgressModal] = React.useState(false);
@@ -727,8 +879,8 @@ function PixActionsTabTCR() {
           </CardContent>
         </Card>
 
-        {/* PIX Programado com QR Codes */}
-        <PixProgramadoQRComponent />
+        {/* BigPIX — PIX > R$ 15k */}
+        <BigPixComponentTCR />
       </div>
     </div>
   );
@@ -795,15 +947,10 @@ function CriarChavePixTCR({ onChaveCriada }: { onChaveCriada: () => void }) {
 
       setIsCreating(true);
 
-      const cnpj = "53781325000115"; // CNPJ da TCR
-      
-      //console.log('[TCR-PIX-CREATE-UI] Criando chave:', { tipo: tipoChave, valor: valorChave });
-
       const { criarChavePixTCR } = await import('@/services/tcr');
-      
-      // ✅ Montar dados da requisição
+      const { TCR_CORPX_ALIAS } = await import('@/contexts/CorpXContext');
+
       const dadosRequisicao: any = {
-        tax_document: cnpj,
         tipo: parseInt(tipoChave)
       };
 
@@ -814,7 +961,7 @@ function CriarChavePixTCR({ onChaveCriada }: { onChaveCriada: () => void }) {
 
       //console.log('[TCR-PIX-CREATE-UI] Dados da requisição:', dadosRequisicao);
 
-      const resultado = await criarChavePixTCR(dadosRequisicao);
+      const resultado = await criarChavePixTCR(TCR_CORPX_ALIAS, dadosRequisicao);
 
       //console.log('[TCR-PIX-CREATE-UI] Resultado:', resultado);
 
@@ -1011,13 +1158,10 @@ function PixKeysTabTCR() {
     try {
       setIsLoading(true);
       setError("");
-      
-      const cnpj = "53781325000115"; // CNPJ da TCR
-      
-      //console.log('[TCR-PIX-CHAVES-UI] Carregando chaves PIX para CNPJ:', cnpj);
-      
+
       const { listarChavesPixTCR } = await import('@/services/tcr');
-      const resultado = await listarChavesPixTCR(cnpj);
+      const { TCR_CORPX_ALIAS } = await import('@/contexts/CorpXContext');
+      const resultado = await listarChavesPixTCR(TCR_CORPX_ALIAS);
       
       //console.log('[TCR-PIX-CHAVES-UI] Resultado:', resultado);
       

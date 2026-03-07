@@ -8,7 +8,7 @@ import TopBarCorpX from "@/components/TopBarCorpX";
 import ExtractTabCorpX from "@/components/ExtractTabCorpX";
 
 // Contexto
-import { CorpXProvider, useCorpX, CORPX_ACCOUNTS } from "@/contexts/CorpXContext";
+import { CorpXProvider, useCorpX, CORPX_ACCOUNTS, getCorpxAliasByCnpj } from "@/contexts/CorpXContext";
 
 // Componentes UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,7 +74,12 @@ function PixNormalComponent() {
 
 
       const { executarTransferenciaCompletaCorpX } = await import('@/services/corpx');
-      const result = await executarTransferenciaCompletaCorpX(payload);
+      const alias = selectedAccount.corpxAlias || getCorpxAliasByCnpj(limparFormatacaoDocumento(selectedAccount.cnpj));
+      if (!alias) {
+        toast.error('Selecione uma conta específica para enviar PIX');
+        return;
+      }
+      const result = await executarTransferenciaCompletaCorpX(alias, payload);
 
       if (!result || result.error) {
         toast.error(result?.message || "Erro ao executar PIX");
@@ -484,13 +489,172 @@ function PixProgramadoComponent() {
   );
 }
 
+// BigPIX — PIX > R$ 15k (CorpX v2)
+function BigPixComponent() {
+  const { selectedAccount } = useCorpX();
+  const [isLoading, setIsLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    key: '',
+    valor: '',
+    nome: '',
+    description: ''
+  });
+
+  const formatCurrency = (value: string) => {
+    const numbers = value.replace(/\D/g, '');
+    const amount = parseFloat(numbers) / 100;
+    return amount.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+  };
+
+  const handleValorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '');
+    const formattedValue = formatCurrency(value);
+    setFormData(prev => ({ ...prev, valor: formattedValue }));
+  };
+
+  const executarBigPix = async () => {
+    if (!formData.key || !formData.valor) {
+      toast.error("Chave PIX e valor são obrigatórios");
+      return;
+    }
+
+    const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
+
+    if (isNaN(valorNumerico) || valorNumerico <= 0) {
+      toast.error("Valor deve ser um número maior que zero");
+      return;
+    }
+
+    const alias = selectedAccount.corpxAlias || getCorpxAliasByCnpj(selectedAccount.cnpj.replace(/\D/g, ''));
+    if (!alias) {
+      toast.error('Selecione uma conta específica para enviar BigPIX');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { executarBigPixCorpX } = await import('@/services/corpx');
+      const result = await executarBigPixCorpX(alias, {
+        key: formData.key,
+        valor: valorNumerico,
+        nome: formData.nome || undefined,
+        description: formData.description || undefined
+      });
+
+      if (result && !result.error) {
+        toast.success("BigPIX executado com sucesso");
+        setFormData({ key: '', valor: '', nome: '', description: '' });
+      } else {
+        toast.error(result?.message || "Erro ao executar BigPIX");
+      }
+    } catch (error) {
+      toast.error("Erro ao executar BigPIX");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-transparent to-purple-600/5"></div>
+      <CardHeader className="relative pb-4">
+        <CardTitle className="text-lg flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-purple-500/10">
+            <SendHorizontal className="h-5 w-5 text-purple-600" />
+          </div>
+          BigPIX
+          <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs font-medium">
+            PIX &gt; R$ 15k
+          </Badge>
+        </CardTitle>
+        <CardDescription>
+          Transferências acima de R$ 15.000 — o backend cuida da lógica
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="relative space-y-4">
+        <div className="p-3 bg-muted/30 rounded-lg border">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">{selectedAccount.razaoSocial}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                CNPJ: {selectedAccount.cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="bigpix-key">Chave PIX Destinatário</Label>
+            <Input
+              id="bigpix-key"
+              value={formData.key}
+              onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
+              placeholder="email@exemplo.com, CPF, CNPJ, celular ou chave aleatória"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bigpix-valor">Valor</Label>
+            <Input
+              id="bigpix-valor"
+              value={formData.valor}
+              onChange={handleValorChange}
+              placeholder="R$ 0,00"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bigpix-nome">Nome Destinatário (Opcional)</Label>
+            <Input
+              id="bigpix-nome"
+              value={formData.nome}
+              onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+              placeholder="Nome do destinatário"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bigpix-desc">Descrição (Opcional)</Label>
+            <Input
+              id="bigpix-desc"
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Descrição da transferência"
+            />
+          </div>
+        </div>
+
+        <Button
+          onClick={executarBigPix}
+          disabled={isLoading}
+          className="w-full"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Executando BigPIX...
+            </>
+          ) : (
+            'Executar BigPIX'
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 // Aba de Ações PIX atualizada
 function PixActionsTabCorpX() {
   return (
     <div className="w-full max-w-7xl mx-auto">
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
         <PixNormalComponent />
-        <PixProgramadoComponent />
+        <BigPixComponent />
       </div>
     </div>
   );
@@ -634,6 +798,11 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
       
 
       const { criarChavePixCorpX } = await import('@/services/corpx');
+      const alias = selectedAccount.corpxAlias || getCorpxAliasByCnpj(cnpj);
+      if (!alias) {
+        toast.error('Selecione uma conta específica para criar chave PIX');
+        return;
+      }
       
       // ✅ NOVO: Montar dados da requisição conforme nova documentação
       const dadosRequisicao: any = {
@@ -659,7 +828,7 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
         dadosRequisicao.otp = otp.trim();
       }
 
-      const resultado = await criarChavePixCorpX(dadosRequisicao);
+      const resultado = await criarChavePixCorpX(alias, dadosRequisicao);
 
 
       // ✅ NOVO: Tratamento de resposta conforme nova documentação
@@ -981,7 +1150,7 @@ function CriarChavePixCorpX({ onChaveCriada }: { onChaveCriada: () => void }) {
 
 // Componente funcional para Chaves PIX CorpX
 function PixKeysTabCorpX() {
-  const { taxDocument } = useCorpX();
+  const { selectedAccount, taxDocument } = useCorpX();
   const [chaves, setChaves] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string>("");
@@ -1010,7 +1179,13 @@ function PixKeysTabCorpX() {
       
       
       const { listarChavesPixCorpX } = await import('@/services/corpx');
-      const resultado = await listarChavesPixCorpX(cnpj);
+      const alias = selectedAccount.corpxAlias || getCorpxAliasByCnpj(cnpj);
+      if (!alias) {
+        setError('Selecione uma conta específica para listar chaves PIX');
+        setChaves([]);
+        return;
+      }
+      const resultado = await listarChavesPixCorpX(alias);
       
       
       // ✅ CORREÇÃO: Agora o serviço retorna dados processados corretamente

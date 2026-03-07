@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { consultarSaldoTCR } from '@/services/tcr';
+import { TCR_CORPX_ALIAS } from '@/contexts/CorpXContext';
 import type { CorpXSaldoResponse } from '@/types/corpx'; // Reutilizando os types
 
 interface UseTCRSaldoOptions {
-  cnpj: string;
+  /** @deprecated Usado apenas para compatibilidade. TCR usa TCR_CORPX_ALIAS (CorpX v2) */
+  cnpj?: string;
   autoRefresh?: boolean;
   refreshInterval?: number; // em ms, default 30000 (30s)
 }
@@ -31,8 +33,9 @@ export function useTCRSaldo({
   const isFirstLoad = useRef(true);
 
   const fetchSaldo = useCallback(async () => {
-    if (!cnpj) {
-      setError('CNPJ é obrigatório');
+    const alias = TCR_CORPX_ALIAS;
+    if (!alias) {
+      setError('Alias da conta TCR não configurado');
       return;
     }
 
@@ -46,7 +49,7 @@ export function useTCRSaldo({
     try {
       //console.log('[TCR-SALDO-HOOK] 🔄 Consultando saldo para CNPJ:', cnpj);
       
-      const resultado = await consultarSaldoTCR(cnpj);
+      const resultado = await consultarSaldoTCR(alias);
       
       if (resultado) {
         if (resultado.erro) {
@@ -69,7 +72,7 @@ export function useTCRSaldo({
       setIsLoading(false);
       isFirstLoad.current = false;
     }
-  }, [cnpj, autoRefresh]);
+  }, [autoRefresh]);
 
   const refresh = useCallback(async () => {
     // Force loading quando é refresh manual
@@ -101,7 +104,7 @@ export function useTCRSaldo({
     }
   }, [autoRefresh, refreshInterval, fetchSaldo]);
 
-  // ✅ Carregar saldo inicial ao montar o hook
+  // Carregar saldo inicial ao montar o hook
   useEffect(() => {
     fetchSaldo();
   }, [fetchSaldo]);

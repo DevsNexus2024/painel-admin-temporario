@@ -18,6 +18,8 @@ import { toast } from "sonner";
 
 // ✅ CNPJ FIXO: TTF SERVICOS DIGITAIS LTDA
 const TTF_CNPJ = "14283885000198";
+// Alias CorpX v2 para TTF
+const TTF_CORPX_ALIAS = "TTF";
 
 // Modal de Progresso PIX Programado com QR
 function PixQRProgressModal({ isOpen, onClose, progressData }: {
@@ -191,7 +193,158 @@ function PixQRProgressModal({ isOpen, onClose, progressData }: {
   );
 }
 
-// Componente PIX Programado com QR Codes para TTF
+// BigPIX — PIX > R$ 15k (CorpX v2)
+function BigPixComponentTTF() {
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [formData, setFormData] = React.useState({
+    key: '',
+    valor: '',
+    nome: '',
+    description: ''
+  });
+
+  const formatCurrency = (value: string) => {
+    const numbers = value.replace(/\D/g, '');
+    const amount = parseFloat(numbers) / 100;
+    return amount.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+  };
+
+  const handleValorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '');
+    setFormData(prev => ({ ...prev, valor: formatCurrency(value) }));
+  };
+
+  const executarBigPix = async () => {
+    if (!formData.key || !formData.valor) {
+      toast.error("Chave PIX e valor são obrigatórios");
+      return;
+    }
+
+    const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
+
+    if (isNaN(valorNumerico) || valorNumerico <= 0) {
+      toast.error("Valor deve ser um número maior que zero");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { executarBigPixCorpX } = await import('@/services/corpx');
+      const result = await executarBigPixCorpX(TTF_CORPX_ALIAS, {
+        key: formData.key,
+        valor: valorNumerico,
+        nome: formData.nome || undefined,
+        description: formData.description || undefined
+      });
+
+      if (result && !result.error) {
+        toast.success("BigPIX executado com sucesso");
+        setFormData({ key: '', valor: '', nome: '', description: '' });
+      } else {
+        toast.error(result?.message || "Erro ao executar BigPIX");
+      }
+    } catch (error) {
+      toast.error("Erro ao executar BigPIX");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-transparent to-purple-600/5"></div>
+      <CardHeader className="relative pb-4">
+        <CardTitle className="text-lg flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-purple-500/10">
+            <SendHorizontal className="h-5 w-5 text-purple-600" />
+          </div>
+          BigPIX
+          <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs font-medium">
+            PIX &gt; R$ 15k
+          </Badge>
+        </CardTitle>
+        <CardDescription>
+          Transferências acima de R$ 15.000 — o backend cuida da lógica
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="relative space-y-4">
+        <div className="p-3 bg-muted/30 rounded-lg border">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">TTF Serviços Digitais</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                CNPJ: {TTF_CNPJ.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="bigpix-key-ttf">Chave PIX Destinatário</Label>
+            <Input
+              id="bigpix-key-ttf"
+              value={formData.key}
+              onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
+              placeholder="email@exemplo.com, CPF, CNPJ, celular ou chave aleatória"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bigpix-valor-ttf">Valor</Label>
+            <Input
+              id="bigpix-valor-ttf"
+              value={formData.valor}
+              onChange={handleValorChange}
+              placeholder="R$ 0,00"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bigpix-nome-ttf">Nome Destinatário (Opcional)</Label>
+            <Input
+              id="bigpix-nome-ttf"
+              value={formData.nome}
+              onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+              placeholder="Nome do destinatário"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bigpix-desc-ttf">Descrição (Opcional)</Label>
+            <Input
+              id="bigpix-desc-ttf"
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Descrição da transferência"
+            />
+          </div>
+        </div>
+
+        <Button
+          onClick={executarBigPix}
+          disabled={isLoading}
+          className="w-full bg-purple-600 hover:bg-purple-700"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Executando BigPIX...
+            </>
+          ) : (
+            'Executar BigPIX'
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Componente PIX Programado com QR Codes para TTF (mantido, não usado na v2)
 function PixProgramadoQRComponent() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [showProgressModal, setShowProgressModal] = React.useState(false);
@@ -561,8 +714,8 @@ function PixActionsTabTTF() {
           </CardContent>
         </Card>
 
-        {/* PIX Programado com QR Codes */}
-        <PixProgramadoQRComponent />
+        {/* BigPIX — PIX > R$ 15k */}
+        <BigPixComponentTTF />
       </div>
     </div>
   );
@@ -640,7 +793,7 @@ function CriarChavePixTTF({ onChaveCriada }: { onChaveCriada: () => void }) {
         dadosRequisicao.key = valorChave.trim();
       }
 
-      const resultado = await criarChavePixCorpX(dadosRequisicao);
+      const resultado = await criarChavePixCorpX(TTF_CORPX_ALIAS, dadosRequisicao);
 
       if (resultado && !resultado.erro) {
         toast.success("Chave PIX criada com sucesso!", {
@@ -836,7 +989,7 @@ function PixKeysTabTTF() {
       setError("");
       
       const { listarChavesPixCorpX } = await import('@/services/corpx');
-      const resultado = await listarChavesPixCorpX(TTF_CNPJ);
+      const resultado = await listarChavesPixCorpX(TTF_CORPX_ALIAS);
       
       if (resultado && !resultado.erro && resultado.chaves) {
         const chavesMapeadas = resultado.chaves.map((chave: any, index: number) => {

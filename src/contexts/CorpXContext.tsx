@@ -1,7 +1,11 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
+// Alias para conta TCR (CorpX v2 - header X-Corpx-Account-Context)
+export const TCR_CORPX_ALIAS = 'TCR';
+
 // Lista de contas CorpX disponíveis
 // ✅ IMPORTANTE: apiAccountId deve corresponder ao campo `id` da tabela `corpx_accounts`
+// ✅ corpxAlias: usado no header X-Corpx-Account-Context para APIs CorpX v2
 export const CORPX_ACCOUNTS = [
   {
     id: 'ALL',
@@ -14,43 +18,49 @@ export const CORPX_ACCOUNTS = [
     razaoSocial: 'TTF SERVICOS DIGITAIS LTDA',
     cnpj: '14283885000198',
     available: true,
-    apiAccountId: 1, // ✅ ID da tabela corpx_accounts
+    apiAccountId: 1,
+    corpxAlias: 'TTF',
   },
   {
     id: '2',
     razaoSocial: 'TRKBIT TECNOLOGIA E INFORMACAO LTDA',
     cnpj: '41586874000150',
     available: true,
-    apiAccountId: 2, // ✅ ID da tabela corpx_accounts
+    apiAccountId: 2,
+    corpxAlias: 'TRKBIT',
   },
   {
-    id: '3', 
+    id: '3',
     razaoSocial: 'NEXUS COMERCIO E IMPORTACAO LTDA',
     cnpj: '62804797000137',
     available: true,
-    apiAccountId: 3, // ✅ ID da tabela corpx_accounts
+    apiAccountId: 3,
+    corpxAlias: 'NEXUS',
   },
   {
     id: '4',
     razaoSocial: 'THE GOOD CELL LTDA',
     cnpj: '49730998000179',
     available: true,
-    apiAccountId: 52505, // ✅ ID da tabela corpx_accounts
+    apiAccountId: 52505,
+    corpxAlias: 'TGC',
   },
   {
     id: '5',
     razaoSocial: 'EDITION LIMITED SERVICOS DIGITAIS',
     cnpj: '61504259000164',
     available: true,
-    apiAccountId: 51807, // ✅ ID da tabela corpx_accounts
+    apiAccountId: 51807,
+    corpxAlias: 'EDITION',
   },
   {
     id: '6',
     razaoSocial: 'RXP SERVICOS DIGITAIS LTDA',
     cnpj: '24586576000140',
     available: true,
-    apiAccountId: 52255, // ✅ ID da tabela corpx_accounts
-  }
+    apiAccountId: 52255,
+    corpxAlias: 'RXP',
+  },
 ];
 
 interface CorpXAccount {
@@ -58,7 +68,8 @@ interface CorpXAccount {
   razaoSocial: string;
   cnpj: string;
   available: boolean;
-  apiAccountId?: number; // ID numérico usado na API /api/corpx/transactions
+  apiAccountId?: number;
+  corpxAlias?: string; // Alias para header X-Corpx-Account-Context (CorpX v2)
 }
 
 interface CorpXContextType {
@@ -104,4 +115,17 @@ export function useCorpX() {
     throw new Error('useCorpX deve ser usado dentro de um CorpXProvider');
   }
   return context;
+}
+
+/** CNPJ da TCR (não aparece no seletor CorpX, mas precisa do alias para APIs v2) */
+const TCR_CNPJ = '53781325000115';
+
+/** Obtém o alias CorpX v2 a partir do CNPJ */
+export function getCorpxAliasByCnpj(cnpj: string): string | undefined {
+  const digits = (cnpj || '').replace(/\D/g, '');
+  if (digits === TCR_CNPJ) return TCR_CORPX_ALIAS;
+  const account = CORPX_ACCOUNTS.find(
+    (acc) => acc.id !== 'ALL' && (acc.cnpj || '').replace(/\D/g, '') === digits
+  );
+  return account?.corpxAlias;
 }

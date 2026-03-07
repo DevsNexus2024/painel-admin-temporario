@@ -175,6 +175,7 @@ const App = () => (
                   <Route path="/contas-organizacoes/organizacao/:id" element={<OrganizacaoDetailsPage />} />
                   <Route path="/contas-organizacoes/conta/:id" element={<ContaDetailsPage />} />
                   <Route path="/analise-usuario/:id" element={<AnaliseUsuario />} />
+                  <Route path="/pix-permissions" element={<Navigate to="/" replace />} />
                 </Route>
                 
                 {/* Rota 404 */}

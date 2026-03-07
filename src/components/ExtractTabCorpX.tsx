@@ -67,8 +67,8 @@ export default function ExtractTabCorpX() {
     return beneficiaryDoc === '36741675000139';
   }, []);
   
-  // Estados para controle de dados
-  const [isLoading, setIsLoading] = useState(false);
+  // Estados para controle de dados (inicial true para exibir loading no primeiro render)
+  const [isLoading, setIsLoading] = useState(true);
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [error, setError] = useState<string>("");
   
@@ -2665,9 +2665,10 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex items-center justify-center p-8">
-              <Loader2 className="h-6 w-6 animate-spin mr-2" />
-              <span>Carregando transações CORPX...</span>
+            <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 p-12">
+              <Loader2 className="h-12 w-12 animate-spin text-primary" />
+              <span className="text-muted-foreground font-medium">Carregando transações CORPX...</span>
+              <p className="text-sm text-muted-foreground">Aguarde enquanto buscamos os dados</p>
             </div>
           ) : error ? (
             <div className="text-center p-8">
@@ -2714,6 +2715,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                         <TableHead className="font-semibold text-card-foreground py-3 w-[140px]">Data/Hora</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Valor</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 min-w-[200px]">Cliente</TableHead>
+                        <TableHead className="font-semibold text-card-foreground py-3 w-[180px]">Reconciliation ID</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[180px]">Documento Beneficiário</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[200px]">Descrição</TableHead>
                         <TableHead className="font-semibold text-card-foreground py-3 w-[160px]">Código (End-to-End)</TableHead>
@@ -2789,6 +2791,11 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                                 CORPX
                               </div>
                             </div>
+                          </TableCell>
+                          <TableCell className="py-3 text-xs text-muted-foreground truncate max-w-[150px]">
+                            <span className="font-mono" title={transaction._original?.reconciliationId || transaction._original?.rawWebhook?.data?.reconciliationId || ''}>
+                              {transaction._original?.reconciliationId || transaction._original?.rawWebhook?.data?.reconciliationId || '—'}
+                            </span>
                           </TableCell>
                           <TableCell className="py-3 text-xs text-muted-foreground truncate max-w-[200px]">
                             {transaction.document ? (

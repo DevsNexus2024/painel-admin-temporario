@@ -765,19 +765,39 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                         </div>
                         <div>
                           <Label className="text-xs text-muted-foreground">ID do Usuário</Label>
-                          <p className="font-mono text-xs">
-                            {(() => {
-                              const id = obterIdUsuario();
-                              if (id > 0) {
-                                return (
+                          {(() => {
+                            const id = obterIdUsuario();
+                            if (id > 0) {
+                              return (
+                                <p className="font-mono text-xs">
                                   <span className="text-green-600 font-medium">
                                     {id} {usarIdManual ? '(manual)' : '(automático)'}
                                   </span>
-                                );
-                              }
-                              return 'Não identificado';
-                            })()}
-                          </p>
+                                </p>
+                              );
+                            }
+                            return (
+                              <div className="flex gap-2 items-center mt-1">
+                                <Input
+                                  type="number"
+                                  placeholder="Informe o ID (ex: 1122)"
+                                  value={idUsuarioManual}
+                                  onChange={(e) => setIdUsuarioManual(e.target.value)}
+                                  className="h-8 font-mono text-xs max-w-[140px]"
+                                  min="1"
+                                />
+                                <Button
+                                  onClick={handleConfirmarIdManual}
+                                  disabled={!idUsuarioManual}
+                                  size="sm"
+                                  className="h-8 text-xs"
+                                >
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Confirmar
+                                </Button>
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div className="col-span-1 sm:col-span-2">
                           <Label className="text-xs text-muted-foreground">Descrição do Cliente</Label>
@@ -840,39 +860,6 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
                         )}
                       </Button>
                     </div>
-
-                    {/* ✅ Seção para entrada manual quando ID não é identificado */}
-                    {obterIdUsuario() === 0 && (
-                      <Card className="bg-amber-50 border-amber-200">
-                        <CardContent className="p-4">
-                          <div className="flex items-center gap-2 mb-3">
-                            <AlertTriangle className="h-4 w-4 text-amber-600" />
-                            <span className="text-sm font-medium text-amber-800">ID do usuário não identificado</span>
-                          </div>
-                          <p className="text-xs text-amber-700 mb-3">
-                            Informe o ID do usuário manualmente para acessar todas as funcionalidades:
-                          </p>
-                          <div className="flex gap-2">
-                            <Input
-                              type="number"
-                              placeholder="Ex: 1122"
-                              value={idUsuarioManual}
-                              onChange={(e) => setIdUsuarioManual(e.target.value)}
-                              className="flex-1"
-                              min="1"
-                            />
-                            <Button 
-                              onClick={handleConfirmarIdManual}
-                              disabled={!idUsuarioManual}
-                              size="sm"
-                            >
-                              <CheckCircle className="h-4 w-4 mr-1" />
-                              Confirmar
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
 
                     {/* Exibição do resultado da conferência de saldo */}
                     {saldoComparacao && (

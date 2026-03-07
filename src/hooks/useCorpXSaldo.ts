@@ -1,11 +1,13 @@
-// hooks/useCorpXSaldo.ts - Hook específico para saldo CorpX
-// Compatível com o padrão dos outros hooks de saldo do projeto
+// hooks/useCorpXSaldo.ts - Hook específico para saldo CorpX (CorpX v2)
+// Usa alias (X-Corpx-Account-Context) em vez de CNPJ
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { CorpXService } from '@/services/corpx';
+import { getCorpxAliasByCnpj } from '@/contexts/CorpXContext';
 import type { CorpXSaldoResponse } from '@/types/corpx';
 
 interface UseCorpXSaldoOptions {
+  /** CNPJ da conta (usado para obter alias via CORPX_ACCOUNTS) */
   cnpj: string;
   autoRefresh?: boolean;
   refreshInterval?: number; // em milissegundos
@@ -33,7 +35,13 @@ export function useCorpXSaldo({
   const fetchSaldo = useCallback(async () => {
     const cnpjNumerico = (cnpj || '').replace(/\D/g, '');
     if (!cnpjNumerico || cnpjNumerico.length !== 14) {
-      //console.warn('[useCorpXSaldo] CNPJ não fornecido');
+      return;
+    }
+
+    const alias = getCorpxAliasByCnpj(cnpjNumerico);
+    if (!alias) {
+      setError('Conta sem alias CorpX v2 configurado');
+      setSaldo(null);
       return;
     }
 
@@ -45,9 +53,7 @@ export function useCorpXSaldo({
     setError(null);
 
     try {
-      ////console.log('[useCorpXSaldo] Consultando saldo CORPX...', cnpj);
-      
-      const response = await CorpXService.consultarSaldo(cnpjNumerico, { signal: controller.signal });
+      const response = await CorpXService.consultarSaldo(alias, { signal: controller.signal });
       
       if (response?.erro) {
         setError('Erro ao consultar saldo CORPX');

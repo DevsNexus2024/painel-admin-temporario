@@ -35,19 +35,19 @@ interface CorpXBackendResponse<T = any> {
 
 const CORPX_CONFIG = {
   endpoints: {
-    // 💰 CONTA / SALDO (rotas corretas do backend)
-    consultarSaldo: '/api/corpx/account/saldo',
+    // 💰 CONTA / SALDO (CorpX v2)
+    consultarSaldo: '/api/corpx-v2/balance',
     consultarExtrato: '/api/corpx/account/extrato',
     criarConta: '/api/corpx/account/criar',
     
-    // 🔍 CONSULTA DE TRANSAÇÃO POR ENDTOEND
+    // 🔍 CONSULTA DE TRANSAÇÃO POR ENDTOEND (qtran com document + e2e - igual botão Verificar do extrato TCR)
     consultarTransacao: '/api/corpx/account/qtran',
     
-    // 🔑 CHAVES PIX (rotas corretas do backend)
-    listarChavesPix: '/api/corpx/pix/chaves',
-    criarChavePix: '/api/corpx/pix/chave',
-    enviarOtpPix: '/api/corpx/pix/chave/otp', // ✅ NOVO: Endpoint para enviar OTP
-    cancelarChavePix: '/api/corpx/pix/chave',
+    // 🔑 CHAVES PIX (CorpX v2)
+    listarChavesPix: '/api/corpx-v2/pix/keys',
+    criarChavePix: '/api/corpx-v2/pix/keys',
+    enviarOtpPix: '/api/corpx/pix/chave/otp', // v1 - mantido (não existe na v2)
+    cancelarChavePix: '/api/corpx-v2/pix/keys',
     
     // 💸 TRANSFERÊNCIAS PIX (rotas corretas do backend)
     criarTransferenciaPix: '/api/corpx/pix/transferencia',
@@ -122,44 +122,40 @@ async function checkTokenStatus(): Promise<{
  */
 
 /**
- * Consultar Saldo
- * Endpoint: GET /api/corpx/account/saldo?tax_document=CNPJ
+ * Consultar Saldo (CorpX v2)
+ * Endpoint: GET /api/corpx-v2/balance
+ * Header: X-Corpx-Account-Context: {alias}
  */
 export async function consultarSaldoCorpX(
-  cnpj: string,
+  alias: string,
   options?: { signal?: AbortSignal }
 ): Promise<CorpXSaldoResponse | null> {
   try {
-    
-    // ✅ Verificar status do token ANTES da requisição
     const tokenStatus = await checkTokenStatus();
-    
     if (!tokenStatus.isValid) {
       throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
     }
-    
-    // ✅ Obter token JWT diretamente como no bmp531.ts
+
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
-    
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
-    
-    const requestUrl = `${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.consultarSaldo}?tax_document=${cnpj}`;
-    const requestHeaders = {
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const requestUrl = `${baseUrl}${CORPX_CONFIG.endpoints.consultarSaldo}?includeLocks=true`;
+    const requestHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Authorization': `Bearer ${userToken}`
+      'Authorization': `Bearer ${userToken}`,
+      'X-Corpx-Account-Context': alias,
     };
-    
-    
+
     const response = await fetch(requestUrl, {
       method: 'GET',
       headers: requestHeaders,
       signal: options?.signal
     });
-
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -167,32 +163,34 @@ export async function consultarSaldoCorpX(
     }
 
     const responseData = await response.json();
-    
-    // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as CorpXBackendResponse<any>;
-    
-    if (backendResponse.error === false && backendResponse.data) {
-      // Adaptar dados do backend para a interface esperada
+
+    // CorpX v2 response: { available, locked, total, currency, locks }
+    const raw = responseData?.data ?? responseData;
+    const available = Number(raw?.available ?? raw?.saldo ?? 0);
+    const locked = Number(raw?.locked ?? raw?.saldoBloqueado ?? 0);
+    const total = Number(raw?.total ?? raw?.globalBalance ?? available + locked);
+
+    if (responseData?.error === false || (typeof raw?.available === 'number' || typeof raw?.total === 'number')) {
       return {
         erro: false,
-        globalBalance: backendResponse.data.globalBalance || 0,
-        saldo: backendResponse.data.saldo || backendResponse.data.globalBalance || 0,
-        saldoDisponivel: backendResponse.data.saldo_disp || backendResponse.data.saldoDisponivel || 0,
-        saldoBloqueado: backendResponse.data.saldo_block || backendResponse.data.saldoBloqueado || 0,
-        limite: 0, // Campo padrão
-        limiteBloqueado: backendResponse.data.saldo_block || backendResponse.data.saldoBloqueado || 0 // Compatibilidade
-      } as CorpXSaldoResponse;
-    } else {
-      return {
-        erro: true,
-        globalBalance: 0,
-        saldo: 0,
-        saldoDisponivel: 0,
-        saldoBloqueado: 0,
+        globalBalance: total,
+        saldo: total,
+        saldoDisponivel: available,
+        saldoBloqueado: locked,
         limite: 0,
-        limiteBloqueado: 0
+        limiteBloqueado: locked
       } as CorpXSaldoResponse;
     }
+
+    return {
+      erro: true,
+      globalBalance: 0,
+      saldo: 0,
+      saldoDisponivel: 0,
+      saldoBloqueado: 0,
+      limite: 0,
+      limiteBloqueado: 0
+    } as CorpXSaldoResponse;
     
   } catch (error: any) {
     // AbortError não deve virar erro “hard” no UI
@@ -615,18 +613,16 @@ export interface VerificacaoTransacaoResult {
 }
 
 /**
- * 🔍 Consultar Transação por EndToEnd
+ * Consultar Transação por EndToEnd (qtran com document + e2e)
  * Endpoint: POST /api/corpx/account/qtran
- * 
- * Verifica o status de uma transação na API CorpX usando o endtoend
+ * Body: { tax_document, endtoend }
+ * Igual ao botão Verificar do extrato TCR.
  */
 export async function consultarTransacaoPorEndToEnd(
   taxDocument: string,
   endtoend: string
 ): Promise<VerificacaoTransacaoResult> {
   try {
-    console.log('[CORPX-QTRAN] Consultando transação...', { taxDocument, endtoend: endtoend.substring(0, 20) + '...' });
-    
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
 
@@ -638,13 +634,11 @@ export async function consultarTransacaoPorEndToEnd(
       };
     }
 
-    // Limpar tax_document (apenas números)
-    const taxDocumentLimpo = taxDocument.replace(/\D/g, '');
-    
+    const taxDocumentLimpo = (taxDocument || '').replace(/\D/g, '');
     if (!taxDocumentLimpo || taxDocumentLimpo.length < 11) {
       return {
         sucesso: false,
-        mensagem: 'Documento fiscal inválido',
+        mensagem: 'Documento (CNPJ/CPF) inválido',
         permiteOperacao: false
       };
     }
@@ -657,77 +651,114 @@ export async function consultarTransacaoPorEndToEnd(
       };
     }
 
-    const payload: ConsultarTransacaoRequest = {
-      tax_document: taxDocumentLimpo,
-      endtoend: endtoend.trim()
-    };
+    // qtran usa BASE_URL (baas-v1), igual extrato TCR
+    const baseUrl = API_CONFIG.BASE_URL;
+    const url = `${baseUrl}${CORPX_CONFIG.endpoints.consultarTransacao}`;
 
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.consultarTransacao}`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${userToken}`
+        'Authorization': `Bearer ${userToken}`,
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        tax_document: taxDocumentLimpo,
+        endtoend: endtoend.trim(),
+      }),
     });
 
-    const responseData = await response.json() as ConsultarTransacaoResponse;
-    console.log('[CORPX-QTRAN] Resposta recebida:', responseData);
+    const raw = await response.json();
 
-    if (!response.ok || responseData.error) {
+    if (!response.ok || raw?.error) {
       return {
         sucesso: false,
-        mensagem: responseData.message || `Erro ao consultar transação: HTTP ${response.status}`,
+        mensagem: raw?.message || `Erro ao consultar transação: HTTP ${response.status}`,
         permiteOperacao: false,
-        rawResponse: responseData
+        rawResponse: raw
       };
     }
 
-    // Verificar se encontrou a transação (pode estar em requests ou reversals)
-    const requests = responseData.data?.data?.requests || [];
-    const reversals = responseData.data?.data?.reversals || [];
-    
-    // Priorizar requests, mas também verificar reversals
-    let transacao = requests.length > 0 ? requests[0] : (reversals.length > 0 ? reversals[0] : null);
-    
-    if (!transacao) {
+    // qtran pode retornar { data: { data: { requests: [...] } } } ou { data: {...} } direto
+    let data = raw?.data ?? raw;
+    if (data?.data?.requests?.length) {
+      data = data.data.requests[0];
+    } else if (data?.data?.reversals?.length) {
+      data = data.data.reversals[0];
+    } else if (typeof data?.data === 'object' && !Array.isArray(data.data)) {
+      data = data.data;
+    }
+    const hasValidTx = data && (data.id || data.transactionId || data.idEndToEnd || data.endToEndId);
+    if (!hasValidTx) {
       return {
         sucesso: false,
-        mensagem: responseData.message || 'Transação não encontrada na API CorpX. O endtoend pode estar incorreto ou a transação não foi processada.',
+        mensagem: raw?.message || 'Transação não encontrada na API. O endToEnd pode estar incorreto ou a transação não foi processada.',
         permiteOperacao: false,
-        rawResponse: responseData
+        rawResponse: raw
       };
     }
-    const status = transacao.status?.toLowerCase();
 
-    // Verificar se o status permite operação
-    const statusPermitidos = ['success', 'completed', 'approved', 'confirmed'];
-    const permiteOperacao = statusPermitidos.includes(status);
+    const status = (data.status || data.Status || '').toUpperCase();
+    const permiteOperacao = status === 'SUCCESS';
+
+    const amountBRL = typeof data.amount === 'number' ? data.amount : parseFloat(data.amount || data.valor || '0') || 0;
+    const feeAmount = data.fee?.amount != null
+      ? (data.fee.amount > 1 ? data.fee.amount : Math.round(data.fee.amount * 100))
+      : 0;
+    const transacao = {
+      id: data.id || data.transactionId || data.idEndToEnd,
+      endToEndId: data.endToEndId || data.endToEnd || data.idEndToEnd || endtoend,
+      status: data.status,
+      direction: data.direction,
+      flow: ((data.direction || '').toLowerCase() === 'in' ? 'in' : 'out') as 'in' | 'out',
+      amount: Math.round(amountBRL * 100),
+      type: data.type,
+      operation: data.operation,
+      method: data.method,
+      fee: feeAmount,
+      senderName: data.payer?.name,
+      receiverName: data.payee?.name,
+      senderTaxId: data.payer?.document,
+      receiverTaxId: data.payee?.document,
+      senderBankCode: data.payer?.bankCode,
+      senderBranchCode: data.payer?.branch,
+      senderAccountNumber: data.payer?.account,
+      senderAccountType: data.payer?.accountType || '-',
+      receiverBankCode: data.payee?.bankCode,
+      receiverBranchCode: data.payee?.branch,
+      receiverAccountNumber: data.payee?.account,
+      receiverAccountType: data.payee?.accountType || '-',
+      created: data.createdAt,
+      updated: data.updatedAt,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      description: data.operation || data.errorReason,
+      errorReason: data.errorReason,
+      _v2: data
+    };
 
     if (permiteOperacao) {
       return {
         sucesso: true,
-        status: transacao.status,
-        mensagem: responseData.message || `Transação verificada com sucesso! Status: ${transacao.status.toUpperCase()}`,
+        status: data.status,
+        mensagem: `Transação verificada com sucesso! Status: ${data.status}`,
         transacao,
         permiteOperacao: true,
-        rawResponse: responseData
+        rawResponse: raw
       };
     } else {
       return {
         sucesso: true,
-        status: transacao.status,
-        mensagem: responseData.message || `Transação encontrada, porém com status "${transacao.status.toUpperCase()}". Operações de crédito/compensação não são permitidas para transações com este status.`,
+        status: data.status,
+        mensagem: `Transação encontrada, porém com status "${data.status}". Operações de crédito/compensação não são permitidas.`,
         transacao,
         permiteOperacao: false,
-        rawResponse: responseData
+        rawResponse: raw
       };
     }
 
   } catch (error: any) {
     console.error('[CORPX-QTRAN] Erro ao consultar transação:', error);
-    
     return {
       sucesso: false,
       mensagem: `Erro ao consultar transação: ${error.message || 'Erro de conexão'}`,
@@ -799,25 +830,26 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
  */
 
 /**
- * Listar Chaves PIX
- * Endpoint: GET /api/corpx/pix/chaves?tax_document=CNPJ
+ * Listar Chaves PIX (CorpX v2)
+ * Endpoint: GET /api/corpx-v2/pix/keys
+ * Header: X-Corpx-Account-Context: {alias}
  */
-export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysResponse | null> {
+export async function listarChavesPixCorpX(alias: string): Promise<CorpXPixKeysResponse | null> {
   try {
-    // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
-    
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
-    
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.listarChavesPix}?tax_document=${cnpj}`, {
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const response = await fetch(`${baseUrl}${CORPX_CONFIG.endpoints.listarChavesPix}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${userToken}`
+        'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': alias,
       }
     });
 
@@ -826,136 +858,84 @@ export async function listarChavesPixCorpX(cnpj: string): Promise<CorpXPixKeysRe
     }
 
     const responseData = await response.json();
-    
-    // Backend retorna: { error: false, message: "...", data: [...] }
-    const backendResponse = responseData as CorpXBackendResponse<any[]>;
-    
-    if (backendResponse.error === false && backendResponse.data) {
-      
-      const chaves = backendResponse.data.map((item: any, index: number) => {
-        
-        // ✅ CORREÇÃO: API retorna 'keypix', não 'chave'
-        const chaveMapeada = {
-          id: item.keypix || item.id || item.chave || index.toString(),
-          key: item.keypix || item.chave || item.key || '',
-          type: item.tipo || item.type || 'RANDOM',
-          status: item.status || 'ACTIVE',
-          created_at: item.criado || item.created_at || item.dataCriacao || new Date().toISOString()
-        };
-        
-        return chaveMapeada;
-      });
-      
-      return {
-        erro: false,
-        chaves
-      } as CorpXPixKeysResponse;
-    } else {
-      return {
-        erro: true,
-        chaves: []
-      } as CorpXPixKeysResponse;
-    }
-    
+    const raw = responseData?.data ?? responseData;
+    const arr = Array.isArray(raw) ? raw : (raw?.keys ?? raw?.chaves ?? []);
+
+    const chaves = (Array.isArray(arr) ? arr : []).map((item: any, index: number) => ({
+      id: item.keypix || item.id || item.key || item.chave || index.toString(),
+      key: item.keypix || item.key || item.chave || '',
+      type: item.keyType || item.tipo || item.type || 'RANDOM',
+      status: item.status || 'ACTIVE',
+      created_at: item.created_at || item.criado || item.dataCriacao || new Date().toISOString()
+    }));
+
+    return {
+      erro: responseData?.error === true ? true : false,
+      chaves
+    } as CorpXPixKeysResponse;
   } catch (error: any) {
     console.error('[CORPX-PIX-CHAVES] Erro ao listar chaves:', error.message);
     return null;
   }
 }
 
+/** Mapeia tipo v1 (1-5) para keyType v2 */
+const TIPO_TO_KEYTYPE: Record<string, string> = {
+  '1': 'cpf', '2': 'cnpj', '3': 'phone', '4': 'email', '5': 'random'
+};
+
 /**
- * Criar Chave PIX
- * Endpoint: POST /api/corpx/pix/chave
+ * Criar Chave PIX (CorpX v2)
+ * Endpoint: POST /api/corpx-v2/pix/keys
+ * Header: X-Corpx-Account-Context: {alias}
+ * Body: { keyType, key? }
+ * Nota: OTP (v1) não existe na v2 - fluxo pode ter mudado
  */
-/**
- * ✅ ATUALIZADO: Criar chave PIX conforme nova documentação
- * Endpoint: POST /api/corpx/pix/chave
- * 
- * Parâmetros:
- * - tax_document: CPF/CNPJ (apenas números)
- * - tipo: "1" (CPF), "2" (CNPJ), "3" (Celular), "4" (Email), "5" (Aleatória)
- * - key: Opcional para todos os tipos
- * - otp: Opcional - Código OTP para validação
- */
-export async function criarChavePixCorpX(dados: CorpXCreatePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
+export async function criarChavePixCorpX(alias: string, dados: CorpXCreatePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
   try {
-    console.log('[CORPX-PIX-CRIAR] Criando chave PIX...', { 
-      tax_document: dados.tax_document, 
-      tipo: dados.tipo,
-      hasKey: !!dados.key,
-      hasOtp: !!dados.otp
-    });
-    
-    // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
-    
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
-    
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.criarChavePix}`, {
+
+    const tipoStr = String(dados.tipo ?? '5');
+    const keyType = TIPO_TO_KEYTYPE[tipoStr] || 'random';
+    const body: { keyType: string; key?: string } = { keyType };
+    if (dados.key && tipoStr !== '5') {
+      body.key = dados.key.trim();
+    }
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const response = await fetch(`${baseUrl}${CORPX_CONFIG.endpoints.criarChavePix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${userToken}`
+        'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': alias,
       },
-      body: JSON.stringify(dados)
+      body: JSON.stringify(body)
     });
 
     const responseData = await response.json();
-    console.log('[CORPX-PIX-CRIAR] Resposta recebida:', responseData);
-    
-    // ✅ NOVO: Tratamento de erros conforme nova documentação
+    const raw = responseData?.data ?? responseData;
+
     if (!response.ok) {
-      // Erro 400, 401, 403, 429, 500
-      const errorResponse = responseData as {
-        error: boolean;
-        message: string;
-        details?: string;
-        apiResponse?: any;
-      };
-      
       return {
         erro: true,
-        message: errorResponse.message || `Erro HTTP ${response.status}`,
-        details: errorResponse.details || errorResponse.message,
-        apiResponse: errorResponse.apiResponse || responseData
+        message: responseData?.message || `Erro HTTP ${response.status}`,
+        details: responseData?.details || responseData?.message
       } as CorpXCreatePixKeyResponse;
     }
-    
-    // ✅ NOVO: Resposta de sucesso (200)
-    const successResponse = responseData as {
-      error: false;
-      message: string;
-      data?: {
-        key?: string;
-        tipo?: string;
-        tax_document?: string;
-      };
-    };
-    
-    if (successResponse.error === false) {
-      return {
-        erro: false,
-        message: successResponse.message || 'Chave PIX criada com sucesso',
-        data: successResponse.data
-      } as CorpXCreatePixKeyResponse;
-    } else {
-      // Caso inesperado: resposta ok mas com error: true
-      console.error('[CORPX-PIX-CRIAR] Erro na resposta:', successResponse.message);
-      return {
-        erro: true,
-        message: successResponse.message || 'Erro desconhecido',
-        details: successResponse.message
-      } as CorpXCreatePixKeyResponse;
-    }
-    
+
+    return {
+      erro: responseData?.error === true,
+      message: responseData?.message || 'Chave PIX criada com sucesso',
+      data: raw
+    } as CorpXCreatePixKeyResponse;
   } catch (error: any) {
     console.error('[CORPX-PIX-CRIAR] Erro ao criar chave:', error);
-    
-    // ✅ NOVO: Tratamento de erro de rede ou parsing
     return {
       erro: true,
       message: 'Erro ao criar chave PIX',
@@ -1296,42 +1276,117 @@ export async function gerarQRCodePixCorpX(dados: CorpXQRCodeRequest): Promise<Co
   }
 }
 
+/** Infere keyType v2 a partir da chave PIX */
+function inferKeyTypeFromKey(key: string): string {
+  const k = (key || '').trim();
+  if (!k) return 'random';
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(k)) return 'email';
+  if (/^(\+?55)?\d{10,11}$/.test(k.replace(/\D/g, ''))) return 'phone';
+  if (/^\d{11}$/.test(k.replace(/\D/g, ''))) return 'cpf';
+  if (/^\d{14}$/.test(k.replace(/\D/g, ''))) return 'cnpj';
+  if (k.length === 36 && k.includes('-')) return 'random';
+  return 'random';
+}
+
 /**
- * Executar transferência PIX completa
- * POST /api/corpx/pix/transferencia-completa
+ * Executar transferência PIX completa (CorpX v2)
+ * POST /api/corpx-v2/pix/out
+ * Header: X-Corpx-Account-Context: {alias}
  */
-export async function executarTransferenciaCompletaCorpX(dados: any): Promise<any | null> {
+export async function executarTransferenciaCompletaCorpX(alias: string, dados: any): Promise<any | null> {
   try {
-    console.log('[CORPX-PIX-COMPLETA] Executando transferência PIX completa...', dados);
-    
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
-    
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
-    
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/corpx/pix/transferencia-completa`, {
+
+    const valor = typeof dados.valor === 'number' ? dados.valor : parseFloat(String(dados.valor));
+    const keyType = inferKeyTypeFromKey(dados.key);
+    const identifier = `PIX-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    const body = {
+      amount: valor,
+      currency: 'BRL',
+      keyType,
+      key: (dados.key || '').trim(),
+      description: dados.description || dados.nome || undefined,
+      identifier,
+    };
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const response = await fetch(`${baseUrl}/api/corpx-v2/pix/out`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${userToken}`
+        'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': alias,
       },
-      body: JSON.stringify(dados)
+      body: JSON.stringify(body)
     });
 
+    const responseData = await response.json();
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(responseData?.message || `Erro HTTP ${response.status}`);
     }
 
-    const responseData = await response.json();
-    console.log('[CORPX-PIX-COMPLETA] Resposta recebida:', responseData);
-    
-    return responseData;
-    
+    return responseData?.data ?? responseData;
   } catch (error: any) {
-    console.error('[CORPX-PIX-COMPLETA] Erro ao executar transferência completa:', error.response?.data);
+    console.error('[CORPX-PIX-COMPLETA] Erro:', error?.message || error);
+    return null;
+  }
+}
+
+/**
+ * BigPIX — PIX > R$ 15k (CorpX v2)
+ * POST /api/corpx-v2/pix/out/bigpix
+ * Header: X-Corpx-Account-Context: {alias}
+ * Body: mesmo de pix/out — backend cuida da lógica
+ */
+export async function executarBigPixCorpX(alias: string, dados: { key: string; valor: number; tipo?: number; nome?: string; description?: string }): Promise<any | null> {
+  try {
+    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const userToken = TOKEN_STORAGE.get();
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+
+    const valor = typeof dados.valor === 'number' ? dados.valor : parseFloat(String(dados.valor));
+    const keyType = inferKeyTypeFromKey(dados.key);
+    const identifier = `BIGPIX-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    const body = {
+      amount: valor,
+      currency: 'BRL',
+      keyType,
+      key: (dados.key || '').trim(),
+      description: dados.description || dados.nome || undefined,
+      identifier,
+    };
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const response = await fetch(`${baseUrl}/api/corpx-v2/pix/out/bigpix`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': alias,
+      },
+      body: JSON.stringify(body)
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok || responseData?.error) {
+      throw new Error(responseData?.message || `Erro HTTP ${response.status}`);
+    }
+
+    return responseData?.data ?? responseData;
+  } catch (error: any) {
+    console.error('[CORPX-BIGPIX] Erro:', error?.message || error);
     return null;
   }
 }

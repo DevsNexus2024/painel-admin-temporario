@@ -34,20 +34,23 @@ interface TCRBackendResponse<T = any> {
 
 const TCR_CONFIG = {
   endpoints: {
-    // 💰 CONTA / SALDO (rotas corretas do backend)
-    consultarSaldo: '/api/corpx/account/saldo',
+    // 💰 CONTA / SALDO (CorpX v2)
+    consultarSaldo: '/api/corpx-v2/balance',
     consultarExtrato: '/api/corpx/account/extrato',
     criarConta: '/api/corpx/account/criar',
     
-    // 🔍 CONSULTA DE TRANSAÇÃO POR ENDTOEND
+    // 🔍 CONSULTA DE TRANSAÇÃO POR ENDTOEND (qtran com document + e2e - igual botão Verificar do extrato TCR)
     consultarTransacao: '/api/corpx/account/qtran',
     
-    // 🔑 CHAVES PIX (rotas corretas do backend)
-    listarChavesPix: '/api/corpx/pix/chaves',
-    criarChavePix: '/api/corpx/pix/chave',
-    cancelarChavePix: '/api/corpx/pix/chave',
+    // 🔑 CHAVES PIX (CorpX v2)
+    listarChavesPix: '/api/corpx-v2/pix/keys',
+    criarChavePix: '/api/corpx-v2/pix/keys',
+    cancelarChavePix: '/api/corpx-v2/pix/keys',
     
-    // 💸 TRANSFERÊNCIAS PIX (rotas corretas do backend)
+    // 💸 TRANSFERÊNCIAS PIX (CorpX v2 - 1 etapa)
+    pixOut: '/api/corpx-v2/pix/out',
+    bigPix: '/api/corpx-v2/pix/out/bigpix',
+    // v1 (legado - manter para referência)
     criarTransferenciaPix: '/api/corpx/pix/transferencia',
     confirmarTransferenciaPix: '/api/corpx/pix/transferencia/confirmar',
     
@@ -125,35 +128,32 @@ async function checkTokenStatus(): Promise<{
  */
 
 /**
- * Consultar Saldo
- * Endpoint: GET /api/corpx/account/saldo?tax_document=CNPJ
+ * Consultar Saldo (CorpX v2)
+ * Endpoint: GET /api/corpx-v2/balance
+ * Header: X-Corpx-Account-Context: {alias}
  */
-export async function consultarSaldoTCR(cnpj: string): Promise<CorpXSaldoResponse | null> {
+export async function consultarSaldoTCR(alias: string): Promise<CorpXSaldoResponse | null> {
   try {
-    
-    // ✅ Verificar status do token ANTES da requisição
     const tokenStatus = await checkTokenStatus();
-    
     if (!tokenStatus.isValid) {
       throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
     }
-    
-    // ✅ Obter token JWT diretamente como no bmp531.ts
+
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
-    
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
-    
-    const requestUrl = `${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.consultarSaldo}?tax_document=${cnpj}`;
-    const requestHeaders = {
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const requestUrl = `${baseUrl}${TCR_CONFIG.endpoints.consultarSaldo}?includeLocks=true`;
+    const requestHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Authorization': `Bearer ${userToken}`
+      'Authorization': `Bearer ${userToken}`,
+      'X-Corpx-Account-Context': alias,
     };
-    
-    
+
     const response = await fetch(requestUrl, {
       method: 'GET',
       headers: requestHeaders
@@ -165,32 +165,35 @@ export async function consultarSaldoTCR(cnpj: string): Promise<CorpXSaldoRespons
     }
 
     const responseData = await response.json();
-    
-    // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as TCRBackendResponse<any>;
-    
-    if (backendResponse.error === false && backendResponse.data) {
-      // Adaptar dados do backend para a interface esperada
+
+    // CorpX v2 response: { available, locked, total, currency, locks }
+    // Ou backend wrapper: { error: false, data: { available, locked, total, ... } }
+    const raw = responseData?.data ?? responseData;
+    const available = Number(raw?.available ?? raw?.saldo ?? 0);
+    const locked = Number(raw?.locked ?? raw?.saldoBloqueado ?? 0);
+    const total = Number(raw?.total ?? raw?.globalBalance ?? available + locked);
+
+    if (responseData?.error === false || (typeof raw?.available === 'number' || typeof raw?.total === 'number')) {
       return {
         erro: false,
-        globalBalance: backendResponse.data.globalBalance || 0,
-        saldo: backendResponse.data.saldo || backendResponse.data.globalBalance || 0,
-        saldoDisponivel: backendResponse.data.saldo_disp || backendResponse.data.saldoDisponivel || 0,
-        saldoBloqueado: backendResponse.data.saldo_block || backendResponse.data.saldoBloqueado || 0,
-        limite: 0, // Campo padrão
-        limiteBloqueado: backendResponse.data.saldo_block || backendResponse.data.saldoBloqueado || 0 // Compatibilidade
-      } as CorpXSaldoResponse;
-    } else {
-      return {
-        erro: true,
-        globalBalance: 0,
-        saldo: 0,
-        saldoDisponivel: 0,
-        saldoBloqueado: 0,
+        globalBalance: total,
+        saldo: total,
+        saldoDisponivel: available,
+        saldoBloqueado: locked,
         limite: 0,
-        limiteBloqueado: 0
+        limiteBloqueado: locked
       } as CorpXSaldoResponse;
     }
+
+    return {
+      erro: true,
+      globalBalance: 0,
+      saldo: 0,
+      saldoDisponivel: 0,
+      saldoBloqueado: 0,
+      limite: 0,
+      limiteBloqueado: 0
+    } as CorpXSaldoResponse;
     
   } catch (error: any) {
     console.error('[TCR-SALDO] Erro ao consultar saldo:', error.message);
@@ -599,27 +602,58 @@ export interface ConsultarTransacaoResponse {
   };
 }
 
+/** Transação normalizada para UI (v1 qtran ou v2 GET /pix/transactions) */
+export interface TransacaoVerificadaUI {
+  id?: string;
+  endToEndId?: string;
+  status?: string;
+  direction?: string;
+  flow?: 'in' | 'out';
+  amount?: number;
+  type?: string;
+  operation?: string;
+  method?: string;
+  fee?: number;
+  senderName?: string;
+  receiverName?: string;
+  senderTaxId?: string;
+  receiverTaxId?: string;
+  senderBankCode?: string;
+  senderBranchCode?: string;
+  senderAccountNumber?: string;
+  senderAccountType?: string;
+  receiverBankCode?: string;
+  receiverBranchCode?: string;
+  receiverAccountNumber?: string;
+  receiverAccountType?: string;
+  created?: string;
+  updated?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  description?: string;
+  reconciliationId?: string;
+  [key: string]: any;
+}
+
 export interface VerificacaoTransacaoResult {
   sucesso: boolean;
   status?: string;
   mensagem: string;
-  transacao?: ConsultarTransacaoResponse['data']['data']['requests'][0];
+  transacao?: TransacaoVerificadaUI;
   permiteOperacao: boolean;
 }
 
 /**
- * 🔍 Consultar Transação por EndToEnd
+ * Consultar Transação por EndToEnd (qtran com document + e2e)
  * Endpoint: POST /api/corpx/account/qtran
- * 
- * Verifica o status de uma transação na API usando o endtoend
+ * Body: { tax_document, endtoend }
+ * Igual ao botão Verificar do extrato TCR.
  */
 export async function consultarTransacaoPorEndToEndTCR(
   taxDocument: string,
   endtoend: string
 ): Promise<VerificacaoTransacaoResult> {
   try {
-    console.log('[TCR-QTRAN] Consultando transação...', { taxDocument, endtoend: endtoend.substring(0, 20) + '...' });
-    
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
 
@@ -631,13 +665,11 @@ export async function consultarTransacaoPorEndToEndTCR(
       };
     }
 
-    // Limpar tax_document (apenas números)
-    const taxDocumentLimpo = taxDocument.replace(/\D/g, '');
-    
+    const taxDocumentLimpo = (taxDocument || '').replace(/\D/g, '');
     if (!taxDocumentLimpo || taxDocumentLimpo.length < 11) {
       return {
         sucesso: false,
-        mensagem: 'Documento fiscal inválido',
+        mensagem: 'Documento (CNPJ/CPF) inválido',
         permiteOperacao: false
       };
     }
@@ -650,64 +682,104 @@ export async function consultarTransacaoPorEndToEndTCR(
       };
     }
 
-    const payload: ConsultarTransacaoRequest = {
-      tax_document: taxDocumentLimpo,
-      endtoend: endtoend.trim()
-    };
+    // qtran usa BASE_URL (baas-v1), igual extrato TCR
+    const baseUrl = API_CONFIG.BASE_URL;
+    const url = `${baseUrl}${TCR_CONFIG.endpoints.consultarTransacao}`;
 
-    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.consultarTransacao}`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${userToken}`
+        'Authorization': `Bearer ${userToken}`,
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        tax_document: taxDocumentLimpo,
+        endtoend: endtoend.trim(),
+      }),
     });
 
-    const responseData = await response.json() as ConsultarTransacaoResponse;
-    console.log('[TCR-QTRAN] Resposta recebida:', responseData);
+    const raw = await response.json();
 
-    if (!response.ok || responseData.error) {
+    if (!response.ok) {
       return {
         sucesso: false,
-        mensagem: responseData.message || `Erro ao consultar transação: HTTP ${response.status}`,
+        mensagem: raw?.message || `Erro ao consultar transação: HTTP ${response.status}`,
         permiteOperacao: false
       };
     }
 
-    // Verificar se encontrou a transação
-    const requests = responseData.data?.data?.requests || [];
-    
-    if (requests.length === 0) {
+    // qtran pode retornar { data: { data: { requests: [...] } } } ou { data: {...} } direto
+    let data = raw?.data ?? raw;
+    if (data?.data?.requests?.length) {
+      data = data.data.requests[0];
+    } else if (data?.data?.reversals?.length) {
+      data = data.data.reversals[0];
+    } else if (typeof data?.data === 'object' && !Array.isArray(data.data)) {
+      data = data.data;
+    }
+    const hasValidTx = data && (data.id || data.transactionId || data.idEndToEnd || data.endToEndId);
+    if (!hasValidTx) {
       return {
         sucesso: false,
-        mensagem: 'Transação não encontrada na API. O endtoend pode estar incorreto ou a transação não foi processada.',
+        mensagem: raw?.message || 'Transação não encontrada na API. O endToEnd pode estar incorreto ou a transação não foi processada.',
         permiteOperacao: false
       };
     }
 
-    // Pegar a primeira transação (geralmente só tem uma)
-    const transacao = requests[0];
-    const status = transacao.status?.toLowerCase();
+    const status = (data.status || data.Status || '').toUpperCase();
+    const permiteOperacao = status === 'SUCCESS';
 
-    // Verificar se o status permite operação
-    const statusPermitidos = ['success', 'completed', 'approved', 'confirmed'];
-    const permiteOperacao = statusPermitidos.includes(status);
+    // Mapear qtran/v2 → formato esperado pela UI (amount em centavos, sender/receiver)
+    const amountBRL = typeof data.amount === 'number' ? data.amount : parseFloat(data.amount || data.valor || '0') || 0;
+    const feeAmount = data.fee?.amount != null
+      ? (data.fee.amount > 1 ? data.fee.amount : Math.round(data.fee.amount * 100))
+      : 0;
+    const transacao = {
+      id: data.id || data.transactionId || data.idEndToEnd,
+      endToEndId: data.endToEndId || data.endToEnd || data.idEndToEnd || endtoend,
+      status: data.status,
+      direction: data.direction,
+      flow: ((data.direction || '').toLowerCase() === 'in' ? 'in' : 'out') as 'in' | 'out',
+      amount: Math.round(amountBRL * 100),
+      type: data.type,
+      operation: data.operation,
+      method: data.method,
+      fee: feeAmount,
+      senderName: data.payer?.name,
+      receiverName: data.payee?.name,
+      senderTaxId: data.payer?.document,
+      receiverTaxId: data.payee?.document,
+      senderBankCode: data.payer?.bankCode,
+      senderBranchCode: data.payer?.branch,
+      senderAccountNumber: data.payer?.account,
+      senderAccountType: data.payer?.accountType || '-',
+      receiverBankCode: data.payee?.bankCode,
+      receiverBranchCode: data.payee?.branch,
+      receiverAccountNumber: data.payee?.account,
+      receiverAccountType: data.payee?.accountType || '-',
+      created: data.createdAt,
+      updated: data.updatedAt,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      description: data.operation || data.errorReason,
+      errorReason: data.errorReason,
+      _v2: data
+    };
 
     if (permiteOperacao) {
       return {
         sucesso: true,
-        status: transacao.status,
-        mensagem: `Transação verificada com sucesso! Status: ${transacao.status.toUpperCase()}`,
+        status: data.status,
+        mensagem: `Transação verificada com sucesso! Status: ${data.status}`,
         transacao,
         permiteOperacao: true
       };
     } else {
       return {
         sucesso: true,
-        status: transacao.status,
-        mensagem: `Transação encontrada, porém com status "${transacao.status.toUpperCase()}". Operações de crédito/compensação não são permitidas para transações com este status.`,
+        status: data.status,
+        mensagem: `Transação encontrada, porém com status "${data.status}". Operações de crédito/compensação não são permitidas.`,
         transacao,
         permiteOperacao: false
       };
@@ -715,7 +787,6 @@ export async function consultarTransacaoPorEndToEndTCR(
 
   } catch (error: any) {
     console.error('[TCR-QTRAN] Erro ao consultar transação:', error);
-    
     return {
       sucesso: false,
       mensagem: `Erro ao consultar transação: ${error.message || 'Erro de conexão'}`,
@@ -787,25 +858,26 @@ export async function criarContaTCR(dados: CorpXCreateAccountRequest): Promise<C
  */
 
 /**
- * Listar Chaves PIX
- * Endpoint: GET /api/corpx/pix/chaves?tax_document=CNPJ
+ * Listar Chaves PIX (CorpX v2)
+ * Endpoint: GET /api/corpx-v2/pix/keys
+ * Header: X-Corpx-Account-Context: {alias}
  */
-export async function listarChavesPixTCR(cnpj: string): Promise<CorpXPixKeysResponse | null> {
+export async function listarChavesPixTCR(alias: string): Promise<CorpXPixKeysResponse | null> {
   try {
-    // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
-    
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
-    
-    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.listarChavesPix}?tax_document=${cnpj}`, {
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const response = await fetch(`${baseUrl}${TCR_CONFIG.endpoints.listarChavesPix}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${userToken}`
+        'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': alias,
       }
     });
 
@@ -814,88 +886,80 @@ export async function listarChavesPixTCR(cnpj: string): Promise<CorpXPixKeysResp
     }
 
     const responseData = await response.json();
-    
-    // Backend retorna: { error: false, message: "...", data: [...] }
-    const backendResponse = responseData as TCRBackendResponse<any[]>;
-    
-    if (backendResponse.error === false && backendResponse.data) {
-      
-      const chaves = backendResponse.data.map((item: any, index: number) => {
-        
-        // ✅ CORREÇÃO: API retorna 'keypix', não 'chave'
-        const chaveMapeada = {
-          id: item.keypix || item.id || item.chave || index.toString(),
-          key: item.keypix || item.chave || item.key || '',
-          type: item.tipo || item.type || 'RANDOM',
-          status: item.status || 'ACTIVE',
-          created_at: item.criado || item.created_at || item.dataCriacao || new Date().toISOString()
-        };
-        
-        return chaveMapeada;
-      });
-      
-      return {
-        erro: false,
-        chaves
-      } as CorpXPixKeysResponse;
-    } else {
-      return {
-        erro: true,
-        chaves: []
-      } as CorpXPixKeysResponse;
-    }
-    
+    const raw = responseData?.data ?? responseData;
+    const arr = Array.isArray(raw) ? raw : (raw?.keys ?? raw?.chaves ?? []);
+
+    const chaves = (Array.isArray(arr) ? arr : []).map((item: any, index: number) => ({
+      id: item.keypix || item.id || item.key || item.chave || index.toString(),
+      key: item.keypix || item.key || item.chave || '',
+      type: item.keyType || item.tipo || item.type || 'RANDOM',
+      status: item.status || 'ACTIVE',
+      created_at: item.created_at || item.criado || item.dataCriacao || new Date().toISOString()
+    }));
+
+    return {
+      erro: responseData?.error === true ? true : false,
+      chaves
+    } as CorpXPixKeysResponse;
   } catch (error: any) {
     console.error('[TCR-PIX-CHAVES] Erro ao listar chaves:', error.message);
     return null;
   }
 }
 
+/** Mapeia tipo v1 (1-5) para keyType v2 */
+const TIPO_TO_KEYTYPE: Record<string, string> = {
+  '1': 'cpf', '2': 'cnpj', '3': 'phone', '4': 'email', '5': 'random'
+};
+
 /**
- * Criar Chave PIX
- * Endpoint: POST /api/corpx/pix/chave
+ * Criar Chave PIX (CorpX v2)
+ * Endpoint: POST /api/corpx-v2/pix/keys
+ * Header: X-Corpx-Account-Context: {alias}
+ * Body: { keyType, key? }
  */
-export async function criarChavePixTCR(dados: CorpXCreatePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
+export async function criarChavePixTCR(alias: string, dados: CorpXCreatePixKeyRequest): Promise<CorpXCreatePixKeyResponse | null> {
   try {
-    // ✅ Obter token JWT diretamente como no bmp531.ts
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
     const userToken = TOKEN_STORAGE.get();
-    
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
-    
-    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.criarChavePix}`, {
+
+    const tipoStr = String(dados.tipo ?? '5');
+    const keyType = TIPO_TO_KEYTYPE[tipoStr] || 'random';
+    const body: { keyType: string; key?: string } = { keyType };
+    if (dados.key && tipoStr !== '5') {
+      body.key = dados.key.trim();
+    }
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const response = await fetch(`${baseUrl}${TCR_CONFIG.endpoints.criarChavePix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${userToken}`
+        'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': alias,
       },
-      body: JSON.stringify(dados)
+      body: JSON.stringify(body)
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
     const responseData = await response.json();
-    
-    // Backend retorna: { error: false, message: "...", data: {...} }
-    const backendResponse = responseData as TCRBackendResponse<any>;
-    
-    if (backendResponse.error === false) {
-      return {
-        erro: false,
-        message: backendResponse.message
-      } as CorpXCreatePixKeyResponse;
-    } else {
+    const raw = responseData?.data ?? responseData;
+
+    if (!response.ok) {
       return {
         erro: true,
-        message: backendResponse.message
+        message: responseData?.message || `Erro HTTP ${response.status}`
       } as CorpXCreatePixKeyResponse;
     }
-    
+
+    return {
+      erro: responseData?.error === true,
+      message: responseData?.message || 'Chave PIX criada com sucesso',
+      data: raw
+    } as CorpXCreatePixKeyResponse;
   } catch (error: any) {
     console.error('[TCR-PIX-CRIAR] Erro ao criar chave:', error.message);
     return null;
@@ -1141,37 +1205,150 @@ export async function gerarQRCodePixTCR(dados: CorpXQRCodeRequest): Promise<Corp
   }
 }
 
+/** Infere keyType v2 a partir da chave PIX */
+function inferKeyType(key: string): string {
+  const k = (key || '').trim();
+  if (!k) return 'random';
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(k)) return 'email';
+  if (/^(\+?55)?\d{10,11}$/.test(k.replace(/\D/g, ''))) return 'phone';
+  if (/^\d{11}$/.test(k.replace(/\D/g, ''))) return 'cpf';
+  if (/^\d{14}$/.test(k.replace(/\D/g, ''))) return 'cnpj';
+  if (k.length === 36 && k.includes('-')) return 'random';
+  return 'random';
+}
+
 /**
- * 🎯 FLUXO COMPLETO - Enviar PIX
+ * Enviar PIX (CorpX v2) - 1 etapa
+ * Endpoint: POST /api/corpx-v2/pix/out
+ * Header: X-Corpx-Account-Context: {alias}
  */
 export async function enviarPixCompletoTCR(
   dadosTransferencia: CorpXPixTransferRequest
 ): Promise<{ criacao: CorpXPixTransferResponse; confirmacao: CorpXPixConfirmResponse } | null> {
   try {
-    // 1. Criar transferência
-    const criacao = await criarTransferenciaPixTCR(dadosTransferencia);
-    
-    if (!criacao || criacao.erro) {
-      throw new Error('Erro ao criar transferência');
+    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const { TCR_CORPX_ALIAS } = await import('@/contexts/CorpXContext');
+    const userToken = TOKEN_STORAGE.get();
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
 
-    // 2. Confirmar transferência
-    const confirmacao = await confirmarTransferenciaPixTCR({
-      endtoend: criacao.endtoend,
-      tax_document: dadosTransferencia.tax_document
+    const valor = typeof dadosTransferencia.valor === 'number' ? dadosTransferencia.valor : parseFloat(String(dadosTransferencia.valor));
+    const keyType = inferKeyType(dadosTransferencia.key);
+    const identifier = `PIX-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    const body = {
+      amount: valor,
+      currency: 'BRL',
+      keyType,
+      key: dadosTransferencia.key.trim(),
+      description: dadosTransferencia.description || dadosTransferencia.nome || undefined,
+      identifier,
+    };
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const response = await fetch(`${baseUrl}${TCR_CONFIG.endpoints.pixOut}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': TCR_CORPX_ALIAS,
+      },
+      body: JSON.stringify(body)
     });
 
-    if (!confirmacao || confirmacao.erro) {
-      throw new Error('Erro ao confirmar transferência');
+    const responseData = await response.json();
+    const raw = responseData?.data ?? responseData;
+
+    if (!response.ok) {
+      throw new Error(responseData?.message || `Erro HTTP ${response.status}`);
     }
 
+    const endToEnd = raw?.endToEndId ?? raw?.endtoend ?? raw?.id ?? identifier;
     return {
-      criacao,
-      confirmacao
+      criacao: {
+        erro: false,
+        endtoend: endToEnd,
+        key: dadosTransferencia.key,
+        Valor: String(valor),
+      } as CorpXPixTransferResponse,
+      confirmacao: {
+        erro: false,
+        idEndToEnd: endToEnd,
+        message: 'PIX enviado com sucesso',
+        amount: valor,
+      } as CorpXPixConfirmResponse,
     };
-    
   } catch (error: any) {
-    console.error('[TCR-PIX-COMPLETO] Erro no fluxo completo:', error.message);
+    console.error('[TCR-PIX-COMPLETO] Erro:', error.message);
+    return null;
+  }
+}
+
+/**
+ * BigPIX — PIX > R$ 15k (CorpX v2)
+ * POST /api/corpx-v2/pix/out/bigpix
+ * Header: X-Corpx-Account-Context: TCR
+ */
+export async function enviarBigPixTCR(dados: { key: string; valor: number; tipo?: number; nome?: string; description?: string }): Promise<{ criacao: CorpXPixTransferResponse; confirmacao: CorpXPixConfirmResponse } | null> {
+  try {
+    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const { TCR_CORPX_ALIAS } = await import('@/contexts/CorpXContext');
+    const userToken = TOKEN_STORAGE.get();
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+
+    const valor = typeof dados.valor === 'number' ? dados.valor : parseFloat(String(dados.valor));
+    const keyType = inferKeyType(dados.key);
+    const identifier = `BIGPIX-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    const body = {
+      amount: valor,
+      currency: 'BRL',
+      keyType,
+      key: dados.key.trim(),
+      description: dados.description || dados.nome || undefined,
+      identifier,
+    };
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const response = await fetch(`${baseUrl}${TCR_CONFIG.endpoints.bigPix}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': TCR_CORPX_ALIAS,
+      },
+      body: JSON.stringify(body)
+    });
+
+    const responseData = await response.json();
+    const raw = responseData?.data ?? responseData;
+
+    if (!response.ok) {
+      throw new Error(responseData?.message || `Erro HTTP ${response.status}`);
+    }
+
+    const endToEnd = raw?.endToEndId ?? raw?.endtoend ?? raw?.id ?? identifier;
+    return {
+      criacao: {
+        erro: false,
+        endtoend: endToEnd,
+        key: dados.key,
+        Valor: String(valor),
+      } as CorpXPixTransferResponse,
+      confirmacao: {
+        erro: false,
+        idEndToEnd: endToEnd,
+        message: 'BigPIX enviado com sucesso',
+        amount: valor,
+      } as CorpXPixConfirmResponse,
+    };
+  } catch (error: any) {
+    console.error('[TCR-BIGPIX] Erro:', error.message);
     return null;
   }
 }

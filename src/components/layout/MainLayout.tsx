@@ -22,7 +22,8 @@ import {
     Building2,
     HelpCircle,
     FileSearch,
-    DollarSign
+    DollarSign,
+    ShieldAlert
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -527,6 +528,26 @@ export default function MainLayout() {
                                     )}
                                 </div>
                             </div>
+                            )}
+
+                            {/* ========== ADMINISTRAÇÃO ========== */}
+                            {/* Permissões PIX: escondido e inacessível */}
+                            {false && canShow("/pix-permissions") && (
+                                <div className="pb-2">
+                                    {!isCollapsed && (
+                                        <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                            Administração
+                                        </h3>
+                                    )}
+                                    <div className="space-y-1">
+                                        <SidebarLink
+                                            to="/pix-permissions"
+                                            icon={<ShieldAlert className="h-4 w-4" />}
+                                            label="Permissões PIX"
+                                            isCollapsed={isCollapsed}
+                                        />
+                                    </div>
+                                </div>
                             )}
                         </nav>
                     </ScrollArea>
