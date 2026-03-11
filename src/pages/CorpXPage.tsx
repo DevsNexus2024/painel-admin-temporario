@@ -53,40 +53,68 @@ function PixNormalComponent() {
     return valor.replace(/\D/g, ''); // Remove tudo que não é número - apenas para CPF/CNPJ
   };
 
+  const isInterna = formData.tipo === '1';
+
   const executarPix = async () => {
     if (!formData.key || !formData.valor) {
-      toast.error("Chave PIX e valor são obrigatórios");
+      toast.error(isInterna ? "CPF/CNPJ do destinatário e valor são obrigatórios" : "Chave PIX e valor são obrigatórios");
+      return;
+    }
+
+    if (isInterna && (!selectedAccount.cnpj || selectedAccount.cnpj === 'ALL')) {
+      toast.error('Selecione uma conta específica para transferência interna');
       return;
     }
 
     setIsLoading(true);
     try {
       const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
-      
-      const payload = {
-        tax_document: limparFormatacaoDocumento(selectedAccount.cnpj), // Remove formatação do documento
-        key: formData.key, // Mantém a chave PIX original SEM formatação
-        tipo: parseInt(formData.tipo),
-        valor: valorNumerico,
-        nome: formData.nome || undefined,
-        description: formData.description || undefined
-      };
 
+      if (isInterna) {
+        const originDoc = limparFormatacaoDocumento(selectedAccount.cnpj);
+        const { transferenciaInternaCorpX } = await import('@/services/corpx');
+        const result = await transferenciaInternaCorpX(
+          originDoc,
+          formData.key,
+          valorNumerico,
+          formData.description || formData.nome || undefined
+        );
 
-      const { executarTransferenciaCompletaCorpX } = await import('@/services/corpx');
-      const alias = selectedAccount.corpxAlias || getCorpxAliasByCnpj(limparFormatacaoDocumento(selectedAccount.cnpj));
-      if (!alias) {
-        toast.error('Selecione uma conta específica para enviar PIX');
-        return;
+        if (!result) {
+          toast.error("Erro ao executar transferência interna");
+          return;
+        }
+
+        toast.success("Transferência interna executada com sucesso!", {
+          description: result.transferId ? `ID: ${result.transferId}` : undefined,
+          duration: 5000
+        });
+      } else {
+        const payload = {
+          tax_document: limparFormatacaoDocumento(selectedAccount.cnpj),
+          key: formData.key,
+          tipo: parseInt(formData.tipo),
+          valor: valorNumerico,
+          nome: formData.nome || undefined,
+          description: formData.description || undefined
+        };
+
+        const { executarTransferenciaCompletaCorpX } = await import('@/services/corpx');
+        const alias = selectedAccount.corpxAlias || getCorpxAliasByCnpj(limparFormatacaoDocumento(selectedAccount.cnpj));
+        if (!alias) {
+          toast.error('Selecione uma conta específica para enviar PIX');
+          return;
+        }
+        const result = await executarTransferenciaCompletaCorpX(alias, payload);
+
+        if (!result || result.error) {
+          toast.error(result?.message || "Erro ao executar PIX");
+          return;
+        }
+
+        toast.success("PIX executado com sucesso!");
       }
-      const result = await executarTransferenciaCompletaCorpX(alias, payload);
 
-      if (!result || result.error) {
-        toast.error(result?.message || "Erro ao executar PIX");
-        return;
-      }
-
-      toast.success("PIX executado com sucesso!");
       // Reset form
       setFormData({
         key: '',
@@ -95,8 +123,10 @@ function PixNormalComponent() {
         nome: '',
         description: ''
       });
-    } catch (error) {
-      toast.error("Erro ao executar PIX");
+    } catch (error: any) {
+      toast.error(isInterna ? "Erro na transferência interna" : "Erro ao executar PIX", {
+        description: error?.message || "Tente novamente"
+      });
     } finally {
       setIsLoading(false);
     }
@@ -135,12 +165,14 @@ function PixNormalComponent() {
 
         <div className="space-y-3">
           <div>
-            <Label htmlFor="pix-key">Chave PIX Destinatário</Label>
+            <Label htmlFor="pix-key">
+              {isInterna ? 'CPF/CNPJ do destinatário' : 'Chave PIX Destinatário'}
+            </Label>
             <Input
               id="pix-key"
               value={formData.key}
               onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
-              placeholder="email@exemplo.com, CPF, CNPJ, celular ou chave aleatória"
+              placeholder={isInterna ? 'CPF ou CNPJ da conta de destino (ex: 14.283.885/0001-98)' : 'email@exemplo.com, CPF, CNPJ, celular ou chave aleatória'}
             />
           </div>
 
@@ -192,7 +224,7 @@ function PixNormalComponent() {
 
         <Button 
           onClick={executarPix}
-          disabled={isLoading}
+          disabled={isLoading || (isInterna && (!selectedAccount.cnpj || selectedAccount.cnpj === 'ALL'))}
           className="w-full"
         >
           {isLoading ? (

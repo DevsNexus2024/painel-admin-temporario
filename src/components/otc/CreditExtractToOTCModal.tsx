@@ -218,6 +218,13 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
       return { provider: 'brasilcash', codigo: codigo || extractRecord.code };
     }
 
+    // 🟣 Detectar BelmontX OTC: path /belmontx-otc
+    if (path.includes('/belmontx-otc')) {
+      const codigo = extractRecord._original?.endToEndId || extractRecord._original?.end_to_end_id || extractRecord.code;
+      console.log('✅ [DETECT-PROVIDER] BelmontX OTC detectado:', codigo);
+      return { provider: 'belmontx', codigo: codigo || extractRecord.code };
+    }
+
     // 🟪 Detectar Bitso: tem bitsoData ou endToEndId no _original
     if (extractRecord.bitsoData || extractRecord._original?.endToEndId) {
       return {
@@ -339,6 +346,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
     return provider === 'bitso' ? 'BITSO' 
       : provider === 'corpx' ? 'CORPX'
       : provider === 'brasilcash' ? 'BRASILCASH OTC'
+      : provider === 'belmontx' ? 'BELMONTX'
       : provider === 'bmp531' ? 'BMP-531'
       : 'BMP-274';
   };
@@ -482,6 +490,25 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         }
         
         console.log('🔧 [OTC-MODAL] Dados CorpX para backend:', { provider, dados_extrato, status: transactionStatus });
+      } else if (provider === 'belmontx') {
+        // Para BelmontX OTC: estrutura similar ao Bitso (endToEndId, transactionId)
+        const endToEndId = extractRecord._original?.endToEndId || extractRecord.code;
+        const transactionId = extractRecord._original?.transactionId || extractRecord._original?.id || extractRecord.id;
+        
+        dados_extrato = extractRecord._original ? {
+          ...extractRecord._original,
+          endToEndId: extractRecord._original.endToEndId || endToEndId,
+          id: transactionId,
+          dateTime: extractRecord._original.createdAt || extractRecord._original.dateTime || extractRecord.dateTime
+        } : {
+          endToEndId: endToEndId,
+          id: transactionId,
+          dateTime: extractRecord.dateTime
+        };
+        
+        if (transactionStatus && !dados_extrato.status) {
+          dados_extrato.status = transactionStatus;
+        }
       } else if (provider === 'bitso') {
         // Para Bitso, garantir que endToEndId seja usado corretamente
         const endToEndId = extractRecord._original?.endToEndId || extractRecord.code;
@@ -559,8 +586,8 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         dados_extrato,    // Objeto completo do provider
         provider,         // Provider identificado
         // 🔄 CAMPOS LEGADOS (FALLBACK)
-        // Para Bitso e BrasilCash, reference_code deve ser o endToEndId
-        reference_code: (provider === 'bitso' || provider === 'brasilcash')
+        // Para Bitso, BrasilCash e BelmontX, reference_code deve ser o endToEndId
+        reference_code: (provider === 'bitso' || provider === 'brasilcash' || provider === 'belmontx')
           ? (extractRecord._original?.endToEndId || extractRecord._original?.end_to_end_id || extractRecord.code)
           : extractRecord.code,
         reference_external_id: extractRecord.id,

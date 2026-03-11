@@ -682,37 +682,60 @@ function PixNormalComponentTCR() {
     return valor.replace(/\D/g, ''); // Remove tudo que não é número - apenas para CPF/CNPJ
   };
 
+  const isInterna = formData.tipo === '1';
+
   const executarPix = async () => {
     if (!formData.key || !formData.valor) {
-      toast.error("Chave PIX e valor são obrigatórios");
+      toast.error(isInterna ? "CPF/CNPJ do destinatário e valor são obrigatórios" : "Chave PIX e valor são obrigatórios");
       return;
     }
 
     setIsLoading(true);
     try {
       const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
-      
-      const payload = {
-        tax_document: limparFormatacaoDocumento(TCR_CNPJ), // Remove formatação do documento
-        key: formData.key, // Mantém a chave PIX original SEM formatação
-        tipo: parseInt(formData.tipo),
-        valor: valorNumerico,
-        nome: formData.nome || undefined,
-        description: formData.description || undefined
-      };
 
-      const { enviarPixCompletoTCR } = await import('@/services/tcr');
-      const result = await enviarPixCompletoTCR(payload);
+      if (isInterna) {
+        // Transferência interna: origem = TCR, destino = documento informado
+        const { transferenciaInternaTCR } = await import('@/services/tcr');
+        const result = await transferenciaInternaTCR(
+          TCR_CNPJ,
+          formData.key,
+          valorNumerico,
+          formData.description || formData.nome || undefined
+        );
 
-      if (!result || result.confirmacao?.erro) {
-        toast.error(result?.confirmacao?.message || "Erro ao executar PIX");
-        return;
-      }
+        if (!result) {
+          toast.error("Erro ao executar transferência interna");
+          return;
+        }
 
-      toast.success("PIX executado com sucesso!", {
-        description: `End-to-End: ${result.confirmacao?.idEndToEnd || 'N/A'}`,
-        duration: 5000
-      });
+        toast.success("Transferência interna executada com sucesso!", {
+          description: result.transferId ? `ID: ${result.transferId}` : undefined,
+          duration: 5000
+        });
+      } else {
+        const payload = {
+          tax_document: limparFormatacaoDocumento(TCR_CNPJ),
+          key: formData.key,
+          tipo: parseInt(formData.tipo),
+          valor: valorNumerico,
+          nome: formData.nome || undefined,
+          description: formData.description || undefined
+        };
+
+        const { enviarPixCompletoTCR } = await import('@/services/tcr');
+        const result = await enviarPixCompletoTCR(payload);
+
+        if (!result || result.confirmacao?.erro) {
+          toast.error(result?.confirmacao?.message || "Erro ao executar PIX");
+          return;
+        }
+
+        toast.success("PIX executado com sucesso!", {
+          description: `End-to-End: ${result.confirmacao?.idEndToEnd || 'N/A'}`,
+          duration: 5000
+        });
+      } 
       
       // Reset form
       setFormData({
@@ -723,7 +746,7 @@ function PixNormalComponentTCR() {
         description: ''
       });
     } catch (error: any) {
-      toast.error("Erro ao executar PIX", {
+      toast.error(isInterna ? "Erro na transferência interna" : "Erro ao executar PIX", {
         description: error.message || "Tente novamente"
       });
     } finally {
@@ -764,12 +787,14 @@ function PixNormalComponentTCR() {
 
         <div className="space-y-3">
           <div>
-            <Label htmlFor="pix-key-tcr">Chave PIX Destinatário</Label>
+            <Label htmlFor="pix-key-tcr">
+              {isInterna ? 'CPF/CNPJ do destinatário' : 'Chave PIX Destinatário'}
+            </Label>
             <Input
               id="pix-key-tcr"
               value={formData.key}
               onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
-              placeholder="email@exemplo.com, CPF, CNPJ, celular ou chave aleatória"
+              placeholder={isInterna ? 'CPF ou CNPJ da conta de destino (ex: 14.283.885/0001-98)' : 'email@exemplo.com, CPF, CNPJ, celular ou chave aleatória'}
             />
           </div>
 

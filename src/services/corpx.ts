@@ -40,7 +40,10 @@ const CORPX_CONFIG = {
     consultarExtrato: '/api/corpx/account/extrato',
     criarConta: '/api/corpx/account/criar',
     
-    // 🔍 CONSULTA DE TRANSAÇÃO POR ENDTOEND (qtran com document + e2e - igual botão Verificar do extrato TCR)
+    // 🔍 CONSULTA DE TRANSAÇÃO POR ENDTOEND
+    // NOVO: GET /api/corpx-v2/pix/transactions?endToEndId= (API-CORPX-V2-TRANSACTIONS.md)
+    consultarTransacaoV2: '/api/corpx-v2/pix/transactions',
+    // LEGADO: POST /api/corpx/account/qtran (fallback)
     consultarTransacao: '/api/corpx/account/qtran',
     
     // 🔑 CHAVES PIX (CorpX v2)
@@ -613,10 +616,50 @@ export interface VerificacaoTransacaoResult {
 }
 
 /**
- * Consultar Transação por EndToEnd (qtran com document + e2e)
- * Endpoint: POST /api/corpx/account/qtran
- * Body: { tax_document, endtoend }
- * Igual ao botão Verificar do extrato TCR.
+ * Mapeia resposta da API v2 (GET /api/corpx-v2/pix/transactions) para formato da UI
+ */
+function mapearTransacaoV2ParaUI(data: any, endtoend: string) {
+  const amountBRL = typeof data.amount === 'number' ? data.amount : parseFloat(data.amount || data.valor || '0') || 0;
+  const feeAmount = data.fee?.amount != null
+    ? (data.fee.amount > 1 ? data.fee.amount : Math.round(data.fee.amount * 100))
+    : 0;
+  return {
+    id: data.id || data.transactionId || data.idEndToEnd,
+    endToEndId: data.endToEndId || data.endToEnd || data.idEndToEnd || endtoend,
+    status: data.status,
+    direction: data.direction,
+    flow: ((data.direction || '').toLowerCase() === 'in' ? 'in' : 'out') as 'in' | 'out',
+    amount: Math.round(amountBRL * 100),
+    type: data.type,
+    operation: data.operation,
+    method: data.method,
+    fee: feeAmount,
+    senderName: data.payer?.name,
+    receiverName: data.payee?.name,
+    senderTaxId: data.payer?.document,
+    receiverTaxId: data.payee?.document,
+    senderBankCode: data.payer?.bankCode,
+    senderBranchCode: data.payer?.branch,
+    senderAccountNumber: data.payer?.account,
+    senderAccountType: data.payer?.accountType || '-',
+    receiverBankCode: data.payee?.bankCode,
+    receiverBranchCode: data.payee?.branch,
+    receiverAccountNumber: data.payee?.account,
+    receiverAccountType: data.payee?.accountType || '-',
+    created: data.createdAt,
+    updated: data.updatedAt,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
+    description: data.operation || data.errorReason,
+    errorReason: data.errorReason,
+    _v2: data
+  };
+}
+
+/**
+ * Consultar Transação por EndToEnd
+ * NOVO: GET /api/corpx-v2/pix/transactions?endToEndId= (API-CORPX-V2-TRANSACTIONS.md)
+ * Fallback: POST /api/corpx/account/qtran
  */
 export async function consultarTransacaoPorEndToEnd(
   taxDocument: string,
@@ -651,7 +694,47 @@ export async function consultarTransacaoPorEndToEnd(
       };
     }
 
-    // qtran usa BASE_URL (baas-v1), igual extrato TCR
+    const endtoendTrim = endtoend.trim();
+
+    // 1. Tentar API nova: GET /api/corpx-v2/pix/transactions?endToEndId=
+    const baseUrlV2 = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const urlV2 = `${baseUrlV2}${CORPX_CONFIG.endpoints.consultarTransacaoV2}?endToEndId=${encodeURIComponent(endtoendTrim)}`;
+
+    const headersV2: Record<string, string> = {
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${userToken}`,
+      'X-Corpx-Account-Context': taxDocumentLimpo,
+    };
+
+    const responseV2 = await fetch(urlV2, { method: 'GET', headers: headersV2 });
+
+    if (responseV2.ok) {
+      try {
+        const rawV2 = await responseV2.json();
+        // Backend pode retornar { data: {...} } ou objeto direto
+        let data = rawV2?.data ?? rawV2;
+        const hasValidTx = data && (data.id || data.transactionId || data.idEndToEnd || data.endToEndId);
+        if (hasValidTx) {
+          const status = (data.status || data.Status || '').toUpperCase();
+          const permiteOperacao = status === 'SUCCESS';
+          const transacao = mapearTransacaoV2ParaUI(data, endtoendTrim);
+          return {
+            sucesso: true,
+            status: data.status,
+            mensagem: permiteOperacao
+              ? `Transação verificada com sucesso! Status: ${data.status}`
+              : `Transação encontrada, porém com status "${data.status}". Operações de crédito/compensação não são permitidas.`,
+            transacao,
+            permiteOperacao,
+            rawResponse: rawV2
+          };
+        }
+      } catch {
+        // Resposta v2 inválida, seguir para fallback qtran
+      }
+    }
+
+    // 2. Fallback: qtran (POST /api/corpx/account/qtran)
     const baseUrl = API_CONFIG.BASE_URL;
     const url = `${baseUrl}${CORPX_CONFIG.endpoints.consultarTransacao}`;
 
@@ -664,7 +747,7 @@ export async function consultarTransacaoPorEndToEnd(
       },
       body: JSON.stringify({
         tax_document: taxDocumentLimpo,
-        endtoend: endtoend.trim(),
+        endtoend: endtoendTrim,
       }),
     });
 
@@ -700,42 +783,7 @@ export async function consultarTransacaoPorEndToEnd(
 
     const status = (data.status || data.Status || '').toUpperCase();
     const permiteOperacao = status === 'SUCCESS';
-
-    const amountBRL = typeof data.amount === 'number' ? data.amount : parseFloat(data.amount || data.valor || '0') || 0;
-    const feeAmount = data.fee?.amount != null
-      ? (data.fee.amount > 1 ? data.fee.amount : Math.round(data.fee.amount * 100))
-      : 0;
-    const transacao = {
-      id: data.id || data.transactionId || data.idEndToEnd,
-      endToEndId: data.endToEndId || data.endToEnd || data.idEndToEnd || endtoend,
-      status: data.status,
-      direction: data.direction,
-      flow: ((data.direction || '').toLowerCase() === 'in' ? 'in' : 'out') as 'in' | 'out',
-      amount: Math.round(amountBRL * 100),
-      type: data.type,
-      operation: data.operation,
-      method: data.method,
-      fee: feeAmount,
-      senderName: data.payer?.name,
-      receiverName: data.payee?.name,
-      senderTaxId: data.payer?.document,
-      receiverTaxId: data.payee?.document,
-      senderBankCode: data.payer?.bankCode,
-      senderBranchCode: data.payer?.branch,
-      senderAccountNumber: data.payer?.account,
-      senderAccountType: data.payer?.accountType || '-',
-      receiverBankCode: data.payee?.bankCode,
-      receiverBranchCode: data.payee?.branch,
-      receiverAccountNumber: data.payee?.account,
-      receiverAccountType: data.payee?.accountType || '-',
-      created: data.createdAt,
-      updated: data.updatedAt,
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt,
-      description: data.operation || data.errorReason,
-      errorReason: data.errorReason,
-      _v2: data
-    };
+    const transacao = mapearTransacaoV2ParaUI(data, endtoendTrim);
 
     if (permiteOperacao) {
       return {
@@ -1286,6 +1334,79 @@ function inferKeyTypeFromKey(key: string): string {
   if (/^\d{14}$/.test(k.replace(/\D/g, ''))) return 'cnpj';
   if (k.length === 36 && k.includes('-')) return 'random';
   return 'random';
+}
+
+/** Limpa formatação de documento (CPF/CNPJ) */
+function limparDocumentoCorpX(doc: string): string {
+  return (doc || '').replace(/\D/g, '');
+}
+
+/**
+ * Transferência interna entre contas CorpX (CorpX v2)
+ * Endpoint: POST /api/corpx-v2/transfers/internal/simple
+ * Ref: docs/MIGRACAO-FRONTEND-CORPX-V2.md
+ * Origem: automática (conta selecionada). Destino: operador informa documento.
+ */
+export async function transferenciaInternaCorpX(
+  originDocument: string,
+  destinationDocument: string,
+  value: number,
+  message?: string
+): Promise<{ transferId?: string; status?: string; value?: number; createdAt?: string; identifier?: string } | null> {
+  try {
+    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const userToken = TOKEN_STORAGE.get();
+    if (!userToken) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+
+    const origin = limparDocumentoCorpX(originDocument);
+    const destination = limparDocumentoCorpX(destinationDocument);
+
+    if (!origin || origin.length < 11) {
+      throw new Error('Documento de origem inválido');
+    }
+    if (!destination || destination.length < 11) {
+      throw new Error('Documento de destino inválido');
+    }
+    if (origin === destination) {
+      throw new Error('Origem e destino não podem ser iguais');
+    }
+    if (value <= 0) {
+      throw new Error('Valor deve ser maior que zero');
+    }
+
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const body = {
+      originDocument: origin,
+      destinationDocument: destination,
+      value,
+      message: message || undefined,
+      identifier: `int-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    };
+
+    const response = await fetch(`${baseUrl}/api/corpx-v2/transfers/internal/simple`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      const msg = data?.message || data?.error || `Erro HTTP ${response.status}`;
+      throw new Error(msg);
+    }
+
+    return data;
+  } catch (error: any) {
+    console.error('[CORPX-TRANSF-INTERNA] Erro:', error);
+    throw error;
+  }
 }
 
 /**
