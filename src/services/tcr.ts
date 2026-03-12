@@ -648,40 +648,45 @@ export interface VerificacaoTransacaoResult {
   permiteOperacao: boolean;
 }
 
-/** Mapeia resposta da API v2 ou qtran para formato da UI */
+/** Mapeia resposta qtran ou v2 para formato da UI */
 function mapearTransacaoParaUI(data: any, endtoend: string): TransacaoVerificadaUI {
-  const amountBRL = typeof data.amount === 'number' ? data.amount : parseFloat(data.amount || data.valor || '0') || 0;
+  // qtran: amount em centavos; v2: amount em BRL
+  const isQtran = data.senderName != null || data.senderTaxId != null;
+  const amountCentavos = isQtran
+    ? (typeof data.amount === 'number' ? data.amount : parseFloat(data.amount || '0') || 0)
+    : Math.round((typeof data.amount === 'number' ? data.amount : parseFloat(data.amount || '0') || 0) * 100);
   const feeAmount = data.fee?.amount != null
     ? (data.fee.amount > 1 ? data.fee.amount : Math.round(data.fee.amount * 100))
-    : 0;
+    : (data.fee ?? 0);
   return {
     id: data.id || data.transactionId || data.idEndToEnd,
     endToEndId: data.endToEndId || data.endToEnd || data.idEndToEnd || endtoend,
     status: data.status,
     direction: data.direction,
-    flow: ((data.direction || '').toLowerCase() === 'in' ? 'in' : 'out') as 'in' | 'out',
-    amount: Math.round(amountBRL * 100),
+    flow: (data.flow || ((data.direction || '').toLowerCase() === 'in' ? 'in' : 'out')) as 'in' | 'out',
+    amount: amountCentavos,
     type: data.type,
     operation: data.operation,
     method: data.method,
-    fee: feeAmount,
-    senderName: data.payer?.name,
-    receiverName: data.payee?.name,
-    senderTaxId: data.payer?.document,
-    receiverTaxId: data.payee?.document,
-    senderBankCode: data.payer?.bankCode,
-    senderBranchCode: data.payer?.branch,
-    senderAccountNumber: data.payer?.account,
-    senderAccountType: data.payer?.accountType || '-',
-    receiverBankCode: data.payee?.bankCode,
-    receiverBranchCode: data.payee?.branch,
-    receiverAccountNumber: data.payee?.account,
-    receiverAccountType: data.payee?.accountType || '-',
-    created: data.createdAt,
-    updated: data.updatedAt,
-    createdAt: data.createdAt,
-    updatedAt: data.updatedAt,
-    description: data.operation || data.errorReason,
+    fee: typeof feeAmount === 'number' ? feeAmount : 0,
+    senderName: data.senderName ?? data.payer?.name,
+    receiverName: data.receiverName ?? data.payee?.name,
+    senderTaxId: data.senderTaxId ?? data.payer?.document,
+    receiverTaxId: data.receiverTaxId ?? data.payee?.document,
+    senderBankCode: data.senderBankCode ?? data.payer?.bankCode,
+    senderBranchCode: data.senderBranchCode ?? data.payer?.branch,
+    senderAccountNumber: data.senderAccountNumber ?? data.payer?.account,
+    senderAccountType: data.senderAccountType ?? data.payer?.accountType ?? '-',
+    receiverBankCode: data.receiverBankCode ?? data.payee?.bankCode,
+    receiverBranchCode: data.receiverBranchCode ?? data.payee?.branch,
+    receiverAccountNumber: data.receiverAccountNumber ?? data.payee?.account,
+    receiverAccountType: data.receiverAccountType ?? data.payee?.accountType ?? '-',
+    created: data.created ?? data.createdAt,
+    updated: data.updated ?? data.updatedAt,
+    createdAt: data.createdAt ?? data.created,
+    updatedAt: data.updatedAt ?? data.updated,
+    description: data.description ?? data.operation ?? data.errorReason,
+    reconciliationId: data.reconciliationId,
     errorReason: data.errorReason,
     _v2: data
   };
@@ -689,8 +694,7 @@ function mapearTransacaoParaUI(data: any, endtoend: string): TransacaoVerificada
 
 /**
  * Consultar Transação por EndToEnd
- * NOVO: GET /api/corpx-v2/pix/transactions?endToEndId= (API-CORPX-V2-TRANSACTIONS.md)
- * Fallback: POST /api/corpx/account/qtran
+ * POST /api/corpx/account/qtran — body: { tax_document, endtoend }
  */
 export async function consultarTransacaoPorEndToEndTCR(
   taxDocument: string,
@@ -727,43 +731,7 @@ export async function consultarTransacaoPorEndToEndTCR(
 
     const endtoendTrim = endtoend.trim();
 
-    // 1. Tentar API nova: GET /api/corpx-v2/pix/transactions?endToEndId=
-    const baseUrlV2 = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
-    const urlV2 = `${baseUrlV2}${TCR_CONFIG.endpoints.consultarTransacaoV2}?endToEndId=${encodeURIComponent(endtoendTrim)}`;
-
-    const headersV2: Record<string, string> = {
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${userToken}`,
-      'X-Corpx-Account-Context': taxDocumentLimpo,
-    };
-
-    const responseV2 = await fetch(urlV2, { method: 'GET', headers: headersV2 });
-
-    if (responseV2.ok) {
-      try {
-        const rawV2 = await responseV2.json();
-        let data = rawV2?.data ?? rawV2;
-        const hasValidTx = data && (data.id || data.transactionId || data.idEndToEnd || data.endToEndId);
-        if (hasValidTx) {
-          const status = (data.status || data.Status || '').toUpperCase();
-          const permiteOperacao = status === 'SUCCESS';
-          const transacao = mapearTransacaoParaUI(data, endtoendTrim);
-          return {
-            sucesso: true,
-            status: data.status,
-            mensagem: permiteOperacao
-              ? `Transação verificada com sucesso! Status: ${data.status}`
-              : `Transação encontrada, porém com status "${data.status}". Operações de crédito/compensação não são permitidas.`,
-            transacao,
-            permiteOperacao
-          };
-        }
-      } catch {
-        // Resposta v2 inválida, seguir para fallback qtran
-      }
-    }
-
-    // 2. Fallback: qtran (POST /api/corpx/account/qtran)
+    // POST /api/corpx/account/qtran — consulta por EndToEnd
     const baseUrl = API_CONFIG.BASE_URL;
     const url = `${baseUrl}${TCR_CONFIG.endpoints.consultarTransacao}`;
 

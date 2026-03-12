@@ -1720,6 +1720,13 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       return;
     }
 
+    // ✅ Conta TTF selecionada: não chamar /qtran, abrir modal diretamente
+    if (selectedAccount.corpxAlias === 'TTF') {
+      setSelectedExtractRecord(transaction);
+      setCreditOTCModalOpen(true);
+      return;
+    }
+
     // Extrair endtoend da transação (apenas para transações não-internas)
     const endtoend = transaction.code || 
                      transaction._original?.endToEnd || 
@@ -1737,15 +1744,21 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     // Obter tax_document da conta selecionada ou do beneficiário da transação
     let taxDocument = selectedAccount.cnpj;
 
-    // ✅ Se "todas contas" estiver selecionada, usar o documento do beneficiário da transação
+    // ✅ Se "todas contas" estiver selecionada, usar o documento do beneficiário da transação (quem recebeu no crédito)
     if (!taxDocument || taxDocument === 'ALL') {
-      // Extrair documento do beneficiário da transação
-      taxDocument = transaction.beneficiaryDocument || 
-                    transaction._original?.beneficiaryDocument ||
-                    transaction._original?.beneficiary_document ||
-                    transaction._original?.creditorDocument ||
-                    transaction._original?.documentoBeneficiario ||
-                    '';
+      const orig = transaction._original;
+      const rawExtrato = orig?.rawExtrato || orig?.raw_statement || transaction.rawExtrato;
+      const rawBeneficiary = rawExtrato?.beneficiary || rawExtrato?.beneficiario;
+      taxDocument =
+        transaction.beneficiaryDocument ||
+        orig?.beneficiaryDocument ||
+        orig?.beneficiary_document ||
+        orig?.creditorDocument ||
+        orig?.documentoBeneficiario ||
+        orig?.taxDocument ||
+        orig?.corpxAccount?.taxDocument ||
+        (rawBeneficiary?.document || rawBeneficiary?.taxId || rawBeneficiary?.documento || '') ||
+        '';
       
       if (!taxDocument) {
         toast.error('Documento não encontrado', {
