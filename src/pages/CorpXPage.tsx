@@ -71,10 +71,15 @@ function PixNormalComponent() {
       const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
 
       if (isInterna) {
-        const originDoc = limparFormatacaoDocumento(selectedAccount.cnpj);
+        const alias = selectedAccount.corpxAlias || getCorpxAliasByCnpj(limparFormatacaoDocumento(selectedAccount.cnpj));
+        if (!alias) {
+          toast.error('Conta sem alias configurado para transferência interna');
+          return;
+        }
         const { transferenciaInternaCorpX } = await import('@/services/corpx');
         const result = await transferenciaInternaCorpX(
-          originDoc,
+          alias,
+          limparFormatacaoDocumento(selectedAccount.cnpj),
           formData.key,
           valorNumerico,
           formData.description || formData.nome || undefined

@@ -305,3 +305,54 @@ export interface OTCChartData {
   withdrawals: number;
   balance: number;
 }
+
+// ===== RECONCILIAÇÃO DE DEPÓSITOS OTC =====
+
+export interface DepositoReconciliacao {
+  endToEnd: string;
+  valor: number;
+  dataHora: string;
+  pagadorNome: string;
+  pagadorDocumento?: string;
+  pagadorBanco?: string;
+  provedor: string;
+  credito_info?: {
+    tipo: string;
+    transaction_id: number;
+    created_at: string;
+  };
+}
+
+export interface ReconciliacaoResponse {
+  cliente: {
+    id: number;
+    nome: string;
+    pix_key: string;
+    pix_key_type: string;
+    estrategia: string;
+    account_id?: string;
+  };
+  periodo: { dataInicio: string; dataFim: string };
+  resumo: {
+    total_banco: number;
+    nao_creditados: number;
+    creditados: number;
+    valor_nao_creditado: number;
+    valor_creditado: number;
+  };
+  nao_creditados: DepositoReconciliacao[];
+  creditados: DepositoReconciliacao[];
+}
+
+export interface ReconciliacaoCreditarResponse {
+  success: number;
+  failed: number;
+  duplicates: number;
+  total_creditado: number;
+  detalhes: Array<{
+    reference_code: string;
+    status: 'success' | 'error' | 'duplicate';
+    transaction_otc_id?: number;
+    message?: string;
+  }>;
+}

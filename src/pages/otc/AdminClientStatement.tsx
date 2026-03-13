@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Filter, RefreshCw, Download, RotateCcw, AlertTriangle, DollarSign, Clock, ArrowUpDown, Plus, ArrowRightLeft } from 'lucide-react';
+import { ArrowLeft, FileText, Filter, RefreshCw, Download, RotateCcw, AlertTriangle, DollarSign, Clock, ArrowUpDown, Plus, ArrowRightLeft, FileCheck } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,9 @@ import { OTCTransaction, OTCBalanceHistory, TransactionType, TransactionStatus }
 import { formatTimestamp, formatOTCTimestamp } from '@/utils/date';
 import { toast } from 'sonner';
 import OTCOperationModal from '@/components/otc/OTCOperationModal';
+import ReconciliacaoModal from '@/components/otc/ReconciliacaoModal';
+import { usePermissions } from '@/hooks/useAuth';
+import { OTCClient } from '@/types/otc';
 
 interface AdminClientStatementProps {}
 
@@ -31,6 +34,7 @@ interface AdminClientStatementProps {}
 const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
   const { clientId } = useParams<{ clientId: string }>();
   const navigate = useNavigate();
+  const { isAdmin } = usePermissions();
   
   const [activeTab, setActiveTab] = useState<string>('transactions');
   const [filters, setFilters] = useState({
@@ -56,6 +60,9 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
 
   // Estado para modal de operação
   const [operationModalOpen, setOperationModalOpen] = useState(false);
+
+  // Estado para modal de reconciliação
+  const [reconciliacaoModalOpen, setReconciliacaoModalOpen] = useState(false);
 
   // Estado para exportação PDF
   const [exportingPDF, setExportingPDF] = useState(false);
@@ -1439,15 +1446,27 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
           </div>
         </div>
         
-        {/* ✅ BOTÃO NOVA OPERAÇÃO */}
+        {/* Botões de ação */}
         {statement?.cliente && (
-          <Button
-            onClick={() => setOperationModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Nova Operação
-          </Button>
+          <div className="flex gap-2">
+            {isAdmin() && (
+              <Button
+                variant="outline"
+                onClick={() => setReconciliacaoModalOpen(true)}
+                title="Reconciliar depósitos do banco externo"
+              >
+                <FileCheck className="w-4 h-4 mr-2" />
+                Reconciliar
+              </Button>
+            )}
+            <Button
+              onClick={() => setOperationModalOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Nova Operação
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1897,14 +1916,41 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ✅ MODAL DE OPERAÇÃO */}
+      {/* Modal de operação */}
       <OTCOperationModal
         isOpen={operationModalOpen}
         onClose={() => {
           setOperationModalOpen(false);
-          refetch(); // Atualizar dados após operação
+          refetch();
         }}
         client={statement?.cliente}
+      />
+
+      {/* Modal de reconciliação */}
+      <ReconciliacaoModal
+        isOpen={reconciliacaoModalOpen}
+        onClose={(wasSuccessful) => {
+          setReconciliacaoModalOpen(false);
+          if (wasSuccessful) refetch();
+        }}
+        client={
+          statement?.cliente && clientId
+            ? ({
+                id: statement.cliente.id ?? parseInt(clientId),
+                name: statement.cliente.name,
+                document: statement.cliente.document ?? '',
+                pix_key: statement.cliente.pix_key ?? '',
+                pix_key_type: (statement.cliente as any)?.pix_key_type ?? 'email',
+                is_active: true,
+                current_balance: statement.cliente.current_balance ?? 0,
+                usd_balance: (statement.cliente as any)?.usd_balance ?? 0,
+                total_transactions: 0,
+                user: { id: 0, name: '', email: '' },
+                created_at: '',
+                updated_at: '',
+              } as OTCClient)
+            : null
+        }
       />
     </div>
   );

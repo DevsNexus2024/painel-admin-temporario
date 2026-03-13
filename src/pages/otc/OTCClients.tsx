@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Users, BarChart3, UserPlus, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import OTCDashboard from './OTCDashboard';
@@ -8,15 +9,17 @@ import OTCClientTable from '@/components/otc/OTCClientTable';
 import OTCOperations from './OTCOperations';
 import OTCClientModal from '@/components/otc/OTCClientModal';
 import OTCOperationModal from '@/components/otc/OTCOperationModal';
-
+import ReconciliacaoModal from '@/components/otc/ReconciliacaoModal';
 import OTCEmployeeModal from '@/components/otc/OTCEmployeeModal';
 import { OTCClient } from '@/types/otc';
+import { OTC_CLIENTS_QUERY_KEY } from '@/hooks/useOTCClients';
 
 /**
  * Página principal dos clientes OTC
  */
 const OTCClients: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   // Mudar de 'dashboard' para 'clients'
   const [activeTab, setActiveTab] = useState<string>('clients');
   
@@ -31,7 +34,10 @@ const OTCClients: React.FC = () => {
     client?: OTCClient;
   }>({ isOpen: false });
   
-
+  const [reconciliacaoModal, setReconciliacaoModal] = useState<{
+    isOpen: boolean;
+    client: OTCClient | null;
+  }>({ isOpen: false, client: null });
 
   const [employeeModal, setEmployeeModal] = useState<{
     isOpen: boolean;
@@ -62,6 +68,17 @@ const OTCClients: React.FC = () => {
 
   const handleManageEmployees = () => {
     setEmployeeModal({ isOpen: true });
+  };
+
+  const handleReconciliar = (client: OTCClient) => {
+    setReconciliacaoModal({ isOpen: true, client });
+  };
+
+  const closeReconciliacaoModal = (wasSuccessful?: boolean) => {
+    if (wasSuccessful) {
+      queryClient.invalidateQueries({ queryKey: [OTC_CLIENTS_QUERY_KEY] });
+    }
+    setReconciliacaoModal({ isOpen: false, client: null });
   };
 
   // Fechar modais
@@ -143,6 +160,7 @@ const OTCClients: React.FC = () => {
             onEditClient={handleEditClient}
             onCreateOperation={handleCreateOperation}
             onViewBalance={handleViewBalance}
+            onReconciliar={handleReconciliar}
           />
         </TabsContent>
 
@@ -164,7 +182,11 @@ const OTCClients: React.FC = () => {
         client={operationModal.client}
       />
       
-
+      <ReconciliacaoModal
+        isOpen={reconciliacaoModal.isOpen}
+        onClose={closeReconciliacaoModal}
+        client={reconciliacaoModal.client}
+      />
       
       <OTCEmployeeModal 
         isOpen={employeeModal.isOpen}

@@ -695,10 +695,9 @@ function PixNormalComponentTCR() {
       const valorNumerico = parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.'));
 
       if (isInterna) {
-        // Transferência interna: origem = TCR, destino = documento informado
+        // Transferência interna: origem = TCR (header), só documento destino + valor
         const { transferenciaInternaTCR } = await import('@/services/tcr');
         const result = await transferenciaInternaTCR(
-          TCR_CNPJ,
           formData.key,
           valorNumerico,
           formData.description || formData.nome || undefined

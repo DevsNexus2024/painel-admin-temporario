@@ -9,7 +9,8 @@ import {
   Search,
   Filter,
   RefreshCw,
-  Plus
+  Plus,
+  FileCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useOTCClients } from '@/hooks/useOTCClients';
+import { usePermissions } from '@/hooks/useAuth';
 import { otcService } from '@/services/otc';
 import { OTCClient, OTCFilters } from '@/types/otc';
 
@@ -35,6 +37,7 @@ interface OTCClientTableProps {
   onEditClient?: (client: OTCClient) => void;
   onCreateOperation?: (client: OTCClient) => void;
   onViewBalance?: (client: OTCClient) => void;
+  onReconciliar?: (client: OTCClient) => void;
 }
 
 /**
@@ -44,8 +47,10 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
   onViewStatement,
   onEditClient,
   onCreateOperation,
-  onViewBalance
+  onViewBalance,
+  onReconciliar
 }) => {
+  const { isAdmin } = usePermissions();
   // Estado para controlar dropdown aberto/fechado por linha
   const [openDropdowns, setOpenDropdowns] = useState<Record<number, boolean>>({});
   
@@ -357,6 +362,18 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
                                   <DollarSign className="mr-2 h-4 w-4" />
                                   Ver Saldo
                                 </DropdownMenuItem>
+                                
+                                {isAdmin() && onReconciliar && (
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setOpenDropdowns(prev => ({ ...prev, [client.id]: false }));
+                                      onReconciliar(client);
+                                    }}
+                                  >
+                                    <FileCheck className="mr-2 h-4 w-4" />
+                                    Reconciliar
+                                  </DropdownMenuItem>
+                                )}
                                 
                                 <DropdownMenuSeparator />
                                 

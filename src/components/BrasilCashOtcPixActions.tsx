@@ -23,7 +23,8 @@ import {
   Hash,
   List,
   RefreshCcw,
-  QrCode
+  QrCode,
+  ArrowRightLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,17 +39,48 @@ import { useBrasilCashOtc } from "@/contexts/BrasilCashOtcContext";
 
 const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
 
+// Mapeamento conta de origem (otcId -> account_number) para P2P
+const P2P_SOURCE_ACCOUNT: Record<string, { account_number: string; bank_code: number }> = {
+  '7802755': { account_number: '7802755', bank_code: 1 },
+  '1715917': { account_number: '1715917', bank_code: 1 },
+  'TTF': { account_number: '7301509', bank_code: 1 },
+};
+
+// Mapeamento de contas de destino para transferência interna P2P
+// Baseado em: account_number, document, name, bank_code (dígito)
+const P2P_DESTINATION_ACCOUNTS = [
+  { value: '7466786', label: 'TCR-APP', document: '53781325000115', description: 'Transferência para TCR Finance LTDA', bank_code: 1, sourceOtcId: null as string | null },
+  { value: '1715917', label: 'BrasilCash OTC 1715917', document: null as string | null, description: 'Transferência para OTC 1715917', bank_code: 1, sourceOtcId: '1715917' },
+  { value: '7802755', label: 'BrasilCash OTC 7802755', document: null as string | null, description: 'Transferência para OTC 7802755', bank_code: 1, sourceOtcId: '7802755' },
+  { value: '7301509', label: 'BrasilCash OTC TTF', document: '14283885000198', description: 'Transferência para TTF SERVIÇOS DIGITAIS LTDA', bank_code: 1, sourceOtcId: 'TTF' },
+];
+
 // Schemas de validação
 const pixSendSchema = z.object({
-  keyType: z.enum(["CPF", "CNPJ", "EMAIL", "PHONE", "EVP"], {
+  keyType: z.enum(["CPF", "CNPJ", "EMAIL", "PHONE", "EVP", "TRANSFERENCIA_INTERNA"], {
     required_error: "Selecione o tipo de chave",
   }),
-  pixKey: z.string().min(1, "Chave PIX é obrigatória"),
+  pixKey: z.string().optional(),
   amount: z.string().min(1, "Valor é obrigatório").refine(
     (val) => !isNaN(parseFloat(val.replace(',', '.'))) && parseFloat(val.replace(',', '.')) > 0,
     "Valor deve ser maior que zero"
   ),
   externalId: z.string().optional(),
+  description: z.string().optional(),
+  document: z.string().optional(),
+  account_number: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.keyType === "TRANSFERENCIA_INTERNA") {
+    if (!data.description?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["description"], message: "Descrição é obrigatória" });
+    if (!data.document?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["document"], message: "CPF/CNPJ é obrigatório" });
+    else {
+      const digits = data.document.replace(/\D/g, '');
+      if (digits.length < 11 || digits.length > 14) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["document"], message: "CPF (11 dígitos) ou CNPJ (14 dígitos)" });
+    }
+    if (!data.account_number?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["account_number"], message: "Selecione a conta destino" });
+  } else {
+    if (!data.pixKey?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["pixKey"], message: "Chave PIX é obrigatória" });
+  }
 });
 
 const pixKeySchema = z.object({
@@ -103,6 +135,9 @@ export default function BrasilCashOtcPixActions() {
       pixKey: "",
       amount: "",
       externalId: "",
+      description: "",
+      document: "",
+      account_number: "",
     },
   });
 
@@ -123,13 +158,67 @@ export default function BrasilCashOtcPixActions() {
     },
   });
 
-  // Enviar PIX
+  // Enviar PIX ou Transferência Interna (conforme tipo selecionado)
   const onSendPix = async (data: PixSendData) => {
     try {
       setIsLoading(true);
       setPixResult(null);
 
-      // Converter tipo de chave para formato da API BrasilCash
+      const amountValue = parseFloat(data.amount.replace(',', '.'));
+      if (isNaN(amountValue) || amountValue <= 0) {
+        throw new Error('Valor inválido. O valor deve ser maior que zero.');
+      }
+
+      const headers = getRequestHeaders();
+
+      // Transferência Interna P2P (account_number = número + dígito/bank_code)
+      if (data.keyType === "TRANSFERENCIA_INTERNA") {
+        const documentDigits = (data.document || '').replace(/\D/g, '');
+        const destAccount = P2P_DESTINATION_ACCOUNTS.find((a) => a.value === data.account_number);
+        const destDigit = destAccount?.bank_code ?? 1;
+        const accountNumberWithDigit = `${(data.account_number || '').trim()}${destDigit}`;
+
+        const sourceInfo = P2P_SOURCE_ACCOUNT[selectedAccount.otcId] ?? {
+          account_number: selectedAccount.otcId,
+          bank_code: 1,
+        };
+        const originAccountNumber = `${sourceInfo.account_number}${sourceInfo.bank_code}`;
+
+        const body = {
+          amount: amountValue,
+          description: (data.description || '').trim(),
+          document: documentDigits,
+          account_number: accountNumberWithDigit,
+          origin_account_number: originAccountNumber,
+        };
+
+        const response = await fetch(`${API_BASE_URL}/api/brasilcash/transfer/p2p`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        const responseData = await response.json();
+
+        if (response.ok) {
+          setPixResult({
+            success: true,
+            message: responseData.message || 'Transferência interna realizada com sucesso!',
+          });
+          toast.success('Transferência interna realizada!', {
+            description: `R$ ${data.amount} • OTC ${selectedAccount.otcId}`,
+            duration: 4000,
+          });
+          sendForm.reset();
+        } else {
+          const errorMessage = responseData.error?.message || responseData.message || 'Erro ao realizar transferência';
+          setPixResult({ success: false, message: errorMessage });
+          toast.error('Erro na transferência', { description: errorMessage, duration: 8000 });
+        }
+        return;
+      }
+
+      // Enviar PIX (chave)
       const keyTypeMap: Record<string, 'document' | 'phone' | 'email' | 'randomKey'> = {
         'CPF': 'document',
         'CNPJ': 'document',
@@ -138,34 +227,13 @@ export default function BrasilCashOtcPixActions() {
         'EVP': 'randomKey',
       };
 
-      // Converter valor de string para número (suporta vírgula ou ponto)
-      const amountValue = parseFloat(data.amount.replace(',', '.'));
-      
-      if (isNaN(amountValue) || amountValue <= 0) {
-        throw new Error('Valor inválido. O valor deve ser maior que zero.');
-      }
-
-      // Converter de reais para centavos
       const amountInCents = Math.round(amountValue * 100);
-
-      // Preparar headers com x-otc-id
-      const headers = getRequestHeaders();
-
-      // Preparar body
-      const requestBody: {
-        amount: number;
-        key_type: string;
-        key: string;
-        external_id?: string;
-      } = {
+      const requestBody: { amount: number; key_type: string; key: string; external_id?: string } = {
         amount: amountInCents,
         key_type: keyTypeMap[data.keyType] || 'randomKey',
-        key: data.pixKey.trim(),
+        key: (data.pixKey || '').trim(),
       };
-
-      if (data.externalId?.trim()) {
-        requestBody.external_id = data.externalId.trim();
-      }
+      if (data.externalId?.trim()) requestBody.external_id = data.externalId.trim();
 
       const response = await fetch(`${API_BASE_URL}/api/brasilcash/pix/cashout/payments`, {
         method: 'POST',
@@ -187,40 +255,20 @@ export default function BrasilCashOtcPixActions() {
           },
           message: responseData.message || "PIX enviado com sucesso!"
         });
-
         toast.success("PIX enviado!", {
           description: `R$ ${data.amount} para ${data.pixKey} • OTC ${selectedAccount.otcId}${data.externalId ? ` • ID: ${data.externalId}` : ''}`,
           duration: 4000,
         });
-
         sendForm.reset();
       } else {
         const errorMessage = responseData.error?.message || responseData.message || "Erro ao enviar PIX";
-        
-        setPixResult({
-          success: false,
-          message: errorMessage,
-          error: responseData.error,
-        });
-
-        toast.error("Erro ao enviar PIX", {
-          description: errorMessage,
-          duration: 8000,
-        });
+        setPixResult({ success: false, message: errorMessage, error: responseData.error });
+        toast.error("Erro ao enviar PIX", { description: errorMessage, duration: 8000 });
       }
-
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
-      
-      setPixResult({
-        success: false,
-        message: errorMessage
-      });
-
-      toast.error("Erro ao enviar PIX", {
-        description: errorMessage,
-        duration: 8000,
-      });
+      setPixResult({ success: false, message: errorMessage });
+      toast.error("Erro", { description: errorMessage, duration: 8000 });
     } finally {
       setIsLoading(false);
     }
@@ -544,6 +592,12 @@ export default function BrasilCashOtcPixActions() {
                             <SelectItem value="EMAIL">E-mail</SelectItem>
                             <SelectItem value="PHONE">Telefone</SelectItem>
                             <SelectItem value="EVP">Chave Aleatória (EVP)</SelectItem>
+                            <SelectItem value="TRANSFERENCIA_INTERNA">
+                              <span className="flex items-center gap-2">
+                                <ArrowRightLeft className="h-4 w-4" />
+                                Transferência Interna
+                              </span>
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -551,32 +605,103 @@ export default function BrasilCashOtcPixActions() {
                     )}
                   />
 
-                  <FormField
-                    control={sendForm.control}
-                    name="pixKey"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Chave PIX</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder={
-                              sendForm.watch("keyType") === "EVP"
-                                ? "Chave aleatória (EVP)"
-                                : sendForm.watch("keyType") === "EMAIL"
-                                ? "exemplo@email.com"
-                                : sendForm.watch("keyType") === "PHONE"
-                                ? "+5511999999999"
-                                : sendForm.watch("keyType") === "CPF"
-                                ? "000.000.000-00"
-                                : "00.000.000/0000-00"
-                            }
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {/* Campos PIX (chave) - exibir quando NÃO for Transferência Interna */}
+                  {sendForm.watch("keyType") !== "TRANSFERENCIA_INTERNA" && (
+                    <FormField
+                      control={sendForm.control}
+                      name="pixKey"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Chave PIX</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder={
+                                sendForm.watch("keyType") === "EVP"
+                                  ? "Chave aleatória (EVP)"
+                                  : sendForm.watch("keyType") === "EMAIL"
+                                  ? "exemplo@email.com"
+                                  : sendForm.watch("keyType") === "PHONE"
+                                  ? "+5511999999999"
+                                  : sendForm.watch("keyType") === "CPF"
+                                  ? "000.000.000-00"
+                                  : "00.000.000/0000-00"
+                              }
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  {/* Campos Transferência Interna */}
+                  {sendForm.watch("keyType") === "TRANSFERENCIA_INTERNA" && (
+                    <>
+                      <FormField
+                        control={sendForm.control}
+                        name="account_number"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Conta destino</FormLabel>
+                            <Select
+                              onValueChange={(value) => {
+                                field.onChange(value);
+                                const account = P2P_DESTINATION_ACCOUNTS.find((a) => a.value === value);
+                                if (account) {
+                                  sendForm.setValue("description", account.description);
+                                  sendForm.setValue("document", account.document || "");
+                                }
+                              }}
+                              value={field.value}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecione a conta destino" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {P2P_DESTINATION_ACCOUNTS.filter(
+                                  (acc) => acc.sourceOtcId !== selectedAccount.otcId
+                                ).map((acc) => (
+                                  <SelectItem key={acc.value} value={acc.value}>
+                                    {acc.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={sendForm.control}
+                        name="description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Descrição</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Ex: Ajuste de saldo, Teste P2P" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={sendForm.control}
+                        name="document"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CPF/CNPJ do destinatário</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Apenas números (ex: 01234567890)" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </>
+                  )}
 
                   <FormField
                     control={sendForm.control}
@@ -596,33 +721,41 @@ export default function BrasilCashOtcPixActions() {
                     )}
                   />
 
-                  <FormField
-                    control={sendForm.control}
-                    name="externalId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>ID Externo (Opcional)</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="ID para rastreamento"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {sendForm.watch("keyType") !== "TRANSFERENCIA_INTERNA" && (
+                    <FormField
+                      control={sendForm.control}
+                      name="externalId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ID Externo (Opcional)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="ID para rastreamento" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
 
                   <Button type="submit" disabled={isLoading} className="w-full">
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Enviando...
+                        {sendForm.watch("keyType") === "TRANSFERENCIA_INTERNA" ? "Transferindo..." : "Enviando..."}
                       </>
                     ) : (
                       <>
-                        <SendHorizontal className="mr-2 h-4 w-4" />
-                        Enviar PIX
+                        {sendForm.watch("keyType") === "TRANSFERENCIA_INTERNA" ? (
+                          <>
+                            <ArrowRightLeft className="mr-2 h-4 w-4" />
+                            Realizar Transferência
+                          </>
+                        ) : (
+                          <>
+                            <SendHorizontal className="mr-2 h-4 w-4" />
+                            Enviar PIX
+                          </>
+                        )}
                       </>
                     )}
                   </Button>

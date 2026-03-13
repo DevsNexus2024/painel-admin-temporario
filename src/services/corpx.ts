@@ -1308,9 +1308,10 @@ function limparDocumentoCorpX(doc: string): string {
  * Transferência interna entre contas CorpX (CorpX v2)
  * Endpoint: POST /api/corpx-v2/transfers/internal/simple
  * Ref: docs/MIGRACAO-FRONTEND-CORPX-V2.md
- * Origem: automática (conta selecionada). Destino: operador informa documento.
+ * Backend exige originDocument no body.
  */
 export async function transferenciaInternaCorpX(
+  alias: string,
   originDocument: string,
   destinationDocument: string,
   value: number,
@@ -1323,20 +1324,18 @@ export async function transferenciaInternaCorpX(
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
 
-    const origin = limparDocumentoCorpX(originDocument);
     const destination = limparDocumentoCorpX(destinationDocument);
 
-    if (!origin || origin.length < 11) {
-      throw new Error('Documento de origem inválido');
-    }
     if (!destination || destination.length < 11) {
       throw new Error('Documento de destino inválido');
     }
-    if (origin === destination) {
-      throw new Error('Origem e destino não podem ser iguais');
-    }
     if (value <= 0) {
       throw new Error('Valor deve ser maior que zero');
+    }
+
+    const origin = limparDocumentoCorpX(originDocument);
+    if (!origin || origin.length < 11) {
+      throw new Error('Documento de origem inválido');
     }
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
@@ -1344,7 +1343,7 @@ export async function transferenciaInternaCorpX(
       originDocument: origin,
       destinationDocument: destination,
       value,
-      message: message || undefined,
+      ...(message && { message }),
       identifier: `int-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     };
 
@@ -1354,6 +1353,7 @@ export async function transferenciaInternaCorpX(
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': alias,
       },
       body: JSON.stringify(body),
     });

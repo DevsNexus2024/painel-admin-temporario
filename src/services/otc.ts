@@ -13,7 +13,10 @@ import {
   OTCClientsParams,
   OTCStatementParams,
   OTCOperationsParams,
-  OTCApiResponse
+  OTCApiResponse,
+  ReconciliacaoResponse,
+  ReconciliacaoCreditarResponse,
+  DepositoReconciliacao
 } from '@/types/otc';
 import { api } from '@/config/api';
 
@@ -327,6 +330,36 @@ export class OTCService {
       `${OTC_BASE_URL}/clients/${clientId}/conversions${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
     );
     
+    return response.data;
+  }
+
+  /**
+   * Lista reconciliação de depósitos do cliente (GET)
+   * Pode levar 6–18s para períodos longos. Timeout sugerido: 60s.
+   */
+  async getReconciliacao(
+    clientId: number,
+    dataInicio: string,
+    dataFim: string
+  ): Promise<ReconciliacaoResponse> {
+    const params = new URLSearchParams({ dataInicio, dataFim });
+    const response = await api.get<ReconciliacaoResponse>(
+      `${OTC_BASE_URL}/clients/${clientId}/reconciliacao?${params.toString()}`
+    );
+    return response.data;
+  }
+
+  /**
+   * Credita depósitos selecionados (POST)
+   */
+  async creditarDepositos(
+    clientId: number,
+    depositos: DepositoReconciliacao[]
+  ): Promise<ReconciliacaoCreditarResponse> {
+    const response = await api.post<ReconciliacaoCreditarResponse>(
+      `${OTC_BASE_URL}/clients/${clientId}/reconciliacao/creditar`,
+      { depositos }
+    );
     return response.data;
   }
 

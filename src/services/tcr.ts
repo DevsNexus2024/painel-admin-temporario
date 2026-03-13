@@ -1238,15 +1238,9 @@ function limparDocumento(doc: string): string {
  * Transferência interna entre contas CorpX (CorpX v2)
  * Endpoint: POST /api/corpx-v2/transfers/internal/simple
  * Ref: docs/MIGRACAO-FRONTEND-CORPX-V2.md
- * Origem: automática (originDocument). Destino: operador informa (destinationDocument).
+ * Backend exige originDocument no body.
  */
-export interface TransferenciaInternaRequest {
-  originDocument: string;
-  destinationDocument: string;
-  value: number;
-  message?: string;
-  identifier?: string;
-}
+const TCR_ORIGIN_DOCUMENT = '53781325000115';
 
 export interface TransferenciaInternaResponse {
   transferId?: string;
@@ -1257,29 +1251,22 @@ export interface TransferenciaInternaResponse {
 }
 
 export async function transferenciaInternaTCR(
-  originDocument: string,
   destinationDocument: string,
   value: number,
   message?: string
 ): Promise<TransferenciaInternaResponse | null> {
   try {
     const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const { TCR_CORPX_ALIAS } = await import('@/contexts/CorpXContext');
     const userToken = TOKEN_STORAGE.get();
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
 
-    const origin = limparDocumento(originDocument);
     const destination = limparDocumento(destinationDocument);
 
-    if (!origin || origin.length < 11) {
-      throw new Error('Documento de origem inválido');
-    }
     if (!destination || destination.length < 11) {
       throw new Error('Documento de destino inválido');
-    }
-    if (origin === destination) {
-      throw new Error('Origem e destino não podem ser iguais');
     }
     if (value <= 0) {
       throw new Error('Valor deve ser maior que zero');
@@ -1287,10 +1274,10 @@ export async function transferenciaInternaTCR(
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
     const body = {
-      originDocument: origin,
+      originDocument: TCR_ORIGIN_DOCUMENT,
       destinationDocument: destination,
       value,
-      message: message || undefined,
+      ...(message && { message }),
       identifier: `int-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     };
 
@@ -1300,6 +1287,7 @@ export async function transferenciaInternaTCR(
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': TCR_CORPX_ALIAS,
       },
       body: JSON.stringify(body),
     });
