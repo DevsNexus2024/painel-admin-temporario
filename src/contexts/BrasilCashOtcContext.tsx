@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback, ReactNode } fr
 
 // Lista de contas OTC BrasilCash disponíveis
 // ⚠️ IMPORTANTE: Não incluir conta TCR (já existe em /brasilcash-tcr)
-// ⚠️ Não incluir opção "ALL" - apenas as duas contas OTC específicas
+// ⚠️ Não incluir opção "ALL" - apenas as contas OTC específicas
 export const BRASILCASH_OTC_ACCOUNTS = [
   {
     id: 'OTC_7802755',
@@ -20,6 +20,16 @@ export const BRASILCASH_OTC_ACCOUNTS = [
     accountId: null as string | null,
     tenantId: null,
     otcId: '1715917',
+    accountType: 'otc' as const,
+    available: true,
+    pixKey: '',
+  },
+  {
+    id: 'OTC_TTF',
+    name: 'BrasilCash OTC TTF',
+    accountId: null as string | null,
+    tenantId: null,
+    otcId: 'TTF',
     accountType: 'otc' as const,
     available: true,
     pixKey: '',
