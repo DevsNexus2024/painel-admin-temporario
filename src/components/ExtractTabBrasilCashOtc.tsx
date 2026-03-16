@@ -527,10 +527,10 @@ export default function ExtractTabBrasilCashOtc() {
     }).format(numValue);
   };
 
-  // Função para formatar data
+  // Função para formatar data (igual ao TCR - backend retorna horário local com .000Z)
   const formatDate = (dateString: string): string => {
     try {
-      return format(new Date(dateString), "dd/MM/yyyy HH:mm:ss", { locale: ptBR });
+      return BrasilCashRealtimeService.formatUTCToLocalString(dateString);
     } catch {
       return dateString;
     }
