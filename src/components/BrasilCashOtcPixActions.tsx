@@ -39,20 +39,14 @@ import { useBrasilCashOtc } from "@/contexts/BrasilCashOtcContext";
 
 const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
 
-// Mapeamento conta de origem (otcId -> account_number) para P2P
-const P2P_SOURCE_ACCOUNT: Record<string, { account_number: string; bank_code: number }> = {
-  '7802755': { account_number: '7802755', bank_code: 1 },
-  '1715917': { account_number: '1715917', bank_code: 1 },
-  'TTF': { account_number: '7301509', bank_code: 1 },
-};
-
 // Mapeamento de contas de destino para transferência interna P2P
-// Baseado em: account_number, document, name, bank_code (dígito)
+// value = account_number completo (número + dígito)
 const P2P_DESTINATION_ACCOUNTS = [
-  { value: '7466786', label: 'TCR-APP', document: '53781325000115', description: 'Transferência para TCR Finance LTDA', bank_code: 1, sourceOtcId: null as string | null },
-  { value: '1715917', label: 'BrasilCash OTC 1715917', document: null as string | null, description: 'Transferência para OTC 1715917', bank_code: 1, sourceOtcId: '1715917' },
-  { value: '7802755', label: 'BrasilCash OTC 7802755', document: null as string | null, description: 'Transferência para OTC 7802755', bank_code: 1, sourceOtcId: '7802755' },
-  { value: '7301509', label: 'BrasilCash OTC TTF', document: '14283885000198', description: 'Transferência para TTF SERVIÇOS DIGITAIS LTDA', bank_code: 1, sourceOtcId: 'TTF' },
+  { value: '74667862', label: 'TCR-APP', document: '53781325000115', description: 'Transferência para TCR Finance LTDA', sourceOtcId: null as string | null },
+  { value: '78027552', label: 'BrasilCash OTC 7802755', document: null as string | null, description: 'Transferência para OTC 7802755', sourceOtcId: '7802755' },
+  { value: '17159172', label: 'BrasilCash OTC 1715917', document: null as string | null, description: 'Transferência para OTC 1715917', sourceOtcId: '1715917' },
+  { value: '73015092', label: 'BrasilCash OTC TTF', document: '14283885000198', description: 'Transferência para TTF SERVIÇOS DIGITAIS LTDA', sourceOtcId: 'TTF' },
+  { value: '24389222', label: 'RXP SERVIÇOS DIGITAIS LTDA', document: '24586576000140', description: 'Transferência para RXP SERVIÇOS DIGITAIS LTDA', sourceOtcId: 'RXP' },
 ];
 
 // Schemas de validação
@@ -171,25 +165,16 @@ export default function BrasilCashOtcPixActions() {
 
       const headers = getRequestHeaders();
 
-      // Transferência Interna P2P (account_number = número + dígito/bank_code)
+      // Transferência Interna P2P (account_number = número completo)
       if (data.keyType === "TRANSFERENCIA_INTERNA") {
         const documentDigits = (data.document || '').replace(/\D/g, '');
-        const destAccount = P2P_DESTINATION_ACCOUNTS.find((a) => a.value === data.account_number);
-        const destDigit = destAccount?.bank_code ?? 1;
-        const accountNumberWithDigit = `${(data.account_number || '').trim()}${destDigit}`;
-
-        const sourceInfo = P2P_SOURCE_ACCOUNT[selectedAccount.otcId] ?? {
-          account_number: selectedAccount.otcId,
-          bank_code: 1,
-        };
-        const originAccountNumber = `${sourceInfo.account_number}${sourceInfo.bank_code}`;
+        const accountNumber = (data.account_number || '').trim();
 
         const body = {
           amount: amountValue,
           description: (data.description || '').trim(),
           document: documentDigits,
-          account_number: accountNumberWithDigit,
-          origin_account_number: originAccountNumber,
+          account_number: accountNumber,
         };
 
         const response = await fetch(`${API_BASE_URL}/api/brasilcash/transfer/p2p`, {

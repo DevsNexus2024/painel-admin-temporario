@@ -34,6 +34,16 @@ export const BRASILCASH_OTC_ACCOUNTS = [
     available: true,
     pixKey: '',
   },
+  {
+    id: 'OTC_RXP',
+    name: 'RXP SERVIÇOS DIGITAIS LTDA',
+    accountId: null as string | null,
+    tenantId: null,
+    otcId: 'RXP',
+    accountType: 'otc' as const,
+    available: true,
+    pixKey: '',
+  },
 ];
 
 export interface BrasilCashOtcAccount {

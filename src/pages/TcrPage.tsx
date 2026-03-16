@@ -193,7 +193,7 @@ function BigPixComponentTCR() {
   const TCR_CNPJ = "53781325000115"; // CNPJ da TCR
   const [isLoading, setIsLoading] = React.useState(false);
   const [formData, setFormData] = React.useState({
-    key: '',
+    key: TCR_DEFAULT_PIX_KEY,
     valor: '',
     nome: '',
     description: ''
@@ -238,7 +238,7 @@ function BigPixComponentTCR() {
 
       if (result && !result.criacao?.erro) {
         toast.success("BigPIX executado com sucesso");
-        setFormData({ key: '', valor: '', nome: '', description: '' });
+        setFormData({ key: TCR_DEFAULT_PIX_KEY, valor: '', nome: '', description: '' });
       } else {
         toast.error("Erro ao executar BigPIX");
       }
@@ -649,12 +649,15 @@ function PixProgramadoQRComponent() {
 }
 
 // Componente temporário para Ações PIX (replicando layout BMP 531)
+// Chave PIX pré-definida para TCR
+const TCR_DEFAULT_PIX_KEY = '453f4628-04ea-4582-a371-db9639ba693d';
+
 // Componente PIX Normal para TCR
 function PixNormalComponentTCR() {
   const TCR_CNPJ = "53781325000115"; // CNPJ da TCR
   const [isLoading, setIsLoading] = React.useState(false);
   const [formData, setFormData] = React.useState({
-    key: '',
+    key: TCR_DEFAULT_PIX_KEY,
     tipo: '2', // PIX
     valor: '',
     nome: '',
@@ -738,7 +741,7 @@ function PixNormalComponentTCR() {
       
       // Reset form
       setFormData({
-        key: '',
+        key: TCR_DEFAULT_PIX_KEY,
         tipo: '2',
         valor: '',
         nome: '',
