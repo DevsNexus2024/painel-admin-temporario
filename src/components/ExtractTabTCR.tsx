@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
 import { TCRVerificacaoService } from "@/services/tcrVerificacao";
-import { consultarTransacaoPorEndToEndTCR } from "@/services/tcr";
+import { consultarTransacaoPorEndToEndV2TCR } from "@/services/tcr";
 
 // Componente completo para o Extrato TCR (baseado no Bitso)
 export default function ExtractTabTCR() {
@@ -1487,15 +1487,14 @@ export default function ExtractTabTCR() {
     }
 
     const endtoend = buscarEndToEnd.trim();
-    const taxDocument = '53781325000115'; // CNPJ fixo da TCR
 
     setIsBuscandoDeposito(true);
 
     try {
       toast.loading('Buscando depósito...', { id: 'buscar-deposito' });
-      
-      const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
-      
+
+      const resultadoApi = await consultarTransacaoPorEndToEndV2TCR('TCR', endtoend);
+
       toast.dismiss('buscar-deposito');
 
       if (!resultadoApi.sucesso) {
@@ -1512,13 +1511,11 @@ export default function ExtractTabTCR() {
           duration: 6000
         });
         return;
-    }
-    
-      // ✅ Depósito encontrado e verificado - abrir modal com dados
+      }
+
+      // Depósito encontrado e verificado - abrir modal com dados
       setDepositoData(resultadoApi);
       setDepositoModalOpen(true);
-      
-      // Limpar campo após busca bem-sucedida
       setBuscarEndToEnd("");
 
     } catch (error: any) {
@@ -1581,18 +1578,15 @@ export default function ExtractTabTCR() {
       return;
     }
 
-    // CNPJ fixo da TCR
-    const taxDocument = '53781325000115';
-
     // Marcar que está verificando esta transação
     setIsVerifyingTransaction(transaction.id);
 
     try {
-      // 🔍 Verificar transação na API antes de permitir operação
+      // 🔍 Verificar transação na API v2
       toast.loading('Verificando transação na API...', { id: 'verify-tcr-transaction' });
-      
-      const resultadoApi = await consultarTransacaoPorEndToEndTCR(taxDocument, endtoend);
-      
+
+      const resultadoApi = await consultarTransacaoPorEndToEndV2TCR('TCR', endtoend);
+
       toast.dismiss('verify-tcr-transaction');
 
       if (!resultadoApi.sucesso) {
@@ -1611,7 +1605,7 @@ export default function ExtractTabTCR() {
         return;
       }
 
-      // ✅ Transação verificada com sucesso - mostrar feedback positivo
+      // ✅ Transação verificada com sucesso
       toast.success('Transação verificada!', {
         description: `Status: ${resultadoApi.status?.toUpperCase()} - Operação autorizada`,
         duration: 3000
@@ -1629,16 +1623,15 @@ export default function ExtractTabTCR() {
         descCliente: transaction.descCliente,
         identified: transaction.identified || true,
         descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente,
-        status: resultadoApi.status || transaction.status, // ✅ Usar status da API
+        status: resultadoApi.status || transaction.status,
         _original: transaction._original || transaction
       };
-      
+
       // ✅ Buscar id_usuario automaticamente via endtoend
       try {
         const resultado = await TCRVerificacaoService.verificarTransacaoTCR(transaction);
-        
+
         if (resultado.encontrou && resultado.id_usuario) {
-          // ✅ ENCONTROU! Modificar descCliente para incluir o ID do usuário
           extractRecord.descCliente = `Usuario ${resultado.id_usuario}; ${extractRecord.descCliente}`;
           toast.success(`Usuário ID ${resultado.id_usuario} identificado`, {
             duration: 3000
@@ -1647,7 +1640,7 @@ export default function ExtractTabTCR() {
       } catch (error) {
         console.error('[TCR-VERIFICACAO] Erro ao buscar usuário:', error);
       }
-      
+
       // ✅ Abrir o modal de compensação
       setSelectedCompensationRecord(extractRecord);
       setCompensationModalOpen(true);

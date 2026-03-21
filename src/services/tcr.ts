@@ -808,6 +808,102 @@ export async function consultarTransacaoPorEndToEndTCR(
 }
 
 /**
+ * Consultar Transação por EndToEnd (CorpX v2)
+ * GET /api/corpx-v2/pix/transactions?endToEndId=...
+ * Header: X-Corpx-Account-Context: {alias}
+ */
+export async function consultarTransacaoPorEndToEndV2TCR(
+  alias: string,
+  endtoend: string
+): Promise<VerificacaoTransacaoResult> {
+  try {
+    const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+    const userToken = TOKEN_STORAGE.get();
+
+    if (!userToken) {
+      return {
+        sucesso: false,
+        mensagem: 'Token de autenticação não encontrado. Faça login novamente.',
+        permiteOperacao: false
+      };
+    }
+
+    if (!endtoend || endtoend.length < 10) {
+      return {
+        sucesso: false,
+        mensagem: 'EndToEnd inválido ou muito curto',
+        permiteOperacao: false
+      };
+    }
+
+    const endtoendTrim = endtoend.trim();
+    const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+    const url = `${baseUrl}${TCR_CONFIG.endpoints.consultarTransacaoV2}?endToEndId=${encodeURIComponent(endtoendTrim)}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${userToken}`,
+        'X-Corpx-Account-Context': alias,
+      },
+    });
+
+    const raw = await response.json();
+
+    if (!response.ok || raw?.error) {
+      return {
+        sucesso: false,
+        mensagem: raw?.message || `Erro ao consultar transação: HTTP ${response.status}`,
+        permiteOperacao: false
+      };
+    }
+
+    const data = raw?.data ?? raw;
+
+    const hasValidTx = data && (data.id || data.endToEndId);
+    if (!hasValidTx) {
+      return {
+        sucesso: false,
+        mensagem: raw?.message || 'Transação não encontrada na API.',
+        permiteOperacao: false
+      };
+    }
+
+    const status = (data.status || '').toUpperCase();
+    const permiteOperacao = status === 'SUCCESS';
+
+    const transacao = mapearTransacaoParaUI(data, endtoendTrim);
+
+    if (permiteOperacao) {
+      return {
+        sucesso: true,
+        status: data.status,
+        mensagem: `Transação verificada com sucesso! Status: ${data.status}`,
+        transacao,
+        permiteOperacao: true
+      };
+    } else {
+      return {
+        sucesso: true,
+        status: data.status,
+        mensagem: `Transação encontrada, porém com status "${data.status}". Operações de crédito/compensação não são permitidas.`,
+        transacao,
+        permiteOperacao: false
+      };
+    }
+
+  } catch (error: any) {
+    console.error('[TCR-V2-TRANSACTIONS] Erro ao consultar transação:', error);
+    return {
+      sucesso: false,
+      mensagem: `Erro ao consultar transação: ${error.message || 'Erro de conexão'}`,
+      permiteOperacao: false
+    };
+  }
+}
+
+/**
  * Criar Conta
  * Endpoint: POST /api/corpx/account/criar
  */
@@ -1217,14 +1313,21 @@ export async function gerarQRCodePixTCR(dados: CorpXQRCodeRequest): Promise<Corp
   }
 }
 
-/** Infere keyType v2 a partir da chave PIX */
+/** Infere keyType v2 a partir da chave PIX
+ * Ordem: email → CPF (11 dígitos) → CNPJ (14 dígitos) → phone (10 dígitos ou 55+10/11)
+ * CPF/CNPJ devem vir ANTES de phone para evitar que documentos sejam classificados como telefone.
+ */
 function inferKeyType(key: string): string {
   const k = (key || '').trim();
   if (!k) return 'random';
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(k)) return 'email';
-  if (/^(\+?55)?\d{10,11}$/.test(k.replace(/\D/g, ''))) return 'phone';
-  if (/^\d{11}$/.test(k.replace(/\D/g, ''))) return 'cpf';
-  if (/^\d{14}$/.test(k.replace(/\D/g, ''))) return 'cnpj';
+  const onlyNumbers = k.replace(/\D/g, '');
+  // CPF: exatamente 11 dígitos (antes de phone para não confundir com celular)
+  if (/^\d{11}$/.test(onlyNumbers)) return 'cpf';
+  // CNPJ: exatamente 14 dígitos
+  if (/^\d{14}$/.test(onlyNumbers)) return 'cnpj';
+  // Phone: 10-11 dígitos (formato BR) ou com prefixo +55
+  if (/^(\+?55)?\d{10,11}$/.test(onlyNumbers)) return 'phone';
   if (k.length === 36 && k.includes('-')) return 'random';
   return 'random';
 }

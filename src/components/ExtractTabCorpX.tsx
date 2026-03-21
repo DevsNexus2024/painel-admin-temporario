@@ -18,8 +18,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
 import BulkCreditOTCModal from "@/components/otc/BulkCreditOTCModal";
 import MoneyRainEffect from "@/components/MoneyRainEffect";
-import { useCorpX, CORPX_ACCOUNTS } from "@/contexts/CorpXContext";
-import CorpXService, { consultarTransacaoPorEndToEnd } from "@/services/corpx";
+import { useCorpX, CORPX_ACCOUNTS, getCorpxAliasByCnpj } from "@/contexts/CorpXContext";
+import CorpXService, { consultarTransacaoPorEndToEndV2 } from "@/services/corpx";
 import { useCorpxRealtime, CorpXTransactionPayload } from "@/hooks/useCorpxRealtime";
 
 // Componente completo para o Extrato CorpX (baseado no BMP 531)
@@ -1741,15 +1741,15 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       return;
     }
 
-    // Obter tax_document da conta selecionada ou do beneficiário da transação
-    let taxDocument = selectedAccount.cnpj;
+    // Obter alias da conta para header X-Corpx-Account-Context
+    let alias = selectedAccount.corpxAlias;
 
-    // ✅ Se "todas contas" estiver selecionada, usar o documento do beneficiário da transação (quem recebeu no crédito)
-    if (!taxDocument || taxDocument === 'ALL') {
+    // Se "todas contas" estiver selecionada, resolver alias pelo CNPJ do beneficiário
+    if (!alias || selectedAccount.id === 'ALL') {
       const orig = transaction._original;
       const rawExtrato = orig?.rawExtrato || orig?.raw_statement || transaction.rawExtrato;
       const rawBeneficiary = rawExtrato?.beneficiary || rawExtrato?.beneficiario;
-      taxDocument =
+      const taxDocument =
         transaction.beneficiaryDocument ||
         orig?.beneficiaryDocument ||
         orig?.beneficiary_document ||
@@ -1759,34 +1759,28 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         orig?.corpxAccount?.taxDocument ||
         (rawBeneficiary?.document || rawBeneficiary?.taxId || rawBeneficiary?.documento || '') ||
         '';
-      
-      if (!taxDocument) {
-        toast.error('Documento não encontrado', {
-          description: 'Não foi possível identificar o documento do beneficiário desta transação. Selecione uma conta específica ou verifique os dados da transação.'
+
+      if (taxDocument) {
+        alias = getCorpxAliasByCnpj(taxDocument);
+      }
+
+      if (!alias) {
+        toast.error('Conta não identificada', {
+          description: 'Não foi possível identificar a conta desta transação. Selecione uma conta específica.'
         });
         return;
       }
-    }
-
-    // ✅ Limpar formatação do tax_document (remover pontos, barras, hífens)
-    const taxDocumentLimpo = taxDocument.replace(/\D/g, '');
-
-    if (!taxDocumentLimpo || taxDocumentLimpo.length < 11) {
-      toast.error('Documento inválido', {
-        description: `Documento "${taxDocument}" é inválido. Deve ter pelo menos 11 dígitos (CPF) ou 14 dígitos (CNPJ).`
-      });
-      return;
     }
 
     // Marcar que está verificando esta transação
     setIsVerifyingTransaction(transaction.id);
 
     try {
-      // 🔍 Verificar transação na API antes de permitir operação
+      // 🔍 Verificar transação na API v2 antes de permitir operação
       toast.loading('Verificando transação...', { id: 'verify-transaction' });
-      
-      const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
-      
+
+      const resultado = await consultarTransacaoPorEndToEndV2(alias, endtoend);
+
       toast.dismiss('verify-transaction');
 
       if (!resultado.sucesso) {
@@ -1836,25 +1830,14 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     }
 
     const endtoend = buscarEndToEnd.trim();
-    
-    // Obter tax_document da conta selecionada
-    let taxDocument = selectedAccount.cnpj;
 
-    // ✅ Se "todas contas" estiver selecionada, mostrar erro pedindo para selecionar uma conta
-    if (!taxDocument || taxDocument === 'ALL') {
+    // Obter alias da conta selecionada
+    const alias = selectedAccount.corpxAlias;
+
+    if (!alias || selectedAccount.id === 'ALL') {
       toast.error('Selecione uma conta', {
         description: 'Para buscar depósito, é necessário selecionar uma conta específica',
         duration: 5000
-      });
-      return;
-    }
-
-    // ✅ Limpar formatação do tax_document (remover pontos, barras, hífens)
-    const taxDocumentLimpo = taxDocument.replace(/\D/g, '');
-
-    if (!taxDocumentLimpo || taxDocumentLimpo.length < 11) {
-      toast.error('Documento inválido', {
-        description: `Documento "${taxDocument}" é inválido. Deve ter pelo menos 11 dígitos (CPF) ou 14 dígitos (CNPJ).`
       });
       return;
     }
@@ -1863,16 +1846,15 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
     try {
       toast.loading('Buscando depósito...', { id: 'buscar-deposito-corpx' });
-      
-      const resultado = await consultarTransacaoPorEndToEnd(taxDocumentLimpo, endtoend);
-      
+
+      const resultado = await consultarTransacaoPorEndToEndV2(alias, endtoend);
+
       toast.dismiss('buscar-deposito-corpx');
 
-      // ✅ Sempre abrir modal, mesmo em caso de erro
+      // Sempre abrir modal, mesmo em caso de erro
       setDepositoData(resultado);
       setDepositoModalOpen(true);
 
-      // Mostrar toast informativo baseado no resultado
       if (!resultado.sucesso) {
         toast.error('Depósito não encontrado', {
           description: resultado.mensagem || 'Não foi possível encontrar o depósito com este EndToEnd',
@@ -1888,7 +1870,6 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
           description: 'Você pode realizar ações neste depósito',
           duration: 3000
         });
-        // Limpar campo apenas após busca bem-sucedida
         setBuscarEndToEnd("");
       }
 

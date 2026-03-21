@@ -25,6 +25,7 @@ import { OTCClient } from '@/types/otc';
 import { cn } from '@/lib/utils';
 import { otcService } from '@/services/otc';
 import { useBankFeatures } from '@/hooks/useBankFeatures';
+import { normalizeExtractToOTC } from '@/utils/normalizeExtractToOTC';
 
 interface CreditExtractToOTCModalProps {
   isOpen: boolean;
@@ -466,115 +467,14 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
     }
 
     try {
-      // 🆕 DETECTAR PROVIDER AUTOMATICAMENTE
       const { provider } = detectProvider();
-      
-      // 🆕 PREPARAR DADOS COMPLETOS PARA ANTI-DUPLICAÇÃO HÍBRIDA
-      let dados_extrato: any;
-      
-      if (provider === 'corpx') {
-        // Para CorpX: usar dados originais ou criar estrutura com idEndToEnd
-        const idEndToEnd = extractRecord._original?.idEndToEnd || extractRecord._original?.originalItem?.idEndToEnd;
-        const nrMovimento = extractRecord._original?.nrMovimento || extractRecord._original?.id;
-        
-        dados_extrato = extractRecord._original?.originalItem || extractRecord._original || {
-          idEndToEnd: idEndToEnd || extractRecord.code,
-          nrMovimento: nrMovimento || extractRecord.id,
-          data: new Date(extractRecord.dateTime).toISOString().split('T')[0],
-          hora: new Date(extractRecord.dateTime).toTimeString().split(' ')[0]
-        };
-        
-        // ✅ GARANTIR QUE STATUS ESTÁ PRESENTE NO dados_extrato
-        if (transactionStatus && !dados_extrato.status) {
-          dados_extrato.status = transactionStatus;
-        }
-        
-        console.log('🔧 [OTC-MODAL] Dados CorpX para backend:', { provider, dados_extrato, status: transactionStatus });
-      } else if (provider === 'belmontx') {
-        // Para BelmontX OTC: estrutura similar ao Bitso (endToEndId, transactionId)
-        const endToEndId = extractRecord._original?.endToEndId || extractRecord.code;
-        const transactionId = extractRecord._original?.transactionId || extractRecord._original?.id || extractRecord.id;
-        
-        dados_extrato = extractRecord._original ? {
-          ...extractRecord._original,
-          endToEndId: extractRecord._original.endToEndId || endToEndId,
-          id: transactionId,
-          dateTime: extractRecord._original.createdAt || extractRecord._original.dateTime || extractRecord.dateTime
-        } : {
-          endToEndId: endToEndId,
-          id: transactionId,
-          dateTime: extractRecord.dateTime
-        };
-        
-        if (transactionStatus && !dados_extrato.status) {
-          dados_extrato.status = transactionStatus;
-        }
-      } else if (provider === 'bitso') {
-        // Para Bitso, garantir que endToEndId seja usado corretamente
-        const endToEndId = extractRecord._original?.endToEndId || extractRecord.code;
-        const transactionId = extractRecord._original?.transactionId || extractRecord._original?.id || extractRecord.id;
-        
-        dados_extrato = extractRecord._original ? {
-          ...extractRecord._original,
-          // Garantir que endToEndId está presente e correto
-          endToEndId: extractRecord._original.endToEndId || endToEndId,
-          // Manter transactionId como id para referência secundária
-          id: transactionId,
-          dateTime: extractRecord._original.dateTime || extractRecord.dateTime
-        } : {
-          endToEndId: endToEndId,
-          id: transactionId,
-          dateTime: extractRecord.dateTime
-        };
-        
-        // ✅ GARANTIR QUE STATUS ESTÁ PRESENTE NO dados_extrato
-        if (transactionStatus && !dados_extrato.status) {
-          dados_extrato.status = transactionStatus;
-        }
-      } else if (provider === 'brasilcash') {
-        // Para BrasilCash OTC: estrutura similar ao Bitso (endToEndId, transactionId)
-        const endToEndId = extractRecord._original?.endToEndId || extractRecord._original?.end_to_end_id || extractRecord.code;
-        const transactionId = extractRecord._original?.transactionId || extractRecord._original?.id || extractRecord.id;
-        
-        dados_extrato = extractRecord._original ? {
-          ...extractRecord._original,
-          endToEndId: extractRecord._original.endToEndId || extractRecord._original.end_to_end_id || endToEndId,
-          id: transactionId,
-          dateTime: extractRecord._original.createdAt || extractRecord._original.dateTime || extractRecord.dateTime
-        } : {
-          endToEndId: endToEndId,
-          id: transactionId,
-          dateTime: extractRecord.dateTime
-        };
-        
-        if (transactionStatus && !dados_extrato.status) {
-          dados_extrato.status = transactionStatus;
-        }
-      } else if (provider === 'bmp531') {
-        dados_extrato = extractRecord._original || {
-          codigoTransacao: extractRecord.code,
-          codigo: extractRecord.id,
-          nsu: null,
-          dtMovimento: extractRecord.dateTime
-        };
-        
-        // ✅ GARANTIR QUE STATUS ESTÁ PRESENTE NO dados_extrato
-        if (transactionStatus && !dados_extrato.status) {
-          dados_extrato.status = transactionStatus;
-        }
-      } else {
-        // bmp274
-        dados_extrato = extractRecord._original || {
-          codigoTransacao: extractRecord.code,
-          codigo: extractRecord.id,
-          nsu: null,
-          dtMovimento: extractRecord.dateTime
-        };
-        
-        // ✅ GARANTIR QUE STATUS ESTÁ PRESENTE NO dados_extrato
-        if (transactionStatus && !dados_extrato.status) {
-          dados_extrato.status = transactionStatus;
-        }
+
+      // Normalizar dados de todos os providers para formato padrão único
+      const dados_extrato = normalizeExtractToOTC(extractRecord, provider);
+
+      // Garantir status quando disponível no modal
+      if (transactionStatus && !dados_extrato.status) {
+        dados_extrato.status = transactionStatus;
       }
 
       const operationData = {
@@ -582,20 +482,15 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
         operation_type: 'credit' as const,
         amount: extractRecord.value,
         description: customDescription.trim(),
-        // 🆕 NOVOS CAMPOS HÍBRIDOS (PRIORIDADE)
-        dados_extrato,    // Objeto completo do provider
-        provider,         // Provider identificado
-        // 🔄 CAMPOS LEGADOS (FALLBACK)
-        // Para Bitso, BrasilCash e BelmontX, reference_code deve ser o endToEndId
-        reference_code: (provider === 'bitso' || provider === 'brasilcash' || provider === 'belmontx')
-          ? (extractRecord._original?.endToEndId || extractRecord._original?.end_to_end_id || extractRecord.code)
-          : extractRecord.code,
-        reference_external_id: extractRecord.id,
-        reference_provider: provider,
-        reference_date: extractRecord.dateTime
+        dados_extrato,
+        provider: dados_extrato.provider,
+        reference_code: dados_extrato.reference_code,
+        reference_external_id: dados_extrato.reference_external_id,
+        reference_provider: dados_extrato.provider,
+        reference_date: dados_extrato.reference_date
       };
 
-      console.log('🚀 [OTC-MODAL] Enviando operação com dados híbridos:', operationData);
+      console.log('🚀 [OTC-MODAL] Enviando operação com dados normalizados:', operationData);
 
       await createOperation(operationData);
       

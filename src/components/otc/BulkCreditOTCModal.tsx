@@ -25,6 +25,7 @@ import { useOTCClients } from '@/hooks/useOTCClients';
 import { OTCClient } from '@/types/otc';
 import { cn } from '@/lib/utils';
 import { otcService } from '@/services/otc';
+import { normalizeExtractToOTC } from '@/utils/normalizeExtractToOTC';
 
 interface BulkCreditOTCModalProps {
   isOpen: boolean;
@@ -143,32 +144,19 @@ const BulkCreditOTCModal: React.FC<BulkCreditOTCModalProps> = ({
     setShowConfirmation(true);
   };
 
-  // 🆕 Função para detectar provider automaticamente
+  // Detectar provider automaticamente
   const detectProvider = (transaction: any): string => {
-    // Detectar CorpX: verificar se tem corpxAccount ou se está na rota /corpx
-    const isCorpX = Boolean(
-      transaction._original?.corpxAccount ||
-      transaction._original?.rawExtrato ||
-      transaction._original?.source === 'CORPX' ||
-      window.location.pathname.includes('/corpx')
-    );
-
-    if (isCorpX) {
+    const path = window.location.pathname;
+    if (transaction._original?.corpxAccount || transaction._original?.rawExtrato || transaction._original?.source === 'CORPX' || path.includes('/corpx')) {
       return 'corpx';
     }
-
-    // Detectar Bitso: tem bitsoData ou endToEndId no _original
-    if (transaction.bitsoData || transaction._original?.endToEndId) {
-      return 'bitso';
-    }
-
-    // Detectar BMP-531: verificar estrutura ou descCliente
-    if (transaction._original?.descCliente || transaction.descCliente) {
-      return 'bmp531';
-    }
-
-    // Fallback padrão: Bitso (para compatibilidade)
-    return 'bitso';
+    if (path.includes('/brasilcash-otc')) return 'brasilcash';
+    if (path.includes('/belmontx-otc')) return 'belmontx';
+    if (transaction.bitsoData || transaction._original?.endToEndId) return 'bitso';
+    if (transaction._original?.descCliente || transaction.descCliente) return 'bmp531';
+    if (path.includes('/bmp-531') || path.includes('/bmp531')) return 'bmp531';
+    if (path.includes('/bmp-274') || path.includes('/bmp274')) return 'bmp274';
+    return 'bitso'; // fallback para ExtractTable genérico
   };
 
   // Confirmar operação em lote
@@ -181,34 +169,28 @@ const BulkCreditOTCModal: React.FC<BulkCreditOTCModalProps> = ({
     setProcessing(true);
     
     try {
-      // Preparar payload para o backend
       const payload = {
         otc_client_id: selectedClient.id,
         transactions: transactions.map(t => {
-          // Detectar provider automaticamente
           const provider = detectProvider(t);
-          
-          // Para CorpX e Bitso, usar endToEndId como reference_code
-          const endToEndId = t._original?.endToEndId || t._original?.endToEnd || t.code;
-          const transactionId = t._original?.transactionId || t._original?.id || t.id;
-          
+          const record = {
+            id: t.id,
+            code: t.code,
+            dateTime: t.dateTime || t.date,
+            value: t.value || t.amount || 0,
+            client: t.client,
+            document: t.document,
+            type: t.type || 'CRÉDITO',
+            _original: t._original || t
+          };
+          const dados_extrato = normalizeExtractToOTC(record as any, provider);
           return {
-            provider: provider,
-            transaction_id: transactionId,
-            amount: t.value || t.amount || 0,
-            // Para CorpX e Bitso, reference_code deve ser sempre o endToEndId
-            reference_code: endToEndId,
-            reference_date: t.dateTime || t.date,
-            // Garantir que dados_extrato tenha endToEndId correto
-            dados_extrato: t._original ? {
-              ...t._original,
-              endToEndId: t._original.endToEndId || t._original.endToEnd || endToEndId,
-              id: transactionId
-            } : {
-              endToEndId: endToEndId,
-              id: transactionId,
-              dateTime: t.dateTime || t.date
-            }
+            provider: dados_extrato.provider,
+            transaction_id: dados_extrato.reference_external_id,
+            amount: dados_extrato.amount,
+            reference_code: dados_extrato.reference_code,
+            reference_date: dados_extrato.reference_date,
+            dados_extrato
           };
         })
       };
