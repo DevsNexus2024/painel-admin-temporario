@@ -36,6 +36,7 @@ import BotCotacao from "./pages/bot-cotacao/BotCotacao";
 import OTCClients from "./pages/otc/OTCClients";
 import OTCNegociar from "./pages/otc/OTCNegociar";
 import AdminClientStatement from "./pages/otc/AdminClientStatement.tsx";
+import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import ClientStatement from "./pages/ClientStatement";
 import EmployeeStatement from "./pages/EmployeeStatement";
 import AnaliseUsuario from "./pages/AnaliseUsuario";
@@ -161,6 +162,7 @@ const App = () => (
                   <Route path="/otc" element={<OTCClients />} />
                   <Route path="/otc/negociar" element={<OTCNegociar />} />
                   <Route path="/otc/admin-statement/:clientId" element={<AdminClientStatement />} />
+                  <Route path="/otc/relatorios" element={<RelatoriosPage />} />
                   <Route path="/bitso" element={<BitsoPage />} />
                   <Route path="/bitso-tcr" element={<BitsoTcrPage />} />
                   <Route path="/bitso-api" element={<BitsoApiPage />} />

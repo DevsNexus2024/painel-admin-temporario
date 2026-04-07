@@ -144,6 +144,7 @@ export default function MainLayout() {
       canShow("/bot-cotacao") ||
       canShow("/otc") ||
       canShow("/otc/negociar") ||
+      canShow("/otc/relatorios") ||
       // canShow("/bitso") || // Desabilitado temporariamente
       canShow("/brasilcash-otc") ||
       canShow("/belmontx-otc") ||
@@ -453,6 +454,14 @@ export default function MainLayout() {
                                           to="/otc/negociar"
                                           icon={<TrendingUp className="h-4 w-4" />}
                                           label="Negociar"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+                                    {canShow("/otc/relatorios") && (
+                                      <SidebarLink
+                                          to="/otc/relatorios"
+                                          icon={<FileSearch className="h-4 w-4" />}
+                                          label="Relatórios"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}
