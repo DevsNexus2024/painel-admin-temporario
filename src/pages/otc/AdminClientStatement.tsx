@@ -25,6 +25,7 @@ import OTCOperationModal from '@/components/otc/OTCOperationModal';
 import ReconciliacaoModal from '@/components/otc/ReconciliacaoModal';
 import { usePermissions } from '@/hooks/useAuth';
 import { OTCClient } from '@/types/otc';
+import { downloadAdminClientStatementXlsx } from '@/utils/adminClientStatementExcelExport';
 
 interface AdminClientStatementProps {}
 
@@ -66,6 +67,7 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
 
   // Estado para exportação PDF
   const [exportingPDF, setExportingPDF] = useState(false);
+  const [exportingXlsx, setExportingXlsx] = useState(false);
 
   // Função para exportar PDF do extrato administrativo
   const exportToPDF = async () => {
@@ -770,6 +772,34 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
 
     return filtered;
   }, [statement?.historico_saldo, searchName]);
+
+  const exportToXlsx = () => {
+    if (!statement?.cliente) {
+      toast.error('Nenhum dado disponível para exportar');
+      return;
+    }
+    if (filteredAndSortedTransactions.length === 0 && filteredBalanceHistory.length === 0) {
+      toast.error('Não há linhas filtradas para exportar');
+      return;
+    }
+
+    setExportingXlsx(true);
+    toast.info('Gerando planilha...');
+
+    try {
+      downloadAdminClientStatementXlsx({
+        clientName: statement.cliente.name,
+        transactions: filteredAndSortedTransactions,
+        balanceHistory: filteredBalanceHistory,
+        historicoSaldo: statement.historico_saldo || [],
+      });
+      toast.success('Planilha gerada com sucesso!');
+    } catch {
+      toast.error('Erro ao gerar planilha');
+    } finally {
+      setExportingXlsx(false);
+    }
+  };
 
   // Função para reverter operação
   const handleReverseOperation = async () => {
@@ -1693,6 +1723,19 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
             >
               <Download className="w-4 h-4 mr-2" />
               {exportingPDF ? 'Gerando PDF...' : 'Exportar PDF'}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={
+                exportingXlsx ||
+                isLoading ||
+                !statement?.cliente ||
+                (filteredAndSortedTransactions.length === 0 && filteredBalanceHistory.length === 0)
+              }
+              onClick={exportToXlsx}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              {exportingXlsx ? 'Gerando...' : 'Extrair CSV'}
             </Button>
           </div>
         </CardContent>
