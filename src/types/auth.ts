@@ -289,6 +289,7 @@ export const ROUTE_PERMISSIONS: Record<string, RoutePermissions> = {
   '/bitso-api': { allowedRoles: ['super_admin'] },
   '/suporte': { allowedRoles: ['super_admin'] },
   '/pix-permissions': { allowedRoles: ['super_admin'] },
+  '/sistema': { allowedRoles: ['super_admin'] },
 
   // ==================== GRUPO TCR ====================
   '/grupo-tcr/tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },

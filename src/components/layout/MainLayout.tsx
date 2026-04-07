@@ -23,7 +23,8 @@ import {
     HelpCircle,
     FileSearch,
     DollarSign,
-    ShieldAlert
+    ShieldAlert,
+    Activity
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -537,6 +538,25 @@ export default function MainLayout() {
                                     )}
                                 </div>
                             </div>
+                            )}
+
+                            {/* ========== GRUPO SISTEMA ========== */}
+                            {canShow("/sistema") && (
+                                <div className="pb-2">
+                                    {!isCollapsed && (
+                                        <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                            Sistema
+                                        </h3>
+                                    )}
+                                    <div className="space-y-1">
+                                        <SidebarLink
+                                            to="/sistema"
+                                            icon={<Activity className="h-4 w-4" />}
+                                            label="Monitoramento"
+                                            isCollapsed={isCollapsed}
+                                        />
+                                    </div>
+                                </div>
                             )}
 
                             {/* ========== ADMINISTRAÇÃO ========== */}

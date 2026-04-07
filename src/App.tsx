@@ -42,6 +42,7 @@ import EmployeeStatement from "./pages/EmployeeStatement";
 import AnaliseUsuario from "./pages/AnaliseUsuario";
 import AuditoriaDepositosPage from "./pages/AuditoriaDepositosPage";
 import CashClosureDashboard from "./pages/CashClosureDashboard";
+import Sistema from "./pages/Sistema";
 
 // 🚨 IMPORTAR NOVA ARQUITETURA MULTI-BANCO
 import { initializeBankingSystem } from "@/services/banking";
@@ -177,6 +178,7 @@ const App = () => (
                   <Route path="/contas-organizacoes/organizacao/:id" element={<OrganizacaoDetailsPage />} />
                   <Route path="/contas-organizacoes/conta/:id" element={<ContaDetailsPage />} />
                   <Route path="/analise-usuario/:id" element={<AnaliseUsuario />} />
+                  <Route path="/sistema" element={<Sistema />} />
                   <Route path="/pix-permissions" element={<Navigate to="/" replace />} />
                 </Route>
                 
