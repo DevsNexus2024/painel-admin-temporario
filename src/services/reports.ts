@@ -16,6 +16,22 @@ import { OTCApiResponse, OTCStatement, OTCConversionsResponse } from '@/types/ot
 const OTC_BASE_URL = '/api/otc';
 const W3_BASE_URL = API_CONFIG.CORPX_V2_BASE_URL;
 
+/**
+ * Converte data YYYY-MM-DD para ISO com início ou fim do dia em BRT.
+ * Início: 00:00:00 BRT = 03:00:00 UTC (BRT = UTC-3)
+ * Fim: 23:59:59 BRT = 02:59:59 UTC do dia seguinte
+ */
+function normalizeDateParam(dateStr: string, isEndDate: boolean): string {
+  if (!dateStr || dateStr.includes('T')) return dateStr;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (isEndDate) {
+    const nextDay = new Date(Date.UTC(year, month - 1, day + 1, 2, 59, 59));
+    return nextDay.toISOString();
+  } else {
+    return new Date(Date.UTC(year, month - 1, day, 3, 0, 0)).toISOString();
+  }
+}
+
 // Helper: fetch autenticado com tratamento de 401 e timeout (mesmo padrão do api.ts)
 async function authFetch<T>(
   url: string,
@@ -73,8 +89,8 @@ class ReportService {
     const params = new URLSearchParams();
     params.append('page', String(page));
     params.append('limit', String(limit));
-    if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
-    if (filters.dateTo) params.append('dateTo', filters.dateTo);
+    if (filters.dateFrom) params.append('dateFrom', normalizeDateParam(filters.dateFrom, false));
+    if (filters.dateTo) params.append('dateTo', normalizeDateParam(filters.dateTo, true));
     if (filters.operationType && filters.operationType !== 'conversion') {
       params.append('operationType', filters.operationType);
     }
@@ -96,8 +112,8 @@ class ReportService {
     const params = new URLSearchParams();
     params.append('page', String(page));
     params.append('limit', String(limit));
-    if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
-    if (filters.dateTo) params.append('dateTo', filters.dateTo);
+    if (filters.dateFrom) params.append('dateFrom', normalizeDateParam(filters.dateFrom, false));
+    if (filters.dateTo) params.append('dateTo', normalizeDateParam(filters.dateTo, true));
 
     return authFetch<OTCConversionsResponse>(
       `${API_CONFIG.BASE_URL}${OTC_BASE_URL}/clients/${clientId}/conversions?${params}`,

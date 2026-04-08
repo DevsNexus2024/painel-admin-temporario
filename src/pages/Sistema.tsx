@@ -4,7 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Activity, FileWarning, FileText, Shield, RefreshCw, Search } from 'lucide-react';
+import { Activity, FileWarning, FileText, Shield, RefreshCw, Search, ArrowLeftRight } from 'lucide-react';
+import { usePermissions } from '@/hooks/useAuth';
+import SyncDashboardTab from '@/components/system/sync/SyncDashboardTab';
 import { useHealth, useReadiness, useMetrics, useLogErrors, useLogOutput, useLogStats, useLogTail } from '@/hooks/useSystem';
 import { parsePrometheusMetrics } from '@/components/system/MetricsParser';
 import HealthStatusCard from '@/components/system/HealthStatusCard';
@@ -97,6 +99,9 @@ export default function Sistema() {
     setLastUpdate(new Date().toLocaleTimeString('pt-BR'));
   }, [health, readiness, metrics]);
 
+  const { hasRole } = usePermissions();
+  const isSuperAdmin = hasRole('super_admin');
+
   const isRefreshing = health.isFetching || readiness.isFetching || metrics.isFetching;
 
   return (
@@ -109,7 +114,7 @@ export default function Sistema() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full max-w-lg grid-cols-4">
+        <TabsList className={`grid w-full ${isSuperAdmin ? 'max-w-2xl grid-cols-5' : 'max-w-lg grid-cols-4'}`}>
           <TabsTrigger value="health" className="flex items-center gap-1.5">
             <Activity className="w-4 h-4" />
             Health
@@ -126,6 +131,12 @@ export default function Sistema() {
             <Shield className="w-4 h-4" />
             Auditoria
           </TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger value="sync" className="flex items-center gap-1.5">
+              <ArrowLeftRight className="w-4 h-4" />
+              Sync
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ===== TAB 1: Health & Metricas ===== */}
@@ -348,6 +359,13 @@ export default function Sistema() {
         <TabsContent value="audit" className="mt-6">
           <AuditTable />
         </TabsContent>
+
+        {/* ===== TAB 5: Sync (super_admin only) ===== */}
+        {isSuperAdmin && (
+          <TabsContent value="sync" className="mt-6">
+            <SyncDashboardTab />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
