@@ -1682,15 +1682,20 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     if (isTransferenciaEntreContas && (!endtoend || endtoend.length === 0)) {
       return true;
     }
-    
+
+    // IDs com prefixo SYNC_ são IDs internos do sync-engine, não são e2e válidos na CorpX
+    if (endtoend.startsWith('SYNC_')) {
+      return true;
+    }
+
     // Também verificar pelo pixType null e rawWebhook null (indicadores de transferência interna)
     const pixType = transaction._original?.pixType;
     const rawWebhook = transaction._original?.rawWebhook;
-    
+
     if (isTransferenciaEntreContas && !pixType && !rawWebhook) {
       return true;
     }
-    
+
     return false;
   };
 

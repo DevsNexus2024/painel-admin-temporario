@@ -326,7 +326,17 @@ export default function ExtractTabTCR() {
     if (isTransferenciaEntreContas) {
       return true;
     }
-    
+
+    // IDs com prefixo SYNC_ são IDs internos do sync-engine, não são e2e válidos na CorpX
+    const endtoend = transaction.code ||
+                     transaction._original?.endToEnd ||
+                     transaction._original?.idEndToEnd ||
+                     transaction._original?.endToEndId ||
+                     '';
+    if (typeof endtoend === 'string' && endtoend.startsWith('SYNC_')) {
+      return true;
+    }
+
     return false;
   };
 
