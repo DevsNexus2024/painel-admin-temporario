@@ -333,7 +333,7 @@ export default function ExtractTabTCR() {
                      transaction._original?.idEndToEnd ||
                      transaction._original?.endToEndId ||
                      '';
-    if (typeof endtoend === 'string' && endtoend.startsWith('SYNC_')) {
+    if (typeof endtoend === 'string' && (endtoend.startsWith('SYNC_') || endtoend.toLowerCase().startsWith('int-'))) {
       return true;
     }
 

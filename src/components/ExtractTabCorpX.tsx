@@ -1684,7 +1684,8 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     }
 
     // IDs com prefixo SYNC_ são IDs internos do sync-engine, não são e2e válidos na CorpX
-    if (endtoend.startsWith('SYNC_')) {
+    // IDs com prefixo int- são IDs internos de transferência entre contas, não são e2e PIX reais
+    if (endtoend.startsWith('SYNC_') || endtoend.toLowerCase().startsWith('int-')) {
       return true;
     }
 

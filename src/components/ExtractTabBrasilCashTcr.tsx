@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle, Filter } from "lucide-react";
+import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle, Filter, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -784,6 +784,214 @@ export default function ExtractTabBrasilCashTcr() {
     fetchTransactions(dateFrom, dateTo, 1, false);
   };
 
+  const generateReceipt = (tx: BrasilCashTransactionDB, event: React.MouseEvent) => {
+    event.stopPropagation();
+
+    const tipoLabel = tx.type === 'FUNDING' ? 'Recebimento PIX' : 'Envio PIX';
+    const statusLabel = tx.status === 'COMPLETE' ? 'Concluída' : tx.status === 'PENDING' ? 'Pendente' : tx.status === 'FAILED' ? 'Falhou' : tx.status;
+    const valorFormatado = formatCurrency(tx.amount);
+    const dataFormatada = formatDate(tx.createdAt);
+
+    // Para FUNDING (recebimento): payer=quem enviou, receiver=nós (TCR)
+    // Para WITHDRAWAL (envio/devolução): a API retorna receiver=nós (TCR) e payer=vazio
+    //   então invertemos: pagador=receiver (TCR), beneficiário=payer (destinatário)
+    //   Se payer estiver vazio, tentamos extrair nome da descrição do estorno
+    const isWithdrawal = tx.type === 'WITHDRAWAL';
+
+    let pagadorNome: string, pagadorDoc: string, pagadorBanco: string, pagadorAgencia: string, pagadorConta: string;
+    let beneficiarioNome: string, beneficiarioDoc: string, beneficiarioBanco: string, beneficiarioAgencia: string, beneficiarioConta: string;
+
+    if (isWithdrawal) {
+      // WITHDRAWAL: TCR é o pagador (dados em receiver/payee), destinatário é o beneficiário (dados em payer)
+      pagadorNome = tx.payeeName || '-';
+      pagadorDoc = tx.payeeTaxId || '-';
+      pagadorBanco = tx.payeeBankName || tx._original?.receiver_bank_name || '-';
+      pagadorAgencia = tx._original?.receiver_branch_code || '-';
+      pagadorConta = tx._original?.receiver_account || '-';
+
+      beneficiarioNome = tx.payerName || '-';
+      beneficiarioDoc = tx.payerTaxId || '-';
+      beneficiarioBanco = tx.payerBankName || tx._original?.payer_bank_name || '-';
+      beneficiarioAgencia = tx._original?.payer_branch_code || '-';
+      beneficiarioConta = tx._original?.payer_account || '-';
+
+      // Se beneficiário vazio (comum em devoluções), tentar extrair nome da descrição
+      if (beneficiarioNome === '-' && tx.description) {
+        const match = tx.description.match(/[-–]\s*(.+)$/);
+        if (match) {
+          beneficiarioNome = match[1].trim();
+        }
+      }
+    } else {
+      // FUNDING: pagador é quem enviou (payer), beneficiário somos nós (receiver/payee)
+      pagadorNome = tx.payerName || '-';
+      pagadorDoc = tx.payerTaxId || '-';
+      pagadorBanco = tx.payerBankName || tx._original?.payer_bank_name || '-';
+      pagadorAgencia = tx._original?.payer_branch_code || '-';
+      pagadorConta = tx._original?.payer_account || '-';
+
+      beneficiarioNome = tx.payeeName || '-';
+      beneficiarioDoc = tx.payeeTaxId || '-';
+      beneficiarioBanco = tx.payeeBankName || tx._original?.receiver_bank_name || '-';
+      beneficiarioAgencia = tx._original?.receiver_branch_code || '-';
+      beneficiarioConta = tx._original?.receiver_account || '-';
+    }
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Comprovante PIX - ${tx.endToEndId || tx.transactionId}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @media print {
+      body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      .no-print { display: none !important; }
+    }
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+      color: #1a1a1a;
+    }
+    .receipt {
+      max-width: 480px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #ff8c00, #e67e00);
+      color: #fff;
+      padding: 24px;
+      text-align: center;
+    }
+    .header h1 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .header .subtitle { font-size: 12px; opacity: 0.9; }
+    .status-badge {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(255,255,255,0.25);
+    }
+    .amount-section {
+      text-align: center;
+      padding: 20px 24px;
+      border-bottom: 1px dashed #e0e0e0;
+    }
+    .amount-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .amount-value {
+      font-size: 32px;
+      font-weight: 700;
+      margin-top: 4px;
+      color: ${tx.type === 'FUNDING' ? '#16a34a' : '#dc2626'};
+    }
+    .amount-type { font-size: 13px; color: #666; margin-top: 4px; }
+    .section { padding: 16px 24px; border-bottom: 1px solid #f0f0f0; }
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #ff8c00;
+      margin-bottom: 10px;
+    }
+    .row { display: flex; justify-content: space-between; align-items: flex-start; padding: 5px 0; }
+    .row .label { font-size: 12px; color: #888; flex-shrink: 0; }
+    .row .value { font-size: 12px; color: #1a1a1a; font-weight: 500; text-align: right; word-break: break-all; max-width: 60%; }
+    .row .value.mono { font-family: 'SF Mono', 'Consolas', monospace; font-size: 11px; }
+    .footer {
+      padding: 16px 24px;
+      text-align: center;
+      color: #aaa;
+      font-size: 10px;
+      line-height: 1.5;
+    }
+    .print-btn {
+      display: block;
+      width: 480px;
+      max-width: 100%;
+      margin: 16px auto;
+      padding: 12px;
+      background: #ff8c00;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .print-btn:hover { background: #e67e00; }
+  </style>
+</head>
+<body>
+  <div class="receipt">
+    <div class="header">
+      <h1>Comprovante de ${tipoLabel}</h1>
+      <div class="subtitle">BrasilCash &mdash; TCR</div>
+      <div class="status-badge">${statusLabel}</div>
+    </div>
+
+    <div class="amount-section">
+      <div class="amount-label">Valor da transação</div>
+      <div class="amount-value">${tx.type === 'FUNDING' ? '+' : '-'} ${valorFormatado}</div>
+      <div class="amount-type">${tipoLabel} &bull; ${dataFormatada}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Pagador</div>
+      <div class="row"><span class="label">Nome</span><span class="value">${pagadorNome}</span></div>
+      <div class="row"><span class="label">CPF/CNPJ</span><span class="value mono">${pagadorDoc}</span></div>
+      <div class="row"><span class="label">Banco</span><span class="value">${pagadorBanco}</span></div>
+      <div class="row"><span class="label">Agência</span><span class="value mono">${pagadorAgencia}</span></div>
+      <div class="row"><span class="label">Conta</span><span class="value mono">${pagadorConta}</span></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Beneficiário</div>
+      <div class="row"><span class="label">Nome</span><span class="value">${beneficiarioNome}</span></div>
+      <div class="row"><span class="label">CPF/CNPJ</span><span class="value mono">${beneficiarioDoc}</span></div>
+      <div class="row"><span class="label">Banco</span><span class="value">${beneficiarioBanco}</span></div>
+      <div class="row"><span class="label">Agência</span><span class="value mono">${beneficiarioAgencia}</span></div>
+      <div class="row"><span class="label">Conta</span><span class="value mono">${beneficiarioConta}</span></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Identificação</div>
+      <div class="row"><span class="label">End-to-End ID</span><span class="value mono">${tx.endToEndId || '-'}</span></div>
+      <div class="row"><span class="label">Transaction ID</span><span class="value mono">${tx.transactionId || '-'}</span></div>
+      ${tx.reconciliationId ? `<div class="row"><span class="label">External ID</span><span class="value mono">${tx.reconciliationId}</span></div>` : ''}
+      <div class="row"><span class="label">Método</span><span class="value">${tx.methodName || tx.method || '-'}</span></div>
+      ${tx.description ? `<div class="row"><span class="label">Descrição</span><span class="value">${tx.description}</span></div>` : ''}
+    </div>
+
+    <div class="footer">
+      Documento gerado em ${new Date().toLocaleString('pt-BR')}<br/>
+      BrasilCash &mdash; TCR &bull; Este comprovante não tem valor fiscal
+    </div>
+  </div>
+
+  <button class="print-btn no-print" onclick="window.print()">Imprimir / Salvar PDF</button>
+  <script>window.onload = function() { window.print(); }</script>
+</body>
+</html>`;
+
+    const receiptWindow = window.open('', '_blank');
+    if (receiptWindow) {
+      receiptWindow.document.write(html);
+      receiptWindow.document.close();
+    } else {
+      toast.error('Pop-up bloqueado', {
+        description: 'Permita pop-ups para gerar o comprovante'
+      });
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Barra de ações */}
@@ -1266,7 +1474,7 @@ export default function ExtractTabBrasilCashTcr() {
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">Status</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">End-to-End</th>
                     <th className="text-left p-3 text-xs font-medium text-muted-foreground">External ID</th>
-                    <th className="w-24 p-3"></th>
+                    <th className="w-32 p-3 text-xs font-medium text-muted-foreground">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1343,40 +1551,51 @@ export default function ExtractTabBrasilCashTcr() {
                         </div>
                       </td>
                       <td className="p-3">
-                        {tx.type === 'FUNDING' && (
+                        <div className="flex items-center gap-1">
                           <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
-                            onClick={(e) => handleCompensation(tx, e)}
-                            disabled={isRecordCompensated(tx)}
-                            className={cn(
-                              "h-7 px-2 text-xs transition-all",
-                              isRecordCompensated(tx)
-                                ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                : "bg-[rgba(255,140,0,0.1)] hover:bg-[rgba(255,140,0,0.2)] text-[#ff8c00] border-[rgba(255,140,0,0.4)] hover:border-[rgba(255,140,0,0.6)]"
-                            )}
-                            title={isRecordCompensated(tx) ? "Já compensado" : "Realizar compensação"}
+                            onClick={(e) => generateReceipt(tx, e)}
+                            className="h-7 w-7 p-0 hover:bg-[rgba(255,140,0,0.15)] text-muted-foreground hover:text-[#ff8c00]"
+                            title="Gerar comprovante"
                           >
-                            {isRecordCompensated(tx) ? (
-                              <>
-                                <Check className="h-3 w-3 mr-1" />
-                                Compensado
-                              </>
-                            ) : (
-                              <>
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Compensar
-                              </>
-                            )}
+                            <Printer className="h-3.5 w-3.5" />
                           </Button>
-                        )}
+                          {tx.type === 'FUNDING' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => handleCompensation(tx, e)}
+                              disabled={isRecordCompensated(tx)}
+                              className={cn(
+                                "h-7 px-2 text-xs transition-all",
+                                isRecordCompensated(tx)
+                                  ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                                  : "bg-[rgba(255,140,0,0.1)] hover:bg-[rgba(255,140,0,0.2)] text-[#ff8c00] border-[rgba(255,140,0,0.4)] hover:border-[rgba(255,140,0,0.6)]"
+                              )}
+                              title={isRecordCompensated(tx) ? "Já compensado" : "Realizar compensação"}
+                            >
+                              {isRecordCompensated(tx) ? (
+                                <>
+                                  <Check className="h-3 w-3 mr-1" />
+                                  Compensado
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Compensar
+                                </>
+                              )}
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                     
                     {/* Linha expandida com detalhes */}
                     {expandedRow === tx.id && (
                       <tr className="bg-muted/5 dark:bg-muted/5 border-b border-border/50">
-                        <td colSpan={7} className="p-0">
+                        <td colSpan={8} className="p-0">
                           <div className="p-6 space-y-4">
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-sm font-semibold text-orange-700">Detalhes da Transação</h4>
