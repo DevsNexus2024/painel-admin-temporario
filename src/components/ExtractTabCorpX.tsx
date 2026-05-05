@@ -460,10 +460,16 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
             dataFim = dateTo.toISOString().split('T')[0];
           }
         } else {
-          // Não aplicar filtros: usar datas customizadas ou nenhuma
+          // Não aplicar filtros: usar datas customizadas, ou default de 3 dias quando "Todas as contas"
           if (customDateFrom && customDateTo) {
             dataInicio = customDateFrom.toISOString().split('T')[0];
             dataFim = customDateTo.toISOString().split('T')[0];
+          } else if (isAllAccounts) {
+            // accountId=ALL sem dateRange faria full scan no backend (tabela com 1M+ linhas).
+            // Aplica janela default de 3 dias para usar índice de data e responder em ms.
+            const { dateFrom: defaultFrom, dateTo: defaultTo } = getDefaultDates();
+            dataInicio = defaultFrom.toISOString().split('T')[0];
+            dataFim = defaultTo.toISOString().split('T')[0];
           }
         }
       }
