@@ -1784,52 +1784,58 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
       }
     }
 
+    // ⚠️ TEMPORÁRIO: verificação E2E desabilitada — abrir modal direto sem checar API v2
+    setSelectedExtractRecord(transaction);
+    setCreditOTCModalOpen(true);
+    return;
+
+    /* eslint-disable no-unreachable */
     // Marcar que está verificando esta transação
-    setIsVerifyingTransaction(transaction.id);
-
-    try {
-      // 🔍 Verificar transação na API v2 antes de permitir operação
-      toast.loading('Verificando transação...', { id: 'verify-transaction' });
-
-      const resultado = await consultarTransacaoPorEndToEndV2(alias, endtoend);
-
-      toast.dismiss('verify-transaction');
-
-      if (!resultado.sucesso) {
-        toast.error('Erro na verificação', {
-          description: resultado.mensagem,
-          duration: 5000
-        });
-        return;
-      }
-
-      if (!resultado.permiteOperacao) {
-        toast.error('Operação não permitida', {
-          description: resultado.mensagem,
-          duration: 6000
-        });
-        return;
-      }
-
-      // ✅ Transação verificada com sucesso - mostrar feedback positivo
-      toast.success('Transação verificada!', {
-        description: `Status: ${resultado.status?.toUpperCase()} - Operação autorizada`,
-        duration: 3000
-      });
-
-      // Abrir modal para creditar
-      setSelectedExtractRecord(transaction);
-      setCreditOTCModalOpen(true);
-
-    } catch (error: any) {
-      toast.dismiss('verify-transaction');
-      toast.error('Erro ao verificar transação', {
-        description: error.message || 'Tente novamente',
-        duration: 5000
-      });
-    } finally {
-      setIsVerifyingTransaction(null);
-    }
+    // setIsVerifyingTransaction(transaction.id);
+    //
+    // try {
+    //   // 🔍 Verificar transação na API v2 antes de permitir operação
+    //   toast.loading('Verificando transação...', { id: 'verify-transaction' });
+    //
+    //   const resultado = await consultarTransacaoPorEndToEndV2(alias, endtoend);
+    //
+    //   toast.dismiss('verify-transaction');
+    //
+    //   if (!resultado.sucesso) {
+    //     toast.error('Erro na verificação', {
+    //       description: resultado.mensagem,
+    //       duration: 5000
+    //     });
+    //     return;
+    //   }
+    //
+    //   if (!resultado.permiteOperacao) {
+    //     toast.error('Operação não permitida', {
+    //       description: resultado.mensagem,
+    //       duration: 6000
+    //     });
+    //     return;
+    //   }
+    //
+    //   // ✅ Transação verificada com sucesso - mostrar feedback positivo
+    //   toast.success('Transação verificada!', {
+    //     description: `Status: ${resultado.status?.toUpperCase()} - Operação autorizada`,
+    //     duration: 3000
+    //   });
+    //
+    //   // Abrir modal para creditar
+    //   setSelectedExtractRecord(transaction);
+    //   setCreditOTCModalOpen(true);
+    //
+    // } catch (error: any) {
+    //   toast.dismiss('verify-transaction');
+    //   toast.error('Erro ao verificar transação', {
+    //     description: error.message || 'Tente novamente',
+    //     duration: 5000
+    //   });
+    // } finally {
+    //   setIsVerifyingTransaction(null);
+    // }
   };
 
   // 🆕 Função para buscar depósito por EndToEnd

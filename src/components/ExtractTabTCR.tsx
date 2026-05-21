@@ -1588,38 +1588,21 @@ export default function ExtractTabTCR() {
       return;
     }
 
-    // Marcar que está verificando esta transação
-    setIsVerifyingTransaction(transaction.id);
-
+    // ⚠️ TEMPORÁRIO: verificação E2E desabilitada — montar registro e abrir modal sem chamar API v2
     try {
-      // 🔍 Verificar transação na API v2
-      toast.loading('Verificando transação na API...', { id: 'verify-tcr-transaction' });
-
-      const resultadoApi = await consultarTransacaoPorEndToEndV2TCR('TCR', endtoend);
-
-      toast.dismiss('verify-tcr-transaction');
-
-      if (!resultadoApi.sucesso) {
-        toast.error('Erro na verificação', {
-          description: resultadoApi.mensagem,
-          duration: 5000
-        });
-        return;
-      }
-
-      if (!resultadoApi.permiteOperacao) {
-        toast.error('Operação não permitida', {
-          description: resultadoApi.mensagem,
-          duration: 6000
-        });
-        return;
-      }
-
-      // ✅ Transação verificada com sucesso
-      toast.success('Transação verificada!', {
-        description: `Status: ${resultadoApi.status?.toUpperCase()} - Operação autorizada`,
-        duration: 3000
-      });
+      // const resultadoApi = await consultarTransacaoPorEndToEndV2TCR('TCR', endtoend);
+      // if (!resultadoApi.sucesso) {
+      //   toast.error('Erro na verificação', { description: resultadoApi.mensagem, duration: 5000 });
+      //   return;
+      // }
+      // if (!resultadoApi.permiteOperacao) {
+      //   toast.error('Operação não permitida', { description: resultadoApi.mensagem, duration: 6000 });
+      //   return;
+      // }
+      // toast.success('Transação verificada!', {
+      //   description: `Status: ${resultadoApi.status?.toUpperCase()} - Operação autorizada`,
+      //   duration: 3000
+      // });
 
       // ✅ Converter para formato MovimentoExtrato esperado pelo modal
       let extractRecord: any = {
@@ -1633,7 +1616,7 @@ export default function ExtractTabTCR() {
         descCliente: transaction.descCliente,
         identified: transaction.identified || true,
         descricaoOperacao: transaction.descricaoOperacao || transaction.descCliente,
-        status: resultadoApi.status || transaction.status,
+        status: transaction.status,
         _original: transaction._original || transaction
       };
 
