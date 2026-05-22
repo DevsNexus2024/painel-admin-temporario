@@ -1986,10 +1986,10 @@ export default function AuditoriaDepositosPage() {
         if (!isNaN(id)) params.id_usuario = id;
       }
       if (dataInicio) {
-        params.data_inicio = new Date(dataInicio).toISOString();
+        params.data_inicio = dataInicio; // YYYY-MM-DD direto do input
       }
       if (dataFimFilter.trim()) {
-        params.data_fim = new Date(dataFimFilter.trim()).toISOString();
+        params.data_fim = dataFimFilter.trim(); // YYYY-MM-DD
       }
 
       const response = await depositosPendentesService.listarPendentes(params);
