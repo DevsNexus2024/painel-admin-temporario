@@ -48,6 +48,18 @@ import {
   getSituacaoColor,
   getDepositoIndicadores
 } from "@/services/depositos-normais.service";
+import {
+  depositosPendentesService,
+  type DepositoPendente,
+  type CompensarItemRequest,
+  type ResultadoCompensacao,
+  type CompensarBatchResponse,
+  formatCurrency as formatCurrencyPendentes,
+  formatDate as formatDatePendentes,
+  formatDocumento
+} from "@/services/depositos-pendentes.service";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 
 // ===================================
 // COMPONENTE: Estatísticas de Lotes
@@ -1391,10 +1403,322 @@ function DepositoNormalDetailsModal({
 }
 
 // ===================================
+// COMPONENTE: Estatísticas de Depósitos Pendentes
+// ===================================
+function DepositosPendentesStats({
+  total,
+  montanteTotal,
+  comTransferenciaInterna,
+  loading
+}: {
+  total: number | null;
+  montanteTotal: string;
+  comTransferenciaInterna: number;
+  loading: boolean;
+}) {
+  const statCards = [
+    {
+      label: "Total Pendentes",
+      value: total ?? '-',
+      icon: Clock,
+      color: "text-amber-400",
+      bgColor: "bg-amber-500/10",
+      borderColor: "border-amber-500/30"
+    },
+    {
+      label: "Montante Pendente",
+      value: montanteTotal,
+      icon: Wallet,
+      color: "text-emerald-400",
+      bgColor: "bg-emerald-500/10",
+      borderColor: "border-emerald-500/30"
+    },
+    {
+      label: "Com Transf. Interna",
+      value: comTransferenciaInterna,
+      icon: AlertTriangle,
+      color: "text-orange-400",
+      bgColor: "bg-orange-500/10",
+      borderColor: "border-orange-500/30"
+    }
+  ];
+
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      {statCards.map((stat, idx) => (
+        <div
+          key={idx}
+          className={cn(
+            "relative overflow-hidden rounded-xl border p-5 transition-all duration-300",
+            "hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5",
+            stat.bgColor, stat.borderColor
+          )}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {stat.label}
+              </p>
+              <p className={cn("text-3xl font-bold mt-2 tabular-nums", stat.color)}>
+                {loading ? (
+                  <span className="inline-block w-12 h-8 bg-muted/50 rounded animate-pulse" />
+                ) : (
+                  stat.value
+                )}
+              </p>
+            </div>
+            <div className={cn("p-2.5 rounded-lg", stat.bgColor)}>
+              <stat.icon className={cn("h-5 w-5", stat.color)} />
+            </div>
+          </div>
+          <div className={cn(
+            "absolute -right-6 -bottom-6 w-24 h-24 rounded-full blur-2xl opacity-20",
+            stat.bgColor.replace('/10', '/40')
+          )} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ===================================
+// COMPONENTE: Modal de Confirmação de Compensação
+// ===================================
+function CompensarConfirmModal({
+  isOpen,
+  onClose,
+  itensSelecionados,
+  onConfirmar,
+  isCompensando
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  itensSelecionados: DepositoPendente[];
+  onConfirmar: (observacaoGlobal: string) => void;
+  isCompensando: boolean;
+}) {
+  const [observacao, setObservacao] = useState('');
+
+  const totalValor = itensSelecionados.reduce(
+    (acc, item) => acc + parseFloat(item.valor_deposito),
+    0
+  );
+
+  return (
+    <Dialog open={isOpen} onOpenChange={isCompensando ? undefined : onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Confirmar Compensacao em Lote</DialogTitle>
+          <DialogDescription>
+            Voce esta prestes a compensar {itensSelecionados.length} deposito(s) pendente(s).
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Itens</Label>
+              <p className="text-2xl font-bold">{itensSelecionados.length}</p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Valor Total</Label>
+              <p className="text-2xl font-bold text-emerald-400">
+                {formatCurrencyPendentes(totalValor)}
+              </p>
+            </div>
+          </div>
+
+          {itensSelecionados.some(i => i.ja_tem_transferencia_interna || i.ja_tem_compensacao_concluida) && (
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm">
+              <div className="flex items-center gap-2 text-amber-400 font-semibold mb-1">
+                <AlertTriangle className="h-4 w-4" />
+                Atencao
+              </div>
+              <p className="text-muted-foreground">
+                Alguns itens selecionados ja possuem transferencia interna ou compensacao concluida.
+                O backend trata idempotencia — itens ja processados retornarao como falha (409).
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Observacao (opcional, aplicada a todos)</Label>
+            <Textarea
+              placeholder="Ex: Compensacao manual referente ao ticket #1234"
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+              maxLength={1000}
+              rows={3}
+              disabled={isCompensando}
+            />
+          </div>
+
+          {isCompensando && (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+              <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
+              <div>
+                <p className="text-sm font-semibold text-blue-400">Processando...</p>
+                <p className="text-xs text-muted-foreground">
+                  Cada item leva ~2-3s. Estimativa: {Math.ceil(itensSelecionados.length * 2.5)}s
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose} disabled={isCompensando}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={() => onConfirmar(observacao)}
+            disabled={isCompensando}
+            className="bg-emerald-600 hover:bg-emerald-700 gap-2"
+          >
+            {isCompensando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle className="h-4 w-4" />
+            )}
+            Compensar {itensSelecionados.length} item(ns)
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ===================================
+// COMPONENTE: Modal de Resultados da Compensação
+// ===================================
+function CompensarResultadosModal({
+  isOpen,
+  onClose,
+  resultado
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  resultado: CompensarBatchResponse | null;
+}) {
+  if (!resultado) return null;
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copiado!`);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Resultado da Compensacao</DialogTitle>
+          <DialogDescription>
+            {resultado.concluidos} concluido(s), {resultado.falhas} falha(s) de {resultado.total} item(ns)
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          {/* Resumo */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className={cn(
+              "p-3 rounded-lg border text-center",
+              "bg-blue-500/10 border-blue-500/30"
+            )}>
+              <p className="text-xs text-muted-foreground">Total</p>
+              <p className="text-2xl font-bold text-blue-400">{resultado.total}</p>
+            </div>
+            <div className={cn(
+              "p-3 rounded-lg border text-center",
+              "bg-emerald-500/10 border-emerald-500/30"
+            )}>
+              <p className="text-xs text-muted-foreground">Concluidos</p>
+              <p className="text-2xl font-bold text-emerald-400">{resultado.concluidos}</p>
+            </div>
+            <div className={cn(
+              "p-3 rounded-lg border text-center",
+              resultado.falhas > 0 ? "bg-red-500/10 border-red-500/30" : "bg-muted/50 border-border"
+            )}>
+              <p className="text-xs text-muted-foreground">Falhas</p>
+              <p className={cn("text-2xl font-bold", resultado.falhas > 0 ? "text-red-400" : "text-muted-foreground")}>
+                {resultado.falhas}
+              </p>
+            </div>
+          </div>
+
+          {/* Lista de resultados */}
+          <div className="space-y-2">
+            {resultado.resultados.map((r, idx) => (
+              <div
+                key={idx}
+                className={cn(
+                  "p-3 rounded-lg border",
+                  r.status === 'concluido'
+                    ? "bg-emerald-500/5 border-emerald-500/20"
+                    : "bg-red-500/5 border-red-500/20"
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {r.status === 'concluido' ? (
+                      <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-red-400 shrink-0" />
+                    )}
+                    <span className="font-mono text-xs truncate">{r.id_transacao}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyToClipboard(r.id_transacao, 'ID Transacao')}
+                      className="h-6 w-6 p-0 shrink-0"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <Badge className={cn(
+                    "text-xs shrink-0",
+                    r.status === 'concluido'
+                      ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/50"
+                      : "bg-red-500/20 text-red-400 border-red-500/50"
+                  )}>
+                    {r.status === 'concluido' ? 'Concluido' : `Falha (${r.http_status})`}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {r.status === 'concluido' ? r.mensagem : r.erro}
+                </p>
+                {r.status === 'concluido' && (
+                  <div className="flex gap-4 mt-2 text-xs">
+                    <span className="text-muted-foreground">
+                      ID Compensacao: <span className="font-mono">{r.id_compensacao}</span>
+                    </span>
+                    {r.transfer_id && (
+                      <span className="text-muted-foreground">
+                        Transfer ID: <span className="font-mono">{r.transfer_id}</span>
+                      </span>
+                    )}
+                    <Badge variant="outline" className="text-xs">
+                      {r.transferencia_interna_executada ? 'Transf. Executada' : 'Apenas Registros'}
+                    </Badge>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button onClick={onClose}>Fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ===================================
 // COMPONENTE PRINCIPAL
 // ===================================
 export default function AuditoriaDepositosPage() {
-  const [activeTab, setActiveTab] = useState<'lotes' | 'depositos-normais'>('lotes');
+  const [activeTab, setActiveTab] = useState<'lotes' | 'depositos-normais' | 'pendentes'>('lotes');
   
   // Estados para Lotes
   const [lotes, setLotes] = useState<Lote[]>([]);
@@ -1432,6 +1756,27 @@ export default function AuditoriaDepositosPage() {
   const [selectedDepositoId, setSelectedDepositoId] = useState<number | null>(null);
   const [isDetailsModalOpenDepositos, setIsDetailsModalOpenDepositos] = useState(false);
   const [reprocessandoIdDepositos, setReprocessandoIdDepositos] = useState<number | null>(null);
+
+  // Estados para Depósitos Pendentes
+  const [pendentes, setPendentes] = useState<DepositoPendente[]>([]);
+  const [loadingPendentes, setLoadingPendentes] = useState(false);
+  const [errorPendentes, setErrorPendentes] = useState<string | null>(null);
+  const [totalPendentes, setTotalPendentes] = useState<number | null>(null);
+  const [totalValorPendentes, setTotalValorPendentes] = useState<string | null>(null);
+  const [currentPagePendentes, setCurrentPagePendentes] = useState(1);
+  const [limitPendentes] = useState(50);
+
+  // Filtros para Pendentes
+  const [idUsuarioFilterPendentes, setIdUsuarioFilterPendentes] = useState<string>('');
+  const [dataInicioFilter, setDataInicioFilter] = useState<string>('');
+  const [dataFimFilter, setDataFimFilter] = useState<string>('');
+
+  // Seleção e compensação
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isCompensarModalOpen, setIsCompensarModalOpen] = useState(false);
+  const [isCompensando, setIsCompensando] = useState(false);
+  const [resultadoCompensacao, setResultadoCompensacao] = useState<CompensarBatchResponse | null>(null);
+  const [isResultadoModalOpen, setIsResultadoModalOpen] = useState(false);
 
   // Calcular estatísticas de Lotes
   const statsLotes = {
@@ -1613,13 +1958,123 @@ export default function AuditoriaDepositosPage() {
     }
   };
 
+  // Buscar depósitos pendentes
+  const fetchPendentes = useCallback(async () => {
+    const idUsuario = idUsuarioFilterPendentes.trim();
+    const dataInicio = dataInicioFilter.trim();
+
+    if (!idUsuario && !dataInicio) {
+      // API exige pelo menos um dos dois
+      setPendentes([]);
+      setTotalPendentes(null);
+      setTotalValorPendentes(null);
+      setErrorPendentes(null);
+      return;
+    }
+
+    setLoadingPendentes(true);
+    setErrorPendentes(null);
+
+    try {
+      const params: any = {
+        page: currentPagePendentes,
+        limit: limitPendentes,
+      };
+
+      if (idUsuario) {
+        const id = parseInt(idUsuario);
+        if (!isNaN(id)) params.id_usuario = id;
+      }
+      if (dataInicio) {
+        params.data_inicio = new Date(dataInicio).toISOString();
+      }
+      if (dataFimFilter.trim()) {
+        params.data_fim = new Date(dataFimFilter.trim()).toISOString();
+      }
+
+      const response = await depositosPendentesService.listarPendentes(params);
+
+      if (response.sucesso) {
+        setPendentes(response.dados);
+        setTotalPendentes(response.total);
+        setTotalValorPendentes(response.total_valor);
+      } else {
+        throw new Error('Erro ao carregar pendentes');
+      }
+    } catch (error: any) {
+      console.error('[PENDENTES] Erro ao buscar:', error);
+      setErrorPendentes(error.message || 'Erro ao carregar pendentes');
+      toast.error('Erro ao carregar pendentes', { description: error.message });
+    } finally {
+      setLoadingPendentes(false);
+    }
+  }, [currentPagePendentes, limitPendentes, idUsuarioFilterPendentes, dataInicioFilter, dataFimFilter]);
+
+  // Seleção de pendentes
+  const toggleSelectPendente = (idTransacao: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(idTransacao)) {
+        next.delete(idTransacao);
+      } else {
+        next.add(idTransacao);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllPendentes = () => {
+    if (selectedIds.size === pendentes.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(pendentes.map(p => p.id_transacao)));
+    }
+  };
+
+  const itensSelecionados = pendentes.filter(p => selectedIds.has(p.id_transacao));
+
+  // Compensar batch
+  const handleCompensarBatch = async (observacaoGlobal: string) => {
+    if (itensSelecionados.length === 0) return;
+
+    setIsCompensando(true);
+    try {
+      const itens: CompensarItemRequest[] = itensSelecionados.map(item => ({
+        id_transacao: item.id_transacao,
+        ...(observacaoGlobal.trim() && { observacoes: observacaoGlobal.trim() }),
+      }));
+
+      const resultado = await depositosPendentesService.compensarBatch(itens);
+
+      setResultadoCompensacao(resultado);
+      setIsCompensarModalOpen(false);
+      setIsResultadoModalOpen(true);
+      setSelectedIds(new Set());
+
+      if (resultado.concluidos > 0) {
+        toast.success(`${resultado.concluidos} deposito(s) compensado(s)!`);
+      }
+      if (resultado.falhas > 0) {
+        toast.warning(`${resultado.falhas} item(ns) com falha`);
+      }
+
+      // Re-listar para atualizar
+      fetchPendentes();
+    } catch (error: any) {
+      toast.error('Erro ao compensar batch', { description: error.message });
+    } finally {
+      setIsCompensando(false);
+    }
+  };
+
   // Efeitos para buscar dados
   useEffect(() => {
     if (activeTab === 'lotes') {
       fetchLotes();
-    } else {
+    } else if (activeTab === 'depositos-normais') {
       fetchDepositosNormais();
     }
+    // pendentes: não busca automaticamente, precisa de filtro
   }, [activeTab, fetchLotes, fetchDepositosNormais]);
 
   const limparFiltrosLotes = () => {
@@ -1635,6 +2090,17 @@ export default function AuditoriaDepositosPage() {
     setStatusFilterDepositos('');
     setStepFilterDepositos('');
     setCurrentPageDepositos(1);
+  };
+
+  const limparFiltrosPendentes = () => {
+    setIdUsuarioFilterPendentes('');
+    setDataInicioFilter('');
+    setDataFimFilter('');
+    setCurrentPagePendentes(1);
+    setPendentes([]);
+    setTotalPendentes(null);
+    setTotalValorPendentes(null);
+    setSelectedIds(new Set());
   };
 
   return (
@@ -1658,15 +2124,19 @@ export default function AuditoriaDepositosPage() {
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'lotes' | 'depositos-normais')} className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'lotes' | 'depositos-normais' | 'pendentes')} className="w-full">
+          <TabsList className="grid w-full max-w-2xl grid-cols-3">
             <TabsTrigger value="lotes" className="flex items-center gap-2">
               <Package className="h-4 w-4" />
               Lotes
             </TabsTrigger>
             <TabsTrigger value="depositos-normais" className="flex items-center gap-2">
               <Wallet className="h-4 w-4" />
-              Depósitos Normais
+              Dep. Normais
+            </TabsTrigger>
+            <TabsTrigger value="pendentes" className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Pendentes
             </TabsTrigger>
           </TabsList>
 
@@ -2103,6 +2573,321 @@ export default function AuditoriaDepositosPage() {
               </>
             )}
           </TabsContent>
+
+          {/* Tab: Depósitos Pendentes */}
+          <TabsContent value="pendentes" className="space-y-6 mt-6">
+            {/* Estatísticas */}
+            <DepositosPendentesStats
+              total={totalPendentes}
+              montanteTotal={formatCurrencyPendentes(totalValorPendentes)}
+              comTransferenciaInterna={pendentes.filter(p => p.ja_tem_transferencia_interna).length}
+              loading={loadingPendentes}
+            />
+
+            {/* Filtros */}
+            <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-base">Filtros</CardTitle>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    (informe ID Usuario ou Data Inicio)
+                  </span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap items-end gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">ID Usuario</Label>
+                    <Input
+                      type="number"
+                      placeholder="Ex: 3919"
+                      value={idUsuarioFilterPendentes}
+                      onChange={(e) => setIdUsuarioFilterPendentes(e.target.value)}
+                      className="w-[150px]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Data Inicio</Label>
+                    <Input
+                      type="date"
+                      value={dataInicioFilter}
+                      onChange={(e) => setDataInicioFilter(e.target.value)}
+                      className="w-[180px]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Data Fim</Label>
+                    <Input
+                      type="date"
+                      value={dataFimFilter}
+                      onChange={(e) => setDataFimFilter(e.target.value)}
+                      className="w-[180px]"
+                      disabled={!dataInicioFilter}
+                    />
+                  </div>
+
+                  <Button
+                    onClick={fetchPendentes}
+                    disabled={loadingPendentes || (!idUsuarioFilterPendentes.trim() && !dataInicioFilter.trim())}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    {loadingPendentes ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                    Buscar
+                  </Button>
+
+                  {(idUsuarioFilterPendentes || dataInicioFilter || dataFimFilter) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={limparFiltrosPendentes}
+                      className="text-muted-foreground"
+                    >
+                      Limpar filtros
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Ação: Compensar selecionados */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center justify-between p-4 rounded-xl border bg-emerald-500/5 border-emerald-500/30">
+                <div className="flex items-center gap-3">
+                  <CheckCircle className="h-5 w-5 text-emerald-400" />
+                  <span className="text-sm font-semibold">
+                    {selectedIds.size} item(ns) selecionado(s)
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    ({formatCurrencyPendentes(
+                      itensSelecionados.reduce((acc, i) => acc + parseFloat(i.valor_deposito), 0)
+                    )})
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedIds(new Set())}
+                  >
+                    Limpar selecao
+                  </Button>
+                  <Button
+                    onClick={() => setIsCompensarModalOpen(true)}
+                    className="bg-emerald-600 hover:bg-emerald-700 gap-2"
+                    disabled={selectedIds.size > 50}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Compensar ({selectedIds.size})
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Mensagem inicial */}
+            {!loadingPendentes && pendentes.length === 0 && !errorPendentes && !idUsuarioFilterPendentes && !dataInicioFilter && (
+              <div className="flex flex-col items-center justify-center py-16">
+                <Search className="h-10 w-10 text-muted-foreground" />
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Informe um ID de usuario ou uma data de inicio para buscar depositos pendentes
+                </p>
+              </div>
+            )}
+
+            {/* Loading */}
+            {loadingPendentes && pendentes.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16">
+                <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                <p className="mt-4 text-sm text-muted-foreground">Carregando pendentes...</p>
+              </div>
+            )}
+
+            {/* Erro */}
+            {errorPendentes && (
+              <div className="flex flex-col items-center justify-center py-16">
+                <AlertTriangle className="h-10 w-10 text-red-400" />
+                <p className="mt-4 text-sm text-red-400">{errorPendentes}</p>
+                <Button variant="outline" onClick={fetchPendentes} className="mt-4 gap-2">
+                  <RefreshCw className="h-4 w-4" />
+                  Tentar novamente
+                </Button>
+              </div>
+            )}
+
+            {/* Lista vazia após busca */}
+            {!loadingPendentes && pendentes.length === 0 && !errorPendentes && (idUsuarioFilterPendentes || dataInicioFilter) && (
+              <div className="flex flex-col items-center justify-center py-16">
+                <CheckCircle className="h-10 w-10 text-emerald-400" />
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Nenhum deposito pendente encontrado
+                </p>
+              </div>
+            )}
+
+            {/* Tabela */}
+            {pendentes.length > 0 && (
+              <>
+                <Card className="border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border/50 bg-muted/30">
+                          <th className="p-4 w-12">
+                            <Checkbox
+                              checked={selectedIds.size === pendentes.length && pendentes.length > 0}
+                              onCheckedChange={toggleSelectAllPendentes}
+                            />
+                          </th>
+                          <th className="text-left p-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            ID Mov. / Transacao
+                          </th>
+                          <th className="text-left p-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Usuario
+                          </th>
+                          <th className="text-left p-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Valor
+                          </th>
+                          <th className="text-left p-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Depositante
+                          </th>
+                          <th className="text-left p-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Flags
+                          </th>
+                          <th className="text-left p-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Data
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendentes.map((item) => {
+                          const isSelected = selectedIds.has(item.id_transacao);
+                          return (
+                            <tr
+                              key={item.id_transacao}
+                              className={cn(
+                                "border-b border-border/50 transition-colors cursor-pointer",
+                                isSelected ? "bg-emerald-500/10" : "bg-card/30 hover:bg-card/50",
+                                (item.ja_tem_transferencia_interna || item.ja_tem_compensacao_concluida) && "bg-amber-500/5"
+                              )}
+                              onClick={() => toggleSelectPendente(item.id_transacao)}
+                            >
+                              <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={() => toggleSelectPendente(item.id_transacao)}
+                                />
+                              </td>
+                              <td className="p-4">
+                                <div className="flex flex-col gap-1">
+                                  <span className="font-mono text-sm font-semibold">#{item.id_movimentacao}</span>
+                                  <span className="font-mono text-xs text-muted-foreground truncate max-w-[200px]" title={item.id_transacao}>
+                                    {item.id_transacao}
+                                  </span>
+                                  {item.batch_id && (
+                                    <Badge variant="outline" className="text-xs w-fit">
+                                      Lote: {item.batch_id}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                <span className="font-semibold">#{item.id_usuario}</span>
+                              </td>
+                              <td className="p-4">
+                                <span className="font-semibold text-foreground">
+                                  {formatCurrencyPendentes(item.valor_deposito)}
+                                </span>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-sm">{item.nome_depositante || '-'}</span>
+                                  <span className="text-xs text-muted-foreground font-mono">
+                                    {formatDocumento(item.documento_depositante)}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex flex-col gap-1">
+                                  {item.ja_tem_transferencia_interna && (
+                                    <Badge className="text-xs bg-orange-500/20 text-orange-400 border-orange-500/50 w-fit">
+                                      Transf. Interna
+                                    </Badge>
+                                  )}
+                                  {item.ja_tem_compensacao_concluida && (
+                                    <Badge className="text-xs bg-red-500/20 text-red-400 border-red-500/50 w-fit">
+                                      Comp. Concluida
+                                    </Badge>
+                                  )}
+                                  {!item.ja_tem_transferencia_interna && !item.ja_tem_compensacao_concluida && (
+                                    <Badge className="text-xs bg-emerald-500/20 text-emerald-400 border-emerald-500/50 w-fit">
+                                      Normal
+                                    </Badge>
+                                  )}
+                                  {!item.deposito_id && (
+                                    <Badge className="text-xs bg-gray-500/20 text-gray-400 border-gray-500/50 w-fit">
+                                      Sem deposito
+                                    </Badge>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                  {formatDatePendentes(item.data_hora_deposito)}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+
+                {/* Paginação */}
+                {totalPendentes !== null && totalPendentes > limitPendentes && (
+                  <div className="flex items-center justify-between pt-4">
+                    <div className="text-sm text-muted-foreground">
+                      Mostrando {((currentPagePendentes - 1) * limitPendentes) + 1} - {Math.min(currentPagePendentes * limitPendentes, totalPendentes)} de {totalPendentes} pendentes
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPagePendentes === 1}
+                        onClick={() => setCurrentPagePendentes(p => p - 1)}
+                        className="gap-1"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Anterior
+                      </Button>
+                      <div className="flex items-center gap-1 px-4">
+                        <span className="text-sm text-muted-foreground">
+                          Pagina {currentPagePendentes} de {Math.ceil(totalPendentes / limitPendentes)}
+                        </span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPagePendentes * limitPendentes >= totalPendentes}
+                        onClick={() => setCurrentPagePendentes(p => p + 1)}
+                        className="gap-1"
+                      >
+                        Proxima
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -2128,6 +2913,25 @@ export default function AuditoriaDepositosPage() {
         depositoId={selectedDepositoId}
         onReprocessar={handleReprocessarDeposito}
         isReprocessando={reprocessandoIdDepositos === selectedDepositoId}
+      />
+
+      {/* Modal de Confirmação de Compensação */}
+      <CompensarConfirmModal
+        isOpen={isCompensarModalOpen}
+        onClose={() => setIsCompensarModalOpen(false)}
+        itensSelecionados={itensSelecionados}
+        onConfirmar={handleCompensarBatch}
+        isCompensando={isCompensando}
+      />
+
+      {/* Modal de Resultados da Compensação */}
+      <CompensarResultadosModal
+        isOpen={isResultadoModalOpen}
+        onClose={() => {
+          setIsResultadoModalOpen(false);
+          setResultadoCompensacao(null);
+        }}
+        resultado={resultadoCompensacao}
       />
     </div>
   );
