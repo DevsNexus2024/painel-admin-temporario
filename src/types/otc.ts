@@ -4,7 +4,7 @@
 export type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
 
 // Tipos de operações
-export type OperationType = 'credit' | 'debit' | 'convert';
+export type OperationType = 'credit' | 'debit' | 'convert' | 'transfer';
 
 // Tipos de moeda para operações
 export type CurrencyType = 'BRL' | 'USD';
@@ -194,6 +194,29 @@ export interface OTCConversionsResponse {
       items_per_page: number;
     };
   };
+}
+
+// Interface para transferência entre clientes OTC
+export interface TransferBalanceRequest {
+  from_otc_client_id: number;
+  to_otc_client_id: number;
+  currency: CurrencyType;
+  amount: number;
+  description: string;
+  pin: string;
+}
+
+export interface TransferBalanceResult {
+  success: boolean;
+  transfer_id: string;
+  from: { otc_client_id: number; client_name: string; new_balance: number };
+  to:   { otc_client_id: number; client_name: string; new_balance: number };
+  currency: CurrencyType;
+  amount: number;
+  source_transaction_id: number;
+  dest_transaction_id: number;
+  source_operation_id: number;
+  dest_operation_id: number;
 }
 
 // Interface para criar cliente OTC (método antigo - com user_id)

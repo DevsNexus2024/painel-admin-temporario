@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  CreditCard, 
-  Plus, 
-  Minus, 
-  ArrowRightLeft, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  CreditCard,
+  Plus,
+  Minus,
+  ArrowRightLeft,
   FileText,
   AlertTriangle,
   User,
-  DollarSign
+  DollarSign,
+  Send,
+  Check,
+  ChevronsUpDown,
+  Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +23,8 @@ import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { toast } from 'sonner';
 import { useOTCOperations } from '@/hooks/useOTCOperations';
 
@@ -39,18 +45,21 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
   onClose,
   client
 }) => {
-  const { createOperation, isCreating } = useOTCOperations();
+  const { createOperation, isCreating, transferBalance, isTransferring } = useOTCOperations();
 
   // Estado do formulário
   const [formData, setFormData] = useState({
     operation_type: 'credit' as OperationType,
-    currency: 'BRL' as CurrencyType, // Nova: moeda padrão
+    currency: 'BRL' as CurrencyType,
     amount: '',
     description: '',
     // Campos específicos para conversão
     brl_amount: '',
     usd_amount: '',
-    conversion_rate: ''
+    conversion_rate: '',
+    // Campos específicos para transferência
+    to_otc_client_id: '',
+    pin: ''
   });
 
   // Estado para rastrear quais campos foram preenchidos pelo usuário
@@ -63,6 +72,14 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showConfirmation, setShowConfirmation] = useState(false);
 
+  // Estado para busca de clientes destino (transferência)
+  const [destClients, setDestClients] = useState<OTCClient[]>([]);
+  const [destClientsLoading, setDestClientsLoading] = useState(false);
+  const [destClientOpen, setDestClientOpen] = useState(false);
+  const [destSearchQuery, setDestSearchQuery] = useState('');
+
+  const isSubmitting = isCreating || isTransferring;
+
   // Resetar formulário quando modal abrir/fechar
   useEffect(() => {
     if (isOpen) {
@@ -73,19 +90,44 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
         description: '',
         brl_amount: '',
         usd_amount: '',
-        conversion_rate: ''
+        conversion_rate: '',
+        to_otc_client_id: '',
+        pin: ''
       });
-      setTouchedFields(new Set()); // Resetar campos tocados
+      setTouchedFields(new Set());
       setErrors({});
       setShowConfirmation(false);
+      setDestClients([]);
+      setDestSearchQuery('');
     } else {
-      // Limpar timeout quando modal fechar para evitar vazamentos
       if (calculationTimeout) {
         clearTimeout(calculationTimeout);
         setCalculationTimeout(null);
       }
     }
   }, [isOpen, calculationTimeout]);
+
+  // Buscar clientes destino quando abrir o combobox de transferência
+  const fetchDestClients = useCallback(async (search?: string) => {
+    if (!client) return;
+    setDestClientsLoading(true);
+    try {
+      const response = await otcService.getClients({ is_active: true, search, limit: 50 });
+      const filtered = (response.data?.clientes || []).filter(c => c.id !== client.id);
+      setDestClients(filtered);
+    } catch {
+      setDestClients([]);
+    } finally {
+      setDestClientsLoading(false);
+    }
+  }, [client]);
+
+  // Buscar clientes quando abrir o popover
+  useEffect(() => {
+    if (destClientOpen && formData.operation_type === 'transfer') {
+      fetchDestClients(destSearchQuery || undefined);
+    }
+  }, [destClientOpen, destSearchQuery, formData.operation_type, fetchDestClients]);
 
   // Função para formatar valor em USD
   const formatUSD = (value: number): string => {
@@ -228,7 +270,23 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
           borderColor: 'border-blue-200',
           requiresAmount: false,
           requiresConversion: true,
-          requiresCurrency: false
+          requiresCurrency: false,
+          requiresDestination: false,
+          requiresPin: false
+        };
+      case 'transfer':
+        return {
+          icon: <Send className="w-4 h-4" />,
+          label: 'Transferência',
+          description: 'Transfere saldo deste cliente para outro cliente OTC (mesma moeda)',
+          color: 'text-purple-600',
+          bgColor: 'bg-purple-50',
+          borderColor: 'border-purple-200',
+          requiresAmount: true,
+          requiresConversion: false,
+          requiresCurrency: true,
+          requiresDestination: true,
+          requiresPin: true
         };
       default:
         return {
@@ -317,6 +375,18 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
       }
     }
 
+    // Validar campos de transferência
+    if (formData.operation_type === 'transfer') {
+      if (!formData.to_otc_client_id) {
+        newErrors.to_otc_client_id = 'Selecione o cliente destino';
+      } else if (Number(formData.to_otc_client_id) === client?.id) {
+        newErrors.to_otc_client_id = 'Cliente destino não pode ser o mesmo que a origem';
+      }
+      if (!formData.pin || formData.pin.length !== 6 || !/^\d{6}$/.test(formData.pin)) {
+        newErrors.pin = 'PIN deve ter exatamente 6 dígitos numéricos';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -341,6 +411,25 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
     }
 
     try {
+      // Branch para transferência
+      if (formData.operation_type === 'transfer') {
+        const destClient = destClients.find(c => c.id === Number(formData.to_otc_client_id));
+        await transferBalance({
+          from_otc_client_id: client.id,
+          to_otc_client_id: Number(formData.to_otc_client_id),
+          currency: formData.currency,
+          amount: parseFloat(formData.amount),
+          description: formData.description.trim(),
+          pin: formData.pin
+        });
+        const symbol = formData.currency === 'USD' ? '$' : 'R$';
+        toast.success('Transferência realizada com sucesso', {
+          description: `${symbol} ${parseFloat(formData.amount).toFixed(2)} de ${client.name} → ${destClient?.name || 'destino'}`
+        });
+        onClose();
+        return;
+      }
+
       const operationData: CreateOTCOperationRequest = {
         otc_client_id: client.id,
         operation_type: formData.operation_type,
@@ -350,12 +439,10 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
 
       const operationInfo = getOperationInfo(formData.operation_type, formData.currency);
 
-      // Adicionar valor apenas se necessário (crédito/débito)
       if (operationInfo.requiresAmount) {
         operationData.amount = parseFloat(formData.amount);
       }
 
-      // Adicionar dados de conversão apenas se necessário (inserir trava)
       if (operationInfo.requiresConversion) {
         operationData.brl_amount = parseFloat(formData.brl_amount);
         operationData.usd_amount = parseFloat(formData.usd_amount);
@@ -363,8 +450,7 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
       }
 
       await createOperation(operationData);
-      
-      // Mostrar mensagem de sucesso específica para cada tipo
+
       if (operationInfo.requiresConversion) {
         toast.success('Conversão realizada com sucesso!', {
           description: `R$ ${parseFloat(formData.brl_amount).toFixed(2)} convertidos para $ ${parseFloat(formData.usd_amount).toFixed(4)}`
@@ -372,10 +458,20 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
       } else {
         toast.success('Operação realizada com sucesso!');
       }
-      
+
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao criar operação:', error);
+      // Para transferência, manter modal aberto em caso de erro
+      if (formData.operation_type === 'transfer') {
+        const apiError = error.response?.data?.error || error.response?.data?.message;
+        if (apiError) {
+          toast.error(apiError);
+        }
+        if (error.response?.status === 403) {
+          setErrors(prev => ({ ...prev, pin: 'PIN incorreto ou não configurado' }));
+        }
+      }
       setShowConfirmation(false);
     }
   };
@@ -469,7 +565,7 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                   onValueChange={(value) => updateField('operation_type', value)}
                   className="space-y-3"
                 >
-                  {(['credit', 'debit', 'convert'] as OperationType[]).map((type) => {
+                  {(['credit', 'debit', 'convert', 'transfer'] as OperationType[]).map((type) => {
                     const info = getOperationInfo(type, formData.currency);
                     return (
                       <div key={type} className="flex items-center space-x-2">
@@ -692,6 +788,114 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
               </Card>
             )}
 
+            {/* Cliente Destino (apenas para transferência) */}
+            {formData.operation_type === 'transfer' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <User className="w-4 h-4" />
+                    Cliente Destino
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <Label>Selecione o cliente que receberá o saldo *</Label>
+                    <Popover open={destClientOpen} onOpenChange={setDestClientOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={destClientOpen}
+                          className={`w-full justify-between ${errors.to_otc_client_id ? 'border-red-500' : ''}`}
+                        >
+                          {formData.to_otc_client_id
+                            ? destClients.find(c => c.id === Number(formData.to_otc_client_id))?.name || 'Cliente selecionado'
+                            : 'Buscar cliente...'}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-full p-0" align="start">
+                        <Command shouldFilter={false}>
+                          <CommandInput
+                            placeholder="Buscar por nome ou documento..."
+                            value={destSearchQuery}
+                            onValueChange={setDestSearchQuery}
+                          />
+                          <CommandList>
+                            <CommandEmpty>
+                              {destClientsLoading ? 'Buscando...' : 'Nenhum cliente encontrado'}
+                            </CommandEmpty>
+                            <CommandGroup>
+                              {destClients.map((c) => (
+                                <CommandItem
+                                  key={c.id}
+                                  value={String(c.id)}
+                                  onSelect={() => {
+                                    setFormData(prev => ({ ...prev, to_otc_client_id: String(c.id) }));
+                                    setDestClientOpen(false);
+                                    if (errors.to_otc_client_id) {
+                                      setErrors(prev => ({ ...prev, to_otc_client_id: '' }));
+                                    }
+                                  }}
+                                >
+                                  <Check className={`mr-2 h-4 w-4 ${Number(formData.to_otc_client_id) === c.id ? 'opacity-100' : 'opacity-0'}`} />
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{c.name}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {otcService.formatDocument(c.document)} | BRL: {otcService.formatCurrency(c.current_balance)}
+                                    </span>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    {errors.to_otc_client_id && (
+                      <p className="text-sm text-red-500">{errors.to_otc_client_id}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* PIN (apenas para transferência) */}
+            {formData.operation_type === 'transfer' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    PIN de Segurança
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <Label htmlFor="pin">
+                      PIN de 6 dígitos do administrador *
+                    </Label>
+                    <Input
+                      id="pin"
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={formData.pin}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                        setFormData(prev => ({ ...prev, pin: val }));
+                        if (errors.pin) setErrors(prev => ({ ...prev, pin: '' }));
+                      }}
+                      placeholder="••••••"
+                      className={errors.pin ? 'border-red-500' : ''}
+                    />
+                    {errors.pin && (
+                      <p className="text-sm text-red-500">{errors.pin}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Descrição */}
             <Card>
               <CardHeader>
@@ -729,13 +933,13 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                 type="button"
                 variant="outline"
                 onClick={onClose}
-                disabled={isCreating}
+                disabled={isSubmitting}
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
-                disabled={isCreating}
+                disabled={isSubmitting}
                 className={`${currentOperationInfo.color} bg-opacity-10 hover:bg-opacity-20`}
               >
                 {currentOperationInfo.icon}
@@ -765,10 +969,20 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">
-                      Cliente
+                      {formData.operation_type === 'transfer' ? 'Origem' : 'Cliente'}
                     </Label>
                     <p className="text-sm font-medium">{client.name}</p>
                   </div>
+                  {formData.operation_type === 'transfer' && (
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">
+                        Destino
+                      </Label>
+                      <p className="text-sm font-medium">
+                        {destClients.find(c => c.id === Number(formData.to_otc_client_id))?.name || '—'}
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">
                       Tipo de Operação
@@ -780,6 +994,14 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                       </span>
                     </div>
                   </div>
+                  {formData.operation_type === 'transfer' && (
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">
+                        Moeda
+                      </Label>
+                      <p className="text-sm font-medium">{formData.currency}</p>
+                    </div>
+                  )}
                   {currentOperationInfo.requiresAmount && (
                     <>
                       <div>
@@ -787,41 +1009,43 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                           Valor
                         </Label>
                         <p className={`text-sm font-semibold ${currentOperationInfo.color}`}>
-                          {formData.currency === 'USD' 
-                            ? `$ ${parseFloat(formData.amount).toFixed(4)}` 
+                          {formData.currency === 'USD'
+                            ? `$ ${parseFloat(formData.amount).toFixed(4)}`
                             : otcService.formatCurrency(parseFloat(formData.amount))
                           }
                         </p>
                       </div>
-                      <div>
-                        <Label className="text-sm font-medium text-muted-foreground">
-                          Novo Saldo
-                        </Label>
-                        <p className={`text-sm font-semibold ${
-                          formData.operation_type === 'credit' 
-                            ? 'text-green-600' 
-                            : 'text-red-600'
-                        }`}>
-                          {formData.currency === 'USD' 
-                            ? `$ ${(
-                                (client.usd_balance || 0) + 
-                                (formData.operation_type === 'credit' ? 1 : -1) * 
-                                (parseFloat(formData.amount) || 0)
-                              ).toFixed(4)}`
-                            : otcService.formatCurrency(
-                                (client.current_balance || 0) + 
-                                (formData.operation_type === 'credit' ? 1 : -1) * 
-                                (parseFloat(formData.amount) || 0)
-                              )
-                          }
-                        </p>
-                      </div>
+                      {formData.operation_type !== 'transfer' && (
+                        <div>
+                          <Label className="text-sm font-medium text-muted-foreground">
+                            Novo Saldo
+                          </Label>
+                          <p className={`text-sm font-semibold ${
+                            formData.operation_type === 'credit'
+                              ? 'text-green-600'
+                              : 'text-red-600'
+                          }`}>
+                            {formData.currency === 'USD'
+                              ? `$ ${(
+                                  (client.usd_balance || 0) +
+                                  (formData.operation_type === 'credit' ? 1 : -1) *
+                                  (parseFloat(formData.amount) || 0)
+                                ).toFixed(4)}`
+                              : otcService.formatCurrency(
+                                  (client.current_balance || 0) +
+                                  (formData.operation_type === 'credit' ? 1 : -1) *
+                                  (parseFloat(formData.amount) || 0)
+                                )
+                            }
+                          </p>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
-                
+
                 <Separator />
-                
+
                 <div>
                   <Label className="text-sm font-medium text-muted-foreground">
                     Descrição
@@ -837,16 +1061,16 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
                 type="button"
                 variant="outline"
                 onClick={handleCancelConfirmation}
-                disabled={isCreating}
+                disabled={isSubmitting}
               >
                 Cancelar
               </Button>
               <Button
                 onClick={handleConfirmOperation}
-                disabled={isCreating}
+                disabled={isSubmitting}
                 className="bg-red-600 hover:bg-red-700"
               >
-                {isCreating ? (
+                {isSubmitting ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
                     Executando...

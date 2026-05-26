@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { 
-  OTCOperation, 
+import {
+  OTCOperation,
   CreateOTCOperationRequest,
-  OTCOperationsParams 
+  OTCOperationsParams,
+  TransferBalanceRequest
 } from '@/types/otc';
 import { otcService } from '@/services/otc';
 import { OTC_CLIENTS_QUERY_KEY } from './useOTCClients';
@@ -78,6 +79,23 @@ export function useOTCOperations(params: OTCOperationsParams = {}) {
     }
   });
 
+  // Mutation para transferência entre clientes
+  const transferBalanceMutation = useMutation({
+    mutationFn: (data: TransferBalanceRequest) => otcService.transferBalance(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [OTC_OPERATIONS_QUERY_KEY] });
+      queryClient.invalidateQueries({ queryKey: [OTC_CLIENTS_QUERY_KEY] });
+      queryClient.invalidateQueries({ queryKey: ['otc-client'] });
+      queryClient.invalidateQueries({ queryKey: ['otc-statement'] });
+      queryClient.invalidateQueries({ queryKey: ['otc-balance'] });
+    },
+    onError: (error: any) => {
+      toast.error('Erro ao executar transferência', {
+        description: error.response?.data?.error || error.response?.data?.message || error.message || 'Falha na transferência'
+      });
+    }
+  });
+
   // Função para invalidar cache manualmente
   const invalidateOperations = () => {
     queryClient.invalidateQueries({ queryKey: [OTC_OPERATIONS_QUERY_KEY] });
@@ -86,17 +104,19 @@ export function useOTCOperations(params: OTCOperationsParams = {}) {
   return {
     // Dados
     operations: operationsData?.data || [],
-    
+
     // Estados
     isLoading,
     error,
-    
+
     // Mutations
     createOperation: createOperationMutation.mutateAsync,
-    
+    transferBalance: transferBalanceMutation.mutateAsync,
+
     // Estados das mutations
     isCreating: createOperationMutation.isLoading,
-    
+    isTransferring: transferBalanceMutation.isLoading,
+
     // Funções utilitárias
     refetch,
     invalidateOperations

@@ -1,8 +1,8 @@
-import { 
-  OTCClient, 
-  OTCBalance, 
-  OTCStatement, 
-  OTCStats, 
+import {
+  OTCClient,
+  OTCBalance,
+  OTCStatement,
+  OTCStats,
   OTCOperation,
   OTCConversion,
   OTCConversionsResponse,
@@ -16,7 +16,9 @@ import {
   OTCApiResponse,
   ReconciliacaoResponse,
   ReconciliacaoCreditarResponse,
-  DepositoReconciliacao
+  DepositoReconciliacao,
+  TransferBalanceRequest,
+  TransferBalanceResult
 } from '@/types/otc';
 import { api } from '@/config/api';
 
@@ -281,6 +283,17 @@ export class OTCService {
       `${OTC_BASE_URL}/operations${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
     );
     
+    return response.data;
+  }
+
+  /**
+   * Transfere saldo entre clientes OTC
+   */
+  async transferBalance(data: TransferBalanceRequest): Promise<OTCApiResponse<TransferBalanceResult>> {
+    const response = await api.post<OTCApiResponse<TransferBalanceResult>>(
+      `${OTC_BASE_URL}/transfers`,
+      data
+    );
     return response.data;
   }
 
