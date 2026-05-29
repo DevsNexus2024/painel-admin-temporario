@@ -67,27 +67,36 @@ const BankingReportsTab: React.FC = () => {
     }, [dateFrom, dateTo, provider, accountId, type, search]),
   });
 
+  const doExport = (data: TcrTransaction[]) => {
+    if (data.length === 0) {
+      toast.info('Nenhuma transação encontrada para os filtros selecionados');
+      return;
+    }
+    const filename = `bancario-${provider}-${dateFrom}-${dateTo}`;
+    exportToCSVMapped(data, BANKING_COLUMNS, (t) => ({
+      date: formatDateBR(t.transactionDate),
+      provider: t.provider,
+      type: t.type === 'CREDIT' ? 'Entrada' : 'Saída',
+      amount: formatCurrencyBR(t.amount),
+      status: t.status,
+      endToEndId: t.endToEndId || '',
+      payerName: t.payerName || '',
+      payerDocument: t.payerDocument || '',
+      beneficiaryName: t.beneficiaryName || '',
+      beneficiaryDocument: t.beneficiaryDocument || '',
+      pixKey: t.pixKey || '',
+    }), filename);
+    toast.success(`Relatório exportado: ${data.length} transações`);
+  };
+
   const handleGenerate = async () => {
     const data = await generator.generate();
-    if (data && data.length > 0) {
-      const filename = `bancario-${provider}-${dateFrom}-${dateTo}`;
-      exportToCSVMapped(data, BANKING_COLUMNS, (t) => ({
-        date: formatDateBR(t.transactionDate),
-        provider: t.provider,
-        type: t.type === 'CREDIT' ? 'Entrada' : 'Saída',
-        amount: formatCurrencyBR(t.amount),
-        status: t.status,
-        endToEndId: t.endToEndId || '',
-        payerName: t.payerName || '',
-        payerDocument: t.payerDocument || '',
-        beneficiaryName: t.beneficiaryName || '',
-        beneficiaryDocument: t.beneficiaryDocument || '',
-        pixKey: t.pixKey || '',
-      }), filename);
-      toast.success(`Relatório exportado: ${data.length} transações`);
-    } else if (data && data.length === 0) {
-      toast.info('Nenhuma transação encontrada para os filtros selecionados');
-    }
+    if (data) doExport(data);
+  };
+
+  const handleConfirm = async () => {
+    const data = await generator.confirmAndGenerate();
+    if (data) doExport(data);
   };
 
   return (
@@ -102,7 +111,7 @@ const BankingReportsTab: React.FC = () => {
         onGenerateCSV={handleGenerate}
         error={generator.error}
         needsConfirmation={generator.needsConfirmation}
-        onConfirm={generator.confirmAndGenerate}
+        onConfirm={handleConfirm}
         onDismiss={generator.dismissWarning}
       >
         <DateRangeFilter

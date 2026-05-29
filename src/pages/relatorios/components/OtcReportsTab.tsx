@@ -43,31 +43,40 @@ const OtcReportsTab: React.FC = () => {
     }, [clientId, dateFrom, dateTo]),
   });
 
+  const doExportStatement = (data: OTCTransaction[]) => {
+    if (data.length === 0) {
+      toast.info('Nenhum registro encontrado para o período selecionado');
+      return;
+    }
+    const formatted = data.map(t => ({
+      date: formatDateBR(t.sort_date || t.date),
+      type: t.type,
+      description: t.description || t.operation_description || '',
+      amount: formatCurrencyBR(t.amount),
+      usd_amount: t.usd_amount ? formatCurrencyBR(t.usd_amount) : '',
+      conversion_rate: t.conversion_rate || '',
+      saldo_posterior: t.saldo_posterior != null ? formatCurrencyBR(t.saldo_posterior) : '',
+      status: t.status,
+      payer_name: t.payer_name || '',
+      payer_document: t.payer_document || '',
+    }));
+    const filename = `extrato-otc-${clientName.replace(/\s+/g, '_')}-${dateFrom}-${dateTo}`;
+    exportToCSV(formatted, OTC_STATEMENT_COLUMNS, filename);
+    toast.success(`Relatório exportado: ${data.length} registros`);
+  };
+
   const handleGenerateStatement = async () => {
     if (!clientId) {
       toast.error('Selecione um cliente para gerar o relatório');
       return;
     }
     const data = await statementGenerator.generate();
-    if (data && data.length > 0) {
-      const formatted = data.map(t => ({
-        date: formatDateBR(t.sort_date || t.date),
-        type: t.type,
-        description: t.description || t.operation_description || '',
-        amount: formatCurrencyBR(t.amount),
-        usd_amount: t.usd_amount ? formatCurrencyBR(t.usd_amount) : '',
-        conversion_rate: t.conversion_rate || '',
-        saldo_posterior: t.saldo_posterior != null ? formatCurrencyBR(t.saldo_posterior) : '',
-        status: t.status,
-        payer_name: t.payer_name || '',
-        payer_document: t.payer_document || '',
-      }));
-      const filename = `extrato-otc-${clientName.replace(/\s+/g, '_')}-${dateFrom}-${dateTo}`;
-      exportToCSV(formatted, OTC_STATEMENT_COLUMNS, filename);
-      toast.success(`Relatório exportado: ${data.length} registros`);
-    } else if (data && data.length === 0) {
-      toast.info('Nenhum registro encontrado para o período selecionado');
-    }
+    if (data) doExportStatement(data);
+  };
+
+  const handleConfirmStatement = async () => {
+    const data = await statementGenerator.confirmAndGenerate();
+    if (data) doExportStatement(data);
   };
 
   // ===== Conversões =====
@@ -89,33 +98,43 @@ const OtcReportsTab: React.FC = () => {
     }, [clientId, dateFrom, dateTo]),
   });
 
+  const doExportConversions = (data: OTCConversion[]) => {
+    if (data.length === 0) {
+      toast.info('Nenhuma conversão encontrada para o período selecionado');
+      return;
+    }
+    const formatted = data.map(c => ({
+      created_at: formatDateBR(c.created_at),
+      brl_amount: formatCurrencyBR(c.brl_amount),
+      usd_amount: formatCurrencyBR(c.usd_amount),
+      conversion_rate: c.conversion_rate.toFixed(4),
+      brl_balance_after: formatCurrencyBR(c.brl_balance_after),
+      usd_balance_after: formatCurrencyBR(c.usd_balance_after),
+      description: c.description,
+      admin_name: c.admin?.name || '',
+    }));
+    const filename = `conversoes-otc-${clientName.replace(/\s+/g, '_')}-${dateFrom}-${dateTo}`;
+    exportToCSV(formatted, OTC_CONVERSIONS_COLUMNS, filename);
+    toast.success(`Relatório exportado: ${data.length} conversões`);
+  };
+
   const handleGenerateConversions = async () => {
     if (!clientId) {
       toast.error('Selecione um cliente para gerar o relatório');
       return;
     }
     const data = await conversionsGenerator.generate();
-    if (data && data.length > 0) {
-      const formatted = data.map(c => ({
-        created_at: formatDateBR(c.created_at),
-        brl_amount: formatCurrencyBR(c.brl_amount),
-        usd_amount: formatCurrencyBR(c.usd_amount),
-        conversion_rate: c.conversion_rate.toFixed(4),
-        brl_balance_after: formatCurrencyBR(c.brl_balance_after),
-        usd_balance_after: formatCurrencyBR(c.usd_balance_after),
-        description: c.description,
-        admin_name: c.admin?.name || '',
-      }));
-      const filename = `conversoes-otc-${clientName.replace(/\s+/g, '_')}-${dateFrom}-${dateTo}`;
-      exportToCSV(formatted, OTC_CONVERSIONS_COLUMNS, filename);
-      toast.success(`Relatório exportado: ${data.length} conversões`);
-    } else if (data && data.length === 0) {
-      toast.info('Nenhuma conversão encontrada para o período selecionado');
-    }
+    if (data) doExportConversions(data);
+  };
+
+  const handleConfirmConversions = async () => {
+    const data = await conversionsGenerator.confirmAndGenerate();
+    if (data) doExportConversions(data);
   };
 
   const activeGenerator = reportType === 'statement' ? statementGenerator : conversionsGenerator;
   const handleGenerate = reportType === 'statement' ? handleGenerateStatement : handleGenerateConversions;
+  const handleConfirm = reportType === 'statement' ? handleConfirmStatement : handleConfirmConversions;
 
   return (
     <div className="space-y-4">
@@ -129,7 +148,7 @@ const OtcReportsTab: React.FC = () => {
         onGenerateCSV={handleGenerate}
         error={activeGenerator.error}
         needsConfirmation={activeGenerator.needsConfirmation}
-        onConfirm={activeGenerator.confirmAndGenerate}
+        onConfirm={handleConfirm}
         onDismiss={activeGenerator.dismissWarning}
         disabled={!clientId}
         disabledReason="Selecione um cliente"
