@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   CreditCard,
   Plus,
@@ -80,6 +80,14 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
 
   const isSubmitting = isCreating || isTransferring;
 
+  // Trava síncrona contra duplo-clique: `isSubmitting` (isLoading do react-query) só
+  // vira true de forma assíncrona após o clique, então um duplo-clique rápido dispararia
+  // 2 requests antes do botão desabilitar. Este ref bloqueia já no mesmo tick.
+  const submitLockRef = useRef(false);
+  // Chave de idempotência da transferência: gerada UMA vez por sessão de confirmação e
+  // reutilizada em retentativas (mesmo clique lógico = mesma chave), zerada a cada open/sucesso.
+  const transferIdempotencyKeyRef = useRef<string | null>(null);
+
   // Resetar formulário quando modal abrir/fechar
   useEffect(() => {
     if (isOpen) {
@@ -99,6 +107,8 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
       setShowConfirmation(false);
       setDestClients([]);
       setDestSearchQuery('');
+      submitLockRef.current = false;
+      transferIdempotencyKeyRef.current = null;
     } else {
       if (calculationTimeout) {
         clearTimeout(calculationTimeout);
@@ -410,9 +420,21 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
       return;
     }
 
+    // Trava síncrona contra duplo-clique: ignora cliques repetidos enquanto há submissão em voo.
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+
     try {
       // Branch para transferência
       if (formData.operation_type === 'transfer') {
+        // Gera a chave de idempotência UMA vez por sessão de confirmação; reenvios após
+        // erro reaproveitam a mesma chave (mesma operação lógica → backend não duplica).
+        if (!transferIdempotencyKeyRef.current) {
+          transferIdempotencyKeyRef.current =
+            (typeof crypto !== 'undefined' && crypto.randomUUID)
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        }
         const destClient = destClients.find(c => c.id === Number(formData.to_otc_client_id));
         await transferBalance({
           from_otc_client_id: client.id,
@@ -420,8 +442,10 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
           currency: formData.currency,
           amount: parseFloat(formData.amount),
           description: formData.description.trim(),
-          pin: formData.pin
+          pin: formData.pin,
+          idempotency_key: transferIdempotencyKeyRef.current
         });
+        transferIdempotencyKeyRef.current = null; // sucesso → próxima transferência usa chave nova
         const symbol = formData.currency === 'USD' ? '$' : 'R$';
         toast.success('Transferência realizada com sucesso', {
           description: `${symbol} ${parseFloat(formData.amount).toFixed(2)} de ${client.name} → ${destClient?.name || 'destino'}`
@@ -473,6 +497,8 @@ const OTCOperationModal: React.FC<OTCOperationModalProps> = ({
         }
       }
       setShowConfirmation(false);
+    } finally {
+      submitLockRef.current = false;
     }
   };
 

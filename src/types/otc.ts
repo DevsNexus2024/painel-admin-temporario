@@ -204,6 +204,8 @@ export interface TransferBalanceRequest {
   amount: number;
   description: string;
   pin: string;
+  /** Chave de idempotência (UUID) gerada uma vez por sessão de confirmação no front. Evita duplo-processamento. */
+  idempotency_key?: string;
 }
 
 export interface TransferBalanceResult {
