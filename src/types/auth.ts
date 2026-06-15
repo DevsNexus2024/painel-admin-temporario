@@ -292,7 +292,7 @@ export const ROUTE_PERMISSIONS: Record<string, RoutePermissions> = {
   '/sistema': { allowedRoles: ['super_admin'] },
 
   // ==================== GRUPO TCR ====================
-  '/grupo-tcr/tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
+  '/grupo-tcr/tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user', 'otc_user'] },
   '/brasilcash-tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
   '/brasilcash-otc': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
   '/belmontx-tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
