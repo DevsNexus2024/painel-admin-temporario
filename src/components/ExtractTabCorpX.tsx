@@ -16,7 +16,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
-import { RowPixActions } from "@/components/otc/RowPixActions"; // M4 — ações devolução/bloqueio
 import BulkCreditOTCModal from "@/components/otc/BulkCreditOTCModal";
 import MoneyRainEffect from "@/components/MoneyRainEffect";
 import { useCorpX, CORPX_ACCOUNTS, getCorpxAliasByCnpj } from "@/contexts/CorpXContext";
@@ -2903,14 +2902,6 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                                   )}
                                 </Button>
                               )}
-                              {transaction.type === 'CRÉDITO' && (
-                                <RowPixActions
-                                  provider="corpx_v2"
-                                  endToEndId={transaction.code}
-                                  amount={transaction.value}
-                                  clientName={transaction.client}
-                                />
-                              )}
                             </div>
                           </TableCell>
                           )}
@@ -3214,6 +3205,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
         isOpen={creditOTCModalOpen}
         onClose={handleCloseCreditOTCModal}
         extractRecord={selectedExtractRecord}
+        provider="corpx_v2"
       />
 
       {/* 🆕 Modal de Crédito OTC em Lote */}

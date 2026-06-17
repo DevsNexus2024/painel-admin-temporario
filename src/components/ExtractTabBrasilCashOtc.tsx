@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
-import { RowPixActions } from "@/components/otc/RowPixActions"; // M4 — ações devolução/bloqueio
 import type { MovimentoExtrato } from "@/services/extrato";
 import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 import { useBrasilCashOtc } from "@/contexts/BrasilCashOtcContext";
@@ -1286,14 +1285,6 @@ export default function ExtractTabBrasilCashOtc() {
                                     )}
                                   </Button>
                                 )}
-                                {tx.type === 'FUNDING' && (
-                                  <RowPixActions
-                                    provider="brasilcash"
-                                    endToEndId={tx.endToEndId}
-                                    amount={tx.amount}
-                                    clientName={tx.payeeName || tx.payerName}
-                                  />
-                                )}
                                 <Badge variant="outline" className="text-xs">ID: {tx.id}</Badge>
                               </div>
                             </div>
@@ -1590,6 +1581,7 @@ export default function ExtractTabBrasilCashOtc() {
         isOpen={creditOTCModalOpen}
         onClose={handleCloseCreditOTCModal}
         extractRecord={selectedExtractRecord}
+        provider="brasilcash"
       />
     </div>
   );
