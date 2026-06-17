@@ -43,7 +43,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 
-import { pixPermissionsService, PixPermission, CreatePixPermissionDTO, PixPermissionScopeType } from "@/services/pixPermissions";
+import { pixPermissionsService, PixPermission, CreatePixPermissionDTO, PixPermissionScopeType, PixScopeAccount } from "@/services/pixPermissions";
 import { CORPX_ACCOUNTS, TCR_CORPX_ALIAS } from "@/contexts/CorpXContext";
 
 export default function PixPermissionsPage() {
@@ -67,6 +67,19 @@ export default function PixPermissionsPage() {
     label: '',
     expiresAt: ''
   });
+
+  // Contas BrasilCash p/ o dropdown de escopo (carregadas sob demanda)
+  const [bcAccounts, setBcAccounts] = useState<PixScopeAccount[]>([]);
+  const [bcAccountsLoading, setBcAccountsLoading] = useState(false);
+
+  useEffect(() => {
+    if (newPermission.scopeType !== 'BRASILCASH_ACCOUNT' || bcAccounts.length > 0) return;
+    setBcAccountsLoading(true);
+    pixPermissionsService.listAccounts('brasilcash')
+      .then((r) => setBcAccounts(r.data))
+      .catch(() => toast.error("Erro ao carregar contas BrasilCash"))
+      .finally(() => setBcAccountsLoading(false));
+  }, [newPermission.scopeType]);
 
   const fetchPermissions = async () => {
     setIsLoading(true);
@@ -105,7 +118,21 @@ export default function PixPermissionsPage() {
         return;
       }
 
-      await pixPermissionsService.create(newPermission);
+      // Monta o payload omitindo opcionais vazios. `expiresAt` vazio NÃO pode ir
+      // como '' (o backend @IsOptional não pula string vazia e @IsDateString falha);
+      // quando preenchido, o datetime-local vem sem tz, então normalizamos pra ISO completo.
+      const payload: CreatePixPermissionDTO = {
+        scopeType: newPermission.scopeType,
+        scopeId: newPermission.scopeId,
+        keyType: newPermission.keyType,
+        keyValue: newPermission.keyValue,
+        ...(newPermission.label ? { label: newPermission.label } : {}),
+        ...(newPermission.expiresAt
+          ? { expiresAt: new Date(newPermission.expiresAt).toISOString() }
+          : {}),
+      };
+
+      await pixPermissionsService.create(payload);
       toast.success("Permissão criada com sucesso");
       setIsCreateOpen(false);
       setNewPermission({
@@ -299,7 +326,9 @@ export default function PixPermissionsPage() {
                 <Select 
                   value={newPermission.scopeType} 
                   onValueChange={(val: PixPermissionScopeType) => {
-                    const resetScopeId = val === 'CORPX_ACCOUNT' ? '' : val === 'GLOBAL' ? '*' : newPermission.scopeId;
+                    const resetScopeId =
+                      val === 'CORPX_ACCOUNT' || val === 'BRASILCASH_ACCOUNT' ? '' :
+                      val === 'GLOBAL' ? '*' : newPermission.scopeId;
                     setNewPermission({...newPermission, scopeType: val, scopeId: resetScopeId});
                   }}
                 >
@@ -338,16 +367,28 @@ export default function PixPermissionsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                ) : newPermission.scopeType === 'BRASILCASH_ACCOUNT' ? (
+                  <Select
+                    value={newPermission.scopeId}
+                    onValueChange={(val) => setNewPermission({...newPermission, scopeId: val})}
+                  >
+                    <SelectTrigger id="scopeId">
+                      <SelectValue placeholder={bcAccountsLoading ? "Carregando contas..." : "Selecione a conta BrasilCash"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {bcAccounts.map((acc) => (
+                        <SelectItem key={acc.value} value={acc.value}>
+                          {acc.label}{acc.hint ? ` — ${acc.hint}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : (
-                  <Input 
-                    id="scopeId" 
-                    value={newPermission.scopeId} 
+                  <Input
+                    id="scopeId"
+                    value={newPermission.scopeId}
                     onChange={(e) => setNewPermission({...newPermission, scopeId: e.target.value})}
-                    placeholder={
-                      newPermission.scopeType === 'GLOBAL' ? '*' :
-                      newPermission.scopeType === 'BRASILCASH_ACCOUNT' ? 'UUID (brasilcash account_id)' :
-                      'ID...'
-                    }
+                    placeholder={newPermission.scopeType === 'GLOBAL' ? '*' : 'ID...'}
                   />
                 )}
               </div>

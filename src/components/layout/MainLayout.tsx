@@ -560,8 +560,8 @@ export default function MainLayout() {
                             )}
 
                             {/* ========== ADMINISTRAÇÃO ========== */}
-                            {/* Permissões PIX: escondido e inacessível */}
-                            {false && canShow("/pix-permissions") && (
+                            {/* Permissões PIX: visível para super_admin (gestão de allowlist de PIX-OUT) */}
+                            {canShow("/pix-permissions") && (
                                 <div className="pb-2">
                                     {!isCollapsed && (
                                         <h3 className="mb-2 px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">

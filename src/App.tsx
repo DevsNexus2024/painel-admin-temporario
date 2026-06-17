@@ -43,6 +43,7 @@ import AnaliseUsuario from "./pages/AnaliseUsuario";
 import AuditoriaDepositosPage from "./pages/AuditoriaDepositosPage";
 import CashClosureDashboard from "./pages/CashClosureDashboard";
 import Sistema from "./pages/Sistema";
+import PixPermissionsPage from "./pages/PixPermissionsPage";
 
 // 🚨 IMPORTAR NOVA ARQUITETURA MULTI-BANCO
 import { initializeBankingSystem } from "@/services/banking";
@@ -179,7 +180,7 @@ const App = () => (
                   <Route path="/contas-organizacoes/conta/:id" element={<ContaDetailsPage />} />
                   <Route path="/analise-usuario/:id" element={<AnaliseUsuario />} />
                   <Route path="/sistema" element={<Sistema />} />
-                  <Route path="/pix-permissions" element={<Navigate to="/" replace />} />
+                  <Route path="/pix-permissions" element={<PixPermissionsPage />} />
                 </Route>
                 
                 {/* Rota 404 */}

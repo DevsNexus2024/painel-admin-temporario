@@ -26,7 +26,7 @@ class AuthService {
    * Base URL do BaaS v2 APENAS para login (pedido do usuário).
    * Todo o restante continua usando a base configurada do sistema legado.
    */
-  private readonly BAAS_V2_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
+  private readonly BAAS_V2_BASE_URL = (import.meta.env.X_BAAS_V2_API_URL as string) || 'https://api-bank-v2.gruponexus.com.br';
   private readonly BAAS_V2_LOGIN_PATH = '/auth/login';
   private readonly BAAS_V2_PROFILE_PATH = '/auth/me';
 

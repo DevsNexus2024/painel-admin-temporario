@@ -43,6 +43,13 @@ export interface PixPermissionFilters {
   isActive?: boolean;
 }
 
+/** Conta normalizada p/ o dropdown de escopo (value = UUID/scopeId). */
+export interface PixScopeAccount {
+  value: string;
+  label: string;
+  hint?: string;
+}
+
 const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<{ data: T }> => {
   const url = `${PIX_PERMISSIONS_BASE_URL}${endpoint}`;
   const response = await fetch(url, {
@@ -86,5 +93,10 @@ export const pixPermissionsService = {
       method: 'DELETE',
       ...(revokeNote && { body: JSON.stringify({ revokeNote }) }),
     });
-  }
+  },
+
+  /** Lista contas de um provider p/ popular o dropdown de escopo (CORPX/BRASILCASH). */
+  listAccounts: async (provider: 'corpx' | 'brasilcash') => {
+    return request<PixScopeAccount[]>(`/api/pix-permissions/accounts?provider=${provider}`);
+  },
 };
