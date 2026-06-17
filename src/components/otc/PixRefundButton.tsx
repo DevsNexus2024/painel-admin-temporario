@@ -40,9 +40,6 @@ export function PixRefundButton({
   endToEndId,
   amount,
   clientName,
-  size = 'sm',
-  variant = 'outline',
-  iconOnly = false,
   onDone,
 }: PixRefundButtonProps) {
   const [open, setOpen] = useState(false);
@@ -103,17 +100,18 @@ export function PixRefundButton({
   return (
     <>
       <Button
-        variant={variant}
-        size={size}
+        variant="outline"
+        size="sm"
         disabled={disabled}
-        title={disabled ? 'Sem endToEndId — não é possível devolver' : 'Devolver este PIX'}
+        title={disabled ? 'Sem endToEndId — não é possível devolver' : 'Devolver este PIX ao pagador'}
         onClick={(e) => {
           e.stopPropagation();
           setOpen(true);
         }}
+        className="h-7 px-2 text-xs transition-all bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 hover:border-rose-300 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-300 dark:border-rose-900"
       >
-        <Undo2 className="h-4 w-4" />
-        {!iconOnly && <span className="ml-1">Devolver</span>}
+        <Undo2 className="h-3 w-3 mr-1" />
+        Devolver
       </Button>
 
       <Dialog
