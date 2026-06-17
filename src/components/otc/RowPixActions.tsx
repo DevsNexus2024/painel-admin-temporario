@@ -64,7 +64,9 @@ export function RowPixActions({ provider, endToEndId, amount, clientName, allowB
 
   return (
     <>
-      <DropdownMenu>
+      {/* modal={false}: evita o Radix deixar pointer-events:none no body (scroll travado)
+          quando um Dialog abre a partir de um item do menu. */}
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
