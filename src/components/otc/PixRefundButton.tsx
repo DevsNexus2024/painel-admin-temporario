@@ -101,17 +101,17 @@ export function PixRefundButton({
     <>
       <Button
         variant="outline"
-        size="sm"
+        size="icon"
         disabled={disabled}
         title={disabled ? 'Sem endToEndId — não é possível devolver' : 'Devolver este PIX ao pagador'}
+        aria-label="Devolver PIX"
         onClick={(e) => {
           e.stopPropagation();
           setOpen(true);
         }}
-        className="h-7 px-2 text-xs transition-all bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 hover:border-rose-300 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-300 dark:border-rose-900"
+        className="h-7 w-7 p-0 transition-all bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 hover:border-rose-300 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-300 dark:border-rose-900"
       >
-        <Undo2 className="h-3 w-3 mr-1" />
-        Devolver
+        <Undo2 className="h-3.5 w-3.5" />
       </Button>
 
       <Dialog

@@ -2868,7 +2868,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                           {/* ✅ Coluna de Ações - Botão +OTC (oculto no modo lote) */}
                           {!bulkMode && (
                           <TableCell className="py-3">
-                            <div className="flex items-center justify-center">
+                            <div className="flex items-center justify-center gap-1.5">
                               {transaction.type === 'CRÉDITO' && (
                                 <Button
                                   variant="outline"
