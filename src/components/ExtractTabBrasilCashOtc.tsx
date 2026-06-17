@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
+import { PixRefundButton } from "@/components/otc/PixRefundButton"; // M4 — devolução de PIX
 import type { MovimentoExtrato } from "@/services/extrato";
 import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 import { useBrasilCashOtc } from "@/contexts/BrasilCashOtcContext";
@@ -1284,6 +1285,15 @@ export default function ExtractTabBrasilCashOtc() {
                                       </>
                                     )}
                                   </Button>
+                                )}
+                                {tx.type === 'FUNDING' && (
+                                  <PixRefundButton
+                                    provider="brasilcash"
+                                    endToEndId={tx.endToEndId}
+                                    amount={tx.amount}
+                                    clientName={tx.payeeName || tx.payerName}
+                                    iconOnly
+                                  />
                                 )}
                                 <Badge variant="outline" className="text-xs">ID: {tx.id}</Badge>
                               </div>

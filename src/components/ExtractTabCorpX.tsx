@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import CreditExtractToOTCModal from "@/components/otc/CreditExtractToOTCModal";
+import { PixRefundButton } from "@/components/otc/PixRefundButton"; // M4 — devolução de PIX
 import BulkCreditOTCModal from "@/components/otc/BulkCreditOTCModal";
 import MoneyRainEffect from "@/components/MoneyRainEffect";
 import { useCorpX, CORPX_ACCOUNTS, getCorpxAliasByCnpj } from "@/contexts/CorpXContext";
@@ -2901,6 +2902,15 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
                                     </>
                                   )}
                                 </Button>
+                              )}
+                              {transaction.type === 'CRÉDITO' && (
+                                <PixRefundButton
+                                  provider="corpx_v2"
+                                  endToEndId={transaction.code}
+                                  amount={transaction.value}
+                                  clientName={transaction.client}
+                                  iconOnly
+                                />
                               )}
                             </div>
                           </TableCell>
