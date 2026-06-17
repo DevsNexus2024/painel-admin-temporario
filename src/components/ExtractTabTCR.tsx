@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PixRefundButton } from "@/components/otc/PixRefundButton"; // M4 — devolução de PIX
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarWrapper } from "@/components/ui/calendar-wrapper";
 import { format } from "date-fns";
@@ -2301,9 +2302,18 @@ export default function ExtractTabTCR() {
                                   )}
                                 </Button>
                               )}
+                          {tx.type === 'CRÉDITO' && (
+                            <PixRefundButton
+                              provider="corpx_v2"
+                              endToEndId={tx.code}
+                              amount={tx.value}
+                              clientName={tx.client}
+                              iconOnly
+                            />
+                          )}
                         </td>
                     </tr>
-                    
+
                     {/* Linha expandida com detalhes */}
                     {expandedRow === tx.id && (() => {
                       const original = tx._original || {};
