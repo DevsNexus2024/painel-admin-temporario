@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
-import { PixRefundButton } from "@/components/otc/PixRefundButton"; // M4 — devolução de PIX
+import { RowPixActions } from "@/components/otc/RowPixActions"; // M4 — ações devolução/bloqueio
 import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 import { BrasilCashRealtimeService } from "@/services/brasilcash-realtime";
 import type { BrasilCashTransactionDB, BrasilCashTransactionFilters } from "@/services/brasilcash-realtime";
@@ -1590,12 +1590,12 @@ export default function ExtractTabBrasilCashTcr() {
                             </Button>
                           )}
                           {tx.type === 'FUNDING' && (
-                            <PixRefundButton
+                            <RowPixActions
                               provider="brasilcash"
                               endToEndId={tx.endToEndId}
                               amount={tx.amount}
                               clientName={tx.payeeName || tx.payerName}
-                              iconOnly
+                              allowBlock
                             />
                           )}
                         </div>

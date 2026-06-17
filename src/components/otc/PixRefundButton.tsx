@@ -27,6 +27,11 @@ interface PixRefundButtonProps {
   variant?: 'destructive' | 'outline' | 'ghost';
   /** Renderiza só o ícone (para uso compacto em linha de tabela) */
   iconOnly?: boolean;
+  /** Modo controlado: estado do modal vem do pai (ex.: aberto por um item de menu) */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Não renderiza o botão-gatilho (quando o modal é aberto externamente) */
+  hideTrigger?: boolean;
   onDone?: () => void;
 }
 
@@ -40,9 +45,14 @@ export function PixRefundButton({
   endToEndId,
   amount,
   clientName,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
   onDone,
 }: PixRefundButtonProps) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (o: boolean) => (onOpenChange ? onOpenChange(o) : setUncontrolledOpen(o));
   const [pin, setPin] = useState('');
   const [totp, setTotp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -99,20 +109,22 @@ export function PixRefundButton({
 
   return (
     <>
-      <Button
-        variant="outline"
-        size="icon"
-        disabled={disabled}
-        title={disabled ? 'Sem endToEndId — não é possível devolver' : 'Devolver este PIX ao pagador'}
-        aria-label="Devolver PIX"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen(true);
-        }}
-        className="h-7 w-7 p-0 transition-all bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 hover:border-rose-300 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-300 dark:border-rose-900"
-      >
-        <Undo2 className="h-3.5 w-3.5" />
-      </Button>
+      {!hideTrigger && (
+        <Button
+          variant="outline"
+          size="icon"
+          disabled={disabled}
+          title={disabled ? 'Sem endToEndId — não é possível devolver' : 'Devolver este PIX ao pagador'}
+          aria-label="Devolver PIX"
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(true);
+          }}
+          className="h-7 w-7 p-0 transition-all bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 hover:border-rose-300 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-300 dark:border-rose-900"
+        >
+          <Undo2 className="h-3.5 w-3.5" />
+        </Button>
+      )}
 
       <Dialog
         open={open}
