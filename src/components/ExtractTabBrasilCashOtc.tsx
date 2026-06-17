@@ -1581,6 +1581,7 @@ export default function ExtractTabBrasilCashOtc() {
         isOpen={creditOTCModalOpen}
         onClose={handleCloseCreditOTCModal}
         extractRecord={selectedExtractRecord}
+        provider="brasilcash"
       />
     </div>
   );

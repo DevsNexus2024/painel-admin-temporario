@@ -2303,7 +2303,7 @@ export default function ExtractTabTCR() {
                               )}
                         </td>
                     </tr>
-                    
+
                     {/* Linha expandida com detalhes */}
                     {expandedRow === tx.id && (() => {
                       const original = tx._original || {};
@@ -2735,6 +2735,7 @@ export default function ExtractTabTCR() {
         isOpen={compensationModalOpen}
         onClose={() => setCompensationModalOpen(false)}
         extractRecord={selectedCompensationRecord}
+        provider="corpx_v2"
       />
 
       {/* 🆕 Modal de Depósito Encontrado */}

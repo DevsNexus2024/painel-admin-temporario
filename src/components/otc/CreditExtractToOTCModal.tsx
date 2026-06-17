@@ -26,11 +26,18 @@ import { cn } from '@/lib/utils';
 import { otcService } from '@/services/otc';
 import { useBankFeatures } from '@/hooks/useBankFeatures';
 import { normalizeExtractToOTC } from '@/utils/normalizeExtractToOTC';
+import { RowPixActions } from '@/components/otc/RowPixActions'; // M4 — devolução de PIX dentro do modal
+import type { PixRefundProvider } from '@/services/otcPixRefund';
 
 interface CreditExtractToOTCModalProps {
   isOpen: boolean;
   onClose: (wasSuccessful?: boolean) => void;
   extractRecord?: MovimentoExtrato | null;
+  /**
+   * M4: habilita a ação "Devolver PIX" dentro do modal. Só os providers vivos de OTC
+   * (corpx_v2 / brasilcash). Sem prop = sem botão (ex.: BelmontX/Bitso/BMP).
+   */
+  provider?: PixRefundProvider;
 }
 
 /**
@@ -39,7 +46,8 @@ interface CreditExtractToOTCModalProps {
 const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
   isOpen,
   onClose,
-  extractRecord
+  extractRecord,
+  provider
 }) => {
   const { clients, isLoading: loadingClients } = useOTCClients();
   const { createOperation, isCreating } = useOTCOperations();
@@ -536,6 +544,9 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
     return null;
   }
 
+  // M4: E2E resolvido do mesmo jeito que o +OTC resolve (idEndToEnd p/ CorpX, endToEndId p/ BrasilCash).
+  const refundE2E = provider ? detectProvider().codigo : '';
+
   // Formatação de moeda
   const formatCurrency = (value: number) => {
     return value.toLocaleString('pt-BR', {
@@ -951,8 +962,22 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
               </CardContent>
             </Card>
 
-            {/* Ações */}
-            <div className="flex justify-end gap-3 pt-4">
+            {/* Ações — Devolver PIX à esquerda (alternativa); Cancelar/Continuar à direita */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+              {/* M4 — refund no provider + débito do cliente (modal próprio com PIN+TOTP). Só providers vivos. */}
+              <div className="min-w-0">
+                {provider && refundE2E && (
+                  <RowPixActions
+                    triggerMode="buttons"
+                    provider={provider}
+                    endToEndId={refundE2E}
+                    amount={extractRecord.value}
+                    clientName={extractRecord.client}
+                    onDone={() => onClose(true)}
+                  />
+                )}
+              </div>
+              <div className="flex justify-end gap-3">
               <Button
                 type="button"
                 variant="outline"
@@ -988,6 +1013,7 @@ const CreditExtractToOTCModal: React.FC<CreditExtractToOTCModalProps> = ({
                   ? 'Verificando...'
                   : 'Continuar'}
               </Button>
+              </div>
             </div>
           </form>
         ) : (

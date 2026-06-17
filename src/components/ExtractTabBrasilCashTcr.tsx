@@ -1928,6 +1928,7 @@ export default function ExtractTabBrasilCashTcr() {
         isOpen={compensationModalOpen}
         onClose={handleCloseCompensationModal}
         extractRecord={selectedCompensationRecord}
+        provider="brasilcash"
       />
     </div>
   );
