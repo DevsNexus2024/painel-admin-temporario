@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { RowPixActions } from "@/components/otc/RowPixActions"; // M4 — devolução + bloqueio cautelar
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,9 +25,11 @@ interface CompensationModalInteligenteProps {
   isOpen: boolean;
   onClose: (success?: boolean) => void;
   extractRecord: MovimentoExtrato | null;
+  /** M4: provider do PIX (p/ Devolver/Bloquear). 'corpx_v2' | 'brasilcash'. */
+  provider?: 'corpx_v2' | 'brasilcash';
 }
 
-export default function CompensationModalInteligente({ isOpen, onClose, extractRecord }: CompensationModalInteligenteProps) {
+export default function CompensationModalInteligente({ isOpen, onClose, extractRecord, provider = 'corpx_v2' }: CompensationModalInteligenteProps) {
   const navigate = useNavigate();
   const [formData, setFormData] = useState<Partial<CompensationData>>({});
   const [quantiaInput, setQuantiaInput] = useState<string>('');
@@ -1215,6 +1218,22 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
             </TabsContent>
           </Tabs>
         </div>
+
+        {/* M4: Devolução de PIX + Bloqueio cautelar (ações sobre o PIX original) */}
+        {extractRecord?.code && (
+          <div className="mt-3 border-t border-border pt-3">
+            <p className="text-xs text-muted-foreground mb-2">Ações sobre este PIX</p>
+            <RowPixActions
+              triggerMode="buttons"
+              allowBlock
+              provider={provider}
+              endToEndId={extractRecord.code}
+              amount={extractRecord.value}
+              clientName={extractRecord.client}
+              onDone={() => onClose(true)}
+            />
+          </div>
+        )}
 
         <DialogFooter className="mt-4">
           <Button variant="outline" onClick={handleClose} disabled={isLoading || isLoadingBRBTC}>

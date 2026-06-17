@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
-import { RowPixActions } from "@/components/otc/RowPixActions"; // M4 — ações devolução/bloqueio
 import { useFilteredBitsoWebSocket } from "@/hooks/useFilteredBitsoWebSocket";
 import { BrasilCashRealtimeService } from "@/services/brasilcash-realtime";
 import type { BrasilCashTransactionDB, BrasilCashTransactionFilters } from "@/services/brasilcash-realtime";
@@ -1589,15 +1588,6 @@ export default function ExtractTabBrasilCashTcr() {
                               )}
                             </Button>
                           )}
-                          {tx.type === 'FUNDING' && (
-                            <RowPixActions
-                              provider="brasilcash"
-                              endToEndId={tx.endToEndId}
-                              amount={tx.amount}
-                              clientName={tx.payeeName || tx.payerName}
-                              allowBlock
-                            />
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -1938,6 +1928,7 @@ export default function ExtractTabBrasilCashTcr() {
         isOpen={compensationModalOpen}
         onClose={handleCloseCompensationModal}
         extractRecord={selectedCompensationRecord}
+        provider="brasilcash"
       />
     </div>
   );

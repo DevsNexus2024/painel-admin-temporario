@@ -30,6 +30,8 @@ interface RowPixActionsProps {
   clientName?: string | null;
   /** Bloqueio cautelar só faz sentido em conta TCR (TCR-APP). */
   allowBlock?: boolean;
+  /** 'menu' = botão "⋯" (linha de tabela); 'buttons' = botões inline (dentro de um modal). */
+  triggerMode?: 'menu' | 'buttons';
   onDone?: () => void;
 }
 
@@ -37,7 +39,7 @@ interface RowPixActionsProps {
  * Menu de ações por linha (M4) — "⋯" → Devolver PIX (+ Bloquear saldo cautelar nos extratos TCR).
  * Compacto, sem cramar a coluna de ações. Abre os modais controlados.
  */
-export function RowPixActions({ provider, endToEndId, amount, clientName, allowBlock = false, onDone }: RowPixActionsProps) {
+export function RowPixActions({ provider, endToEndId, amount, clientName, allowBlock = false, triggerMode = 'menu', onDone }: RowPixActionsProps) {
   const e2e = (endToEndId || '').trim();
   const [refundOpen, setRefundOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
@@ -64,37 +66,59 @@ export function RowPixActions({ provider, endToEndId, amount, clientName, allowB
 
   return (
     <>
-      {/* modal={false}: evita o Radix deixar pointer-events:none no body (scroll travado)
-          quando um Dialog abre a partir de um item do menu. */}
-      <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
+      {triggerMode === 'buttons' ? (
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            title="Ações"
-            onClick={(e) => e.stopPropagation()}
+            variant="outline"
+            size="sm"
+            onClick={() => setRefundOpen(true)}
+            className="h-8 text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-300 dark:border-rose-900"
           >
-            <MoreHorizontal className="h-4 w-4" />
+            <Undo2 className="h-4 w-4 mr-1.5" /> Devolver PIX
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-          <DropdownMenuItem
-            className="text-rose-700 dark:text-rose-300 cursor-pointer"
-            onSelect={(e) => { e.preventDefault(); setRefundOpen(true); }}
-          >
-            <Undo2 className="h-4 w-4 mr-2" /> Devolver PIX
-          </DropdownMenuItem>
           {allowBlock && (
-            <DropdownMenuItem
-              className="text-amber-700 dark:text-amber-300 cursor-pointer"
-              onSelect={(e) => { e.preventDefault(); setBlockOpen(true); }}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBlockOpen(true)}
+              className="h-8 text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 dark:text-amber-300 dark:border-amber-900"
             >
-              <Lock className="h-4 w-4 mr-2" /> Bloquear saldo (cautelar)
-            </DropdownMenuItem>
+              <Lock className="h-4 w-4 mr-1.5" /> Bloquear saldo (cautelar)
+            </Button>
           )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </div>
+      ) : (
+        /* modal={false}: evita o Radix deixar pointer-events:none no body (scroll travado). */
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              title="Ações"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuItem
+              className="text-rose-700 dark:text-rose-300 cursor-pointer"
+              onSelect={(e) => { e.preventDefault(); setRefundOpen(true); }}
+            >
+              <Undo2 className="h-4 w-4 mr-2" /> Devolver PIX
+            </DropdownMenuItem>
+            {allowBlock && (
+              <DropdownMenuItem
+                className="text-amber-700 dark:text-amber-300 cursor-pointer"
+                onSelect={(e) => { e.preventDefault(); setBlockOpen(true); }}
+              >
+                <Lock className="h-4 w-4 mr-2" /> Bloquear saldo (cautelar)
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       {/* Modal de devolução (controlado, sem botão-gatilho) */}
       <PixRefundButton
