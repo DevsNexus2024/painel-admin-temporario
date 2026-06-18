@@ -3,7 +3,7 @@ import { TOKEN_STORAGE } from '@/config/api';
 /**
  * Bloqueio cautelar de saldo (M4) — hold reversível na conta TCR (TCR-APP).
  *
- * O backend vive no TCR-APP (`POST /api/tcr-baas/bloqueio-cautelar[/desbloquear]`). REUSA a base que o
+ * O backend vive no TCR-APP (`POST /brbtc/bloqueio-cautelar[/desbloquear]`). REUSA a base que o
  * painel JÁ usa pro TCR-APP: `X_DIAGNOSTICO_API_URL` (mesma do tcrSaldos.ts; = vps80270:8081 em prod).
  * `X_TCR_APP_BASE_URL` fica como override opcional. SEM fallback hardcoded de propósito: no lab, sem a
  * env, falha com mensagem clara (não vaza pro TCR-APP de prod). Auth = Bearer do login (igual
@@ -40,6 +40,6 @@ async function call(path: string, body: BloqueioCautelarRequest) {
 }
 
 export const bloqueioCautelarService = {
-  bloquear: (req: BloqueioCautelarRequest) => call('/api/tcr-baas/bloqueio-cautelar', req),
-  desbloquear: (req: BloqueioCautelarRequest) => call('/api/tcr-baas/bloqueio-cautelar/desbloquear', req),
+  bloquear: (req: BloqueioCautelarRequest) => call('/brbtc/bloqueio-cautelar', req),
+  desbloquear: (req: BloqueioCautelarRequest) => call('/brbtc/bloqueio-cautelar/desbloquear', req),
 };
