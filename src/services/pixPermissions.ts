@@ -77,10 +77,11 @@ export const pixPermissionsService = {
     return request<PixPermission[]>(url);
   },
 
-  create: async (data: CreatePixPermissionDTO) => {
+  create: async (data: CreatePixPermissionDTO, totpCode?: string) => {
     return request<PixPermission>('/api/pix-permissions', {
       method: 'POST',
       body: JSON.stringify(data),
+      ...(totpCode ? { headers: { 'x-totp-code': totpCode } } : {}),
     });
   },
 
@@ -88,9 +89,10 @@ export const pixPermissionsService = {
     return request<PixPermission>(`/api/pix-permissions/${id}`);
   },
 
-  revoke: async (id: string, revokeNote?: string) => {
+  revoke: async (id: string, revokeNote?: string, totpCode?: string) => {
     return request<PixPermission>(`/api/pix-permissions/${id}`, {
       method: 'DELETE',
+      ...(totpCode ? { headers: { 'x-totp-code': totpCode } } : {}),
       ...(revokeNote && { body: JSON.stringify({ revokeNote }) }),
     });
   },
