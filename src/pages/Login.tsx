@@ -15,7 +15,12 @@ import { authService } from '@/services/auth';
 // Schema de validação
 const loginSchema = z.object({
   email: z.string().email('Email inválido').min(1, 'Email é obrigatório'),
-  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres')
+  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
+  totpCode: z
+    .string()
+    .regex(/^\d{6}$/, 'Código de 6 dígitos')
+    .optional()
+    .or(z.literal(''))
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
@@ -43,9 +48,10 @@ const Login: React.FC = () => {
 
   // Handler do submit unificado
   const onSubmit = async (data: LoginFormData) => {
-    const success = await login({ 
-      email: data.email, 
-      password: data.password 
+    const success = await login({
+      email: data.email,
+      password: data.password,
+      totpCode: data.totpCode || undefined,
     });
     
     if (success) {
@@ -235,6 +241,29 @@ const Login: React.FC = () => {
                   </div>
                   {errors.password && (
                     <p className="text-red-400 text-sm">{errors.password.message}</p>
+                  )}
+                </div>
+
+                {/* Campo Código TOTP (autenticador) */}
+                <div className="space-y-2">
+                  <Label htmlFor="totpCode" className="text-sm font-semibold text-white">
+                    Código do autenticador
+                  </Label>
+                  <div className="relative">
+                    <Shield className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                    <Input
+                      id="totpCode"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      placeholder="6 dígitos (se ativado)"
+                      className="pl-10 h-12 border-2 border-gray-700 bg-gray-900 text-white placeholder-gray-500 focus:border-orange-500 transition-colors tracking-widest"
+                      {...register('totpCode')}
+                    />
+                  </div>
+                  {errors.totpCode && (
+                    <p className="text-red-400 text-sm">{errors.totpCode.message}</p>
                   )}
                 </div>
 

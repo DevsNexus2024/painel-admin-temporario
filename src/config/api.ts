@@ -1,5 +1,6 @@
 import { User } from '@/types/auth';
 import { logger } from '@/utils/logger';
+import { fetchWithTotp } from '@/services/totpBridge';
 
 // 🔧 CONFIGURAÇÃO DE AMBIENTE - Determinada por variáveis de ambiente
 const getCurrentEnvironment = (): 'development' | 'production' => {
@@ -312,7 +313,7 @@ export const createApiRequest = async (
   };
 
   try {
-    const response = await fetch(url, config);
+    const response = await fetchWithTotp(url, config);
     
     // Se token inválido (401), limpar dados de auth
     if (response.status === 401) {
@@ -356,7 +357,7 @@ export const createAdminApiRequest = async (
       isDiagnosticoOperation
     }, 'AdminAPI');
     
-    const response = await fetch(url, config);
+    const response = await fetchWithTotp(url, config);
     
     // ✅ SEGURO: Response sem dados sensíveis
     logger.apiResponse(response.status, response.statusText, 'AdminAPI');
@@ -395,7 +396,7 @@ export const apiInterceptor = {
 // Instância da API configurada com fetch
 export const api = {
   get: async <T>(url: string): Promise<{ data: T }> => {
-    const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${url}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -428,7 +429,7 @@ export const api = {
   },
 
   post: async <T>(url: string, body?: any): Promise<{ data: T }> => {
-    const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${url}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -462,7 +463,7 @@ export const api = {
   },
 
   put: async <T>(url: string, body?: any): Promise<{ data: T }> => {
-    const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${url}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -496,7 +497,7 @@ export const api = {
   },
 
   patch: async <T>(url: string, body?: any): Promise<{ data: T }> => {
-    const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${url}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -530,7 +531,7 @@ export const api = {
   },
 
   delete: async <T>(url: string): Promise<{ data: T }> => {
-    const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${url}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',

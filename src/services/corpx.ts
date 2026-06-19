@@ -1,5 +1,6 @@
 // services/corpx.ts - Serviço CORPX Banking
 // Baseado no guia oficial de integração frontend
+import { fetchWithTotp } from '@/services/totpBridge';
 import type {
   CorpXSaldoResponse,
   CorpXExtratoResponse,
@@ -154,7 +155,7 @@ export async function consultarSaldoCorpX(
       'X-Corpx-Account-Context': alias,
     };
 
-    const response = await fetch(requestUrl, {
+    const response = await fetchWithTotp(requestUrl, {
       method: 'GET',
       headers: requestHeaders,
       signal: options?.signal
@@ -241,7 +242,7 @@ export async function consultarExtratoCorpX(params: CorpXExtratoParams): Promise
       ...(params.dataFim && { datafim: params.dataFim })
     };
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.consultarExtrato}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.consultarExtrato}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -454,7 +455,7 @@ export async function listarTransacoesCorpX(
       query.append('order', params.order);
     }
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTotp(url.toString(), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -504,7 +505,7 @@ export async function sincronizarExtratoCorpX(params: CorpXSyncRequest): Promise
       dryRun: params.dryRun ?? false,
     };
 
-    const response = await fetch(url, {
+    const response = await fetchWithTotp(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -701,7 +702,7 @@ export async function consultarTransacaoPorEndToEnd(
     const baseUrl = API_CONFIG.BASE_URL;
     const url = `${baseUrl}${CORPX_CONFIG.endpoints.consultarTransacao}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithTotp(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -811,7 +812,7 @@ export async function consultarTransacaoPorEndToEndV2(
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
     const url = `${baseUrl}${CORPX_CONFIG.endpoints.consultarTransacaoV2}?endToEndId=${encodeURIComponent(endtoendTrim)}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithTotp(url, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -912,7 +913,7 @@ export async function criarContaCorpX(dados: CorpXCreateAccountRequest): Promise
       tax_document: dados.tax_document
     };
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.criarConta}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.criarConta}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -968,7 +969,7 @@ export async function listarChavesPixCorpX(alias: string): Promise<CorpXPixKeysR
     }
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
-    const response = await fetch(`${baseUrl}${CORPX_CONFIG.endpoints.listarChavesPix}`, {
+    const response = await fetchWithTotp(`${baseUrl}${CORPX_CONFIG.endpoints.listarChavesPix}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -1032,7 +1033,7 @@ export async function criarChavePixCorpX(alias: string, dados: CorpXCreatePixKey
     }
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
-    const response = await fetch(`${baseUrl}${CORPX_CONFIG.endpoints.criarChavePix}`, {
+    const response = await fetchWithTotp(`${baseUrl}${CORPX_CONFIG.endpoints.criarChavePix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1089,7 +1090,7 @@ export async function enviarOtpPixCorpX(dados: CorpXEnviarOtpPixRequest): Promis
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.enviarOtpPix}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.enviarOtpPix}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -1166,7 +1167,7 @@ export async function cancelarChavePixCorpX(dados: CorpXDeletePixKeyRequest): Pr
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.cancelarChavePix}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.cancelarChavePix}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -1225,7 +1226,7 @@ export async function criarTransferenciaPixCorpX(dados: CorpXPixTransferRequest)
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.criarTransferenciaPix}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.criarTransferenciaPix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1304,7 +1305,7 @@ export async function confirmarTransferenciaPixCorpX(dados: CorpXPixConfirmReque
     }
     
     const url = `${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.confirmarTransferenciaPix}?endtoend=${dados.endtoend}&tax_document=${dados.tax_document}`;
-    const response = await fetch(url, {
+    const response = await fetchWithTotp(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -1376,7 +1377,7 @@ export async function gerarQRCodePixCorpX(dados: CorpXQRCodeRequest): Promise<Co
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.gerarQRCodePix}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${CORPX_CONFIG.endpoints.gerarQRCodePix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1468,7 +1469,7 @@ export async function transferenciaInternaCorpX(
       identifier: `int-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     };
 
-    const response = await fetch(`${baseUrl}/api/corpx-v2/transfers/internal/simple`, {
+    const response = await fetchWithTotp(`${baseUrl}/api/corpx-v2/transfers/internal/simple`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1520,7 +1521,7 @@ export async function executarTransferenciaCompletaCorpX(alias: string, dados: a
     };
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
-    const response = await fetch(`${baseUrl}/api/corpx-v2/pix/out`, {
+    const response = await fetchWithTotp(`${baseUrl}/api/corpx-v2/pix/out`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1572,7 +1573,7 @@ export async function executarBigPixCorpX(alias: string, dados: { key: string; v
     };
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
-    const response = await fetch(`${baseUrl}/api/corpx-v2/pix/out/bigpix`, {
+    const response = await fetchWithTotp(`${baseUrl}/api/corpx-v2/pix/out/bigpix`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1611,7 +1612,7 @@ export async function executarTransferenciaCompletaProgramadaCorpX(dados: any): 
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/corpx/pix/transferencia-completa-programada`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}/api/corpx/pix/transferencia-completa-programada`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

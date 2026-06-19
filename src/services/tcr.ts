@@ -1,6 +1,7 @@
 // services/tcr.ts - Serviço TCR Banking (baseado no CorpX)
 // Baseado no guia oficial de integração frontend
 import { api } from '@/config/api';
+import { fetchWithTotp } from '@/services/totpBridge';
 import type {
   CorpXSaldoResponse,
   CorpXExtratoResponse,
@@ -159,7 +160,7 @@ export async function consultarSaldoTCR(alias: string): Promise<CorpXSaldoRespon
       'X-Corpx-Account-Context': alias,
     };
 
-    const response = await fetch(requestUrl, {
+    const response = await fetchWithTotp(requestUrl, {
       method: 'GET',
       headers: requestHeaders
     });
@@ -246,7 +247,7 @@ export async function consultarExtratoTCR(params: CorpXExtratoParams): Promise<C
     
     const urlWithParams = `${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.consultarExtrato}?${queryParams.toString()}`;
     
-    const response = await fetch(urlWithParams, {
+    const response = await fetchWithTotp(urlWithParams, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -473,7 +474,7 @@ export async function listarTransacoesTCR(params: CorpXTransactionsParams = {}):
       query.append('order', 'desc');
     }
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTotp(url.toString(), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -520,7 +521,7 @@ export async function sincronizarExtratoTCR(params: CorpXSyncRequest): Promise<C
       dryRun: params.dryRun ?? false,
     };
 
-    const response = await fetch(url, {
+    const response = await fetchWithTotp(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -735,7 +736,7 @@ export async function consultarTransacaoPorEndToEndTCR(
     const baseUrl = API_CONFIG.BASE_URL;
     const url = `${baseUrl}${TCR_CONFIG.endpoints.consultarTransacao}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithTotp(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -840,7 +841,7 @@ export async function consultarTransacaoPorEndToEndV2TCR(
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
     const url = `${baseUrl}${TCR_CONFIG.endpoints.consultarTransacaoV2}?endToEndId=${encodeURIComponent(endtoendTrim)}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithTotp(url, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -923,7 +924,7 @@ export async function criarContaTCR(dados: CorpXCreateAccountRequest): Promise<C
       tax_document: dados.tax_document
     };
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.criarConta}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.criarConta}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -979,7 +980,7 @@ export async function listarChavesPixTCR(alias: string): Promise<CorpXPixKeysRes
     }
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
-    const response = await fetch(`${baseUrl}${TCR_CONFIG.endpoints.listarChavesPix}`, {
+    const response = await fetchWithTotp(`${baseUrl}${TCR_CONFIG.endpoints.listarChavesPix}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -1042,7 +1043,7 @@ export async function criarChavePixTCR(alias: string, dados: CorpXCreatePixKeyRe
     }
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
-    const response = await fetch(`${baseUrl}${TCR_CONFIG.endpoints.criarChavePix}`, {
+    const response = await fetchWithTotp(`${baseUrl}${TCR_CONFIG.endpoints.criarChavePix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1091,7 +1092,7 @@ export async function cancelarChavePixTCR(dados: CorpXDeletePixKeyRequest): Prom
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.cancelarChavePix}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.cancelarChavePix}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -1146,7 +1147,7 @@ export async function criarTransferenciaPixTCR(dados: CorpXPixTransferRequest): 
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.criarTransferenciaPix}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.criarTransferenciaPix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1221,7 +1222,7 @@ export async function confirmarTransferenciaPixTCR(dados: CorpXPixConfirmRequest
     }
     
     const url = `${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.confirmarTransferenciaPix}?endtoend=${dados.endtoend}&tax_document=${dados.tax_document}`;
-    const response = await fetch(url, {
+    const response = await fetchWithTotp(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -1289,7 +1290,7 @@ export async function gerarQRCodePixTCR(dados: CorpXQRCodeRequest): Promise<Corp
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.gerarQRCodePix}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.gerarQRCodePix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1384,7 +1385,7 @@ export async function transferenciaInternaTCR(
       identifier: `int-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     };
 
-    const response = await fetch(`${baseUrl}${TCR_CONFIG.endpoints.transferenciaInterna}`, {
+    const response = await fetchWithTotp(`${baseUrl}${TCR_CONFIG.endpoints.transferenciaInterna}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1439,7 +1440,7 @@ export async function enviarPixCompletoTCR(
     };
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
-    const response = await fetch(`${baseUrl}${TCR_CONFIG.endpoints.pixOut}`, {
+    const response = await fetchWithTotp(`${baseUrl}${TCR_CONFIG.endpoints.pixOut}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1506,7 +1507,7 @@ export async function enviarBigPixTCR(dados: { key: string; valor: number; tipo?
     };
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
-    const response = await fetch(`${baseUrl}${TCR_CONFIG.endpoints.bigPix}`, {
+    const response = await fetchWithTotp(`${baseUrl}${TCR_CONFIG.endpoints.bigPix}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1625,7 +1626,7 @@ export async function executarPixProgramadoComQRTCR(dados: {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
     
-    const response = await fetch(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.pixProgramadoComQR}`, {
+    const response = await fetchWithTotp(`${API_CONFIG.BASE_URL}${TCR_CONFIG.endpoints.pixProgramadoComQR}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

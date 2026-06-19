@@ -258,6 +258,8 @@ export interface AuthContextType {
 export interface LoginCredentials {
   email: string;
   password: string;
+  /** Código TOTP de 6 dígitos do autenticador (exigido quando TOTP está ativo). */
+  totpCode?: string;
 }
 
 export interface RegisterData {

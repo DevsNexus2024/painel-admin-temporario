@@ -2,6 +2,7 @@
  * 💸 BrasilCash PIX Send Service
  * Serviço para enviar PIX via BrasilCash
  */
+import { fetchWithTotp } from '@/services/totpBridge';
 
 const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
 
@@ -138,7 +139,7 @@ export async function sendPixBrasilCash(data: BrasilCashPixSendRequest): Promise
       'accept': 'application/json',
     };
 
-    const response = await fetch(`${API_BASE_URL}/api/brasilcash/pix/cashout/payments`, {
+    const response = await fetchWithTotp(`${API_BASE_URL}/api/brasilcash/pix/cashout/payments`, {
       method: 'POST',
       headers,
       body: JSON.stringify(requestBody),

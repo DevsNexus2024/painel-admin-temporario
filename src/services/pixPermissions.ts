@@ -1,4 +1,5 @@
 import { API_CONFIG, getApiHeaders } from "@/config/api";
+import { fetchWithTotp } from "@/services/totpBridge";
 
 const PIX_PERMISSIONS_BASE_URL = API_CONFIG.CORPX_V2_BASE_URL || 'https://api-bank-v2.gruponexus.com.br';
 
@@ -52,7 +53,7 @@ export interface PixScopeAccount {
 
 const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<{ data: T }> => {
   const url = `${PIX_PERMISSIONS_BASE_URL}${endpoint}`;
-  const response = await fetch(url, {
+  const response = await fetchWithTotp(url, {
     ...options,
     headers: { ...getApiHeaders(), ...(options.headers as Record<string, string>) },
   });

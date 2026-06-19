@@ -3,6 +3,7 @@ import { API_CONFIG, TOKEN_STORAGE, buildApiUrl } from '@/config/api';
 import { authService } from '@/services/auth';
 import { handleApiError, showErrorToast } from '@/utils/error.handler';
 import { logger } from '@/utils/logger';
+import { fetchWithTotp } from '@/services/totpBridge';
 
 // Interface para configuração de requisição
 interface RequestConfig extends RequestInit {
@@ -97,7 +98,7 @@ class ApiClient {
     attempt: number = 1
   ): Promise<Response> {
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithTotp(url, {
         ...config,
         signal: AbortSignal.timeout(config.timeout || this.defaultTimeout)
       });

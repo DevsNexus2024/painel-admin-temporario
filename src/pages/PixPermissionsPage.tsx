@@ -53,9 +53,7 @@ export default function PixPermissionsPage() {
   const [isRevokeOpen, setIsRevokeOpen] = useState(false);
   const [selectedPermission, setSelectedPermission] = useState<PixPermission | null>(null);
   const [revokeNote, setRevokeNote] = useState("");
-  const [totpCode, setTotpCode] = useState("");
-  const [revokeTotpCode, setRevokeTotpCode] = useState("");
-  
+
   // Filtros
   const [scopeTypeFilter, setScopeTypeFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -119,10 +117,6 @@ export default function PixPermissionsPage() {
         toast.error("Para tipo ANY, o valor deve ser *");
         return;
       }
-      if (!/^\d{6}$/.test(totpCode)) {
-        toast.error("Informe o código TOTP de 6 dígitos");
-        return;
-      }
 
       // Monta o payload omitindo opcionais vazios. `expiresAt` vazio NÃO pode ir
       // como '' (o backend @IsOptional não pula string vazia e @IsDateString falha);
@@ -138,10 +132,9 @@ export default function PixPermissionsPage() {
           : {}),
       };
 
-      await pixPermissionsService.create(payload, totpCode);
+      await pixPermissionsService.create(payload);
       toast.success("Permissão criada com sucesso");
       setIsCreateOpen(false);
-      setTotpCode("");
       setNewPermission({
         scopeType: 'TENANT',
         scopeId: '2',
@@ -161,17 +154,11 @@ export default function PixPermissionsPage() {
   const handleRevoke = async () => {
     if (!selectedPermission) return;
 
-    if (!/^\d{6}$/.test(revokeTotpCode)) {
-      toast.error("Informe o código TOTP de 6 dígitos");
-      return;
-    }
-
     try {
-      await pixPermissionsService.revoke(selectedPermission.id, revokeNote, revokeTotpCode);
+      await pixPermissionsService.revoke(selectedPermission.id, revokeNote);
       toast.success("Permissão revogada com sucesso");
       setIsRevokeOpen(false);
       setRevokeNote("");
-      setRevokeTotpCode("");
       setSelectedPermission(null);
       fetchPermissions();
     } catch (error: any) {
@@ -456,20 +443,6 @@ export default function PixPermissionsPage() {
                 onChange={(e) => setNewPermission({...newPermission, expiresAt: e.target.value})}
               />
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="totpCode">Código TOTP (6 dígitos)</Label>
-              <Input
-                id="totpCode"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="000000"
-              />
-              <p className="text-xs text-muted-foreground">Código do app autenticador — exigido para criar.</p>
-            </div>
           </div>
 
           <DialogFooter>
@@ -503,20 +476,6 @@ export default function PixPermissionsPage() {
                 onChange={(e) => setRevokeNote(e.target.value)}
                 placeholder="Ex: Cliente solicitou encerramento"
               />
-            </div>
-
-            <div className="space-y-2 mt-4">
-              <Label htmlFor="revokeTotpCode">Código TOTP (6 dígitos)</Label>
-              <Input
-                id="revokeTotpCode"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                value={revokeTotpCode}
-                onChange={(e) => setRevokeTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="000000"
-              />
-              <p className="text-xs text-muted-foreground">Código do app autenticador — exigido para revogar.</p>
             </div>
           </div>
 
