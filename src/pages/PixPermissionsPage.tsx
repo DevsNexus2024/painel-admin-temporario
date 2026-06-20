@@ -45,6 +45,7 @@ import { Label } from "@/components/ui/label";
 
 import { pixPermissionsService, PixPermission, CreatePixPermissionDTO, PixPermissionScopeType, PixScopeAccount } from "@/services/pixPermissions";
 import { CORPX_ACCOUNTS, TCR_CORPX_ALIAS } from "@/contexts/CorpXContext";
+import TotpField from "@/components/totp/TotpField";
 
 export default function PixPermissionsPage() {
   const [permissions, setPermissions] = useState<PixPermission[]>([]);
@@ -444,6 +445,8 @@ export default function PixPermissionsPage() {
               />
             </div>
           </div>
+
+          <TotpField className="px-1 pb-1" />
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancelar</Button>

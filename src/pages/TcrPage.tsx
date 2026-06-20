@@ -10,6 +10,7 @@ import ExtractTabTCR from "@/components/ExtractTabTCR";
 // Componentes UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import TotpField from "@/components/totp/TotpField";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -320,6 +321,8 @@ function BigPixComponentTCR() {
             />
           </div>
         </div>
+
+        <TotpField className="mb-3" />
 
         <Button
           onClick={executarBigPix}
@@ -846,7 +849,9 @@ function PixNormalComponentTCR() {
           </div>
         </div>
 
-        <Button 
+        <TotpField className="mb-3" />
+
+        <Button
           onClick={executarPix}
           disabled={isLoading}
           className="w-full bg-green-600 hover:bg-green-700"

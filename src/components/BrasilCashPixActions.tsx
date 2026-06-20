@@ -27,6 +27,7 @@ import {
   ArrowRightLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import TotpField from "@/components/totp/TotpField";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -665,6 +666,8 @@ export default function BrasilCashPixActions({ tenantId }: BrasilCashPixActionsP
                       )}
                     />
                   )}
+
+                  <TotpField className="mb-2" />
 
                   <Button type="submit" disabled={isLoading} className="w-full">
                     {isLoading ? (
