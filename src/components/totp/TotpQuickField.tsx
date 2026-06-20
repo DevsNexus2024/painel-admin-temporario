@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { setManualTotpCode } from '@/services/totpBridge';
+import { useAuth } from '@/hooks/useAuth';
 import { ShieldCheck } from 'lucide-react';
 
 /**
@@ -9,7 +10,11 @@ import { ShieldCheck } from 'lucide-react';
  * Simples e sempre visível: sem depender de modal.
  */
 export const TotpQuickField: React.FC = () => {
+  const { isAuthenticated } = useAuth();
   const [code, setCode] = useState('');
+
+  // Não mostra na tela de login / fora da sessão (login tem campo próprio).
+  if (!isAuthenticated) return null;
 
   return (
     <div
