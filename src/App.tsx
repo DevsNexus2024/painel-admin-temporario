@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { TotpProvider } from "@/components/totp/TotpProvider";
+import { TotpQuickField } from "@/components/totp/TotpQuickField";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import MainLayout from "./components/layout/MainLayout";
@@ -120,6 +121,7 @@ const App = () => (
       <BankingSystemInitializer>
         <AuthProvider>
           <TotpProvider>
+          <TotpQuickField />
           <Toaster />
           <Sonner />
           <BrowserRouter>

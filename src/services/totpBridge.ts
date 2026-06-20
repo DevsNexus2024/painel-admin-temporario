@@ -22,6 +22,18 @@ export function setTotpRequester(fn: Requester | null): void {
   requester = fn;
 }
 
+/**
+ * Código TOTP digitado num campo fixo do painel. Quando presente, é anexado
+ * direto na 1ª requisição (sem depender do modal). Simples e à prova de bala.
+ */
+let manualTotpCode = '';
+export function setManualTotpCode(code: string): void {
+  manualTotpCode = (code || '').replace(/\D/g, '').slice(0, 6);
+}
+export function getManualTotpCode(): string {
+  return manualTotpCode;
+}
+
 interface TotpErrorInfo {
   isTotp: boolean;
   master: boolean;
@@ -64,6 +76,13 @@ export async function fetchWithTotp(
   input: RequestInfo | URL,
   init: RequestInit = {},
 ): Promise<Response> {
+  // Se o operador digitou um código no campo fixo do painel, manda já na 1ª tentativa.
+  if (manualTotpCode) {
+    init = {
+      ...init,
+      headers: { ...(init.headers as Record<string, string>), 'x-totp-code': manualTotpCode },
+    };
+  }
   let res = await fetch(input, init);
   if (res.status !== 403 || !requester) return res;
 
