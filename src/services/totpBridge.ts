@@ -29,8 +29,10 @@ interface TotpErrorInfo {
 }
 
 function classify(body: any): TotpErrorInfo {
-  const code = body?.codigo ?? body?.code ?? body?.error ?? '';
-  const message = body?.message ?? body?.mensagem ?? '';
+  // Lê tanto o formato plano (TCR: body.code/message/error-string) quanto o
+  // envelope aninhado do NestJS/W3Build ({ error: { code, message } }).
+  const code = body?.codigo ?? body?.code ?? body?.error?.code ?? body?.error ?? '';
+  const message = body?.message ?? body?.mensagem ?? body?.error?.message ?? '';
   const s = `${code} ${message}`.toUpperCase();
   const isTotp =
     s.includes('TOTP_REQUERIDO') ||
