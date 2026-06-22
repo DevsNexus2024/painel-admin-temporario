@@ -77,6 +77,7 @@ export async function fetchWithTotp(
   init: RequestInit = {},
 ): Promise<Response> {
   // Se o operador digitou um código no campo fixo do painel, manda já na 1ª tentativa.
+  const usedManualCode = !!manualTotpCode;
   if (manualTotpCode) {
     init = {
       ...init,
@@ -88,6 +89,12 @@ export async function fetchWithTotp(
 
   let info = classify(await peekJson(res));
   if (!info.isTotp) return res;
+
+  // Já havia código no campo do form e ele foi rejeitado: NÃO abrir o modal
+  // (evita o prompt duplo). Devolve o 403 pro form mostrar o erro inline
+  // (TOTP_REQUERIDO/TOTP_INVALIDO) e o operador corrigir no próprio campo.
+  // O modal só serve de fallback quando NÃO havia código no campo.
+  if (usedManualCode) return res;
 
   let errorMessage: string | undefined;
   for (let attempt = 0; attempt < MAX_TOTP_ATTEMPTS; attempt++) {
