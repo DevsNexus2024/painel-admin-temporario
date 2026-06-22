@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import TotpField from "@/components/totp/TotpField";
+import { fetchWithTotp } from "@/services/totpBridge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -178,7 +179,7 @@ export default function BrasilCashOtcPixActions() {
           account_number: accountNumber,
         };
 
-        const response = await fetch(`${API_BASE_URL}/api/brasilcash/transfer/p2p`, {
+        const response = await fetchWithTotp(`${API_BASE_URL}/api/brasilcash/transfer/p2p`, {
           method: 'POST',
           headers,
           body: JSON.stringify(body),
@@ -221,7 +222,7 @@ export default function BrasilCashOtcPixActions() {
       };
       if (data.externalId?.trim()) requestBody.external_id = data.externalId.trim();
 
-      const response = await fetch(`${API_BASE_URL}/api/brasilcash/pix/cashout/payments`, {
+      const response = await fetchWithTotp(`${API_BASE_URL}/api/brasilcash/pix/cashout/payments`, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
@@ -404,7 +405,7 @@ export default function BrasilCashOtcPixActions() {
         body.external_id = data.external_id.trim();
       }
 
-      const response = await fetch(
+      const response = await fetchWithTotp(
         `${API_BASE_URL}/api/brasilcash/pix/cashout/payments/qrcode/simple`,
         {
           method: "POST",
@@ -868,6 +869,7 @@ export default function BrasilCashOtcPixActions() {
                       </FormItem>
                     )}
                   />
+                  <TotpField className="mb-2" />
                   <Button type="submit" disabled={isLoading} className="w-full">
                     {isLoading ? (
                       <>

@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import TotpField from "@/components/totp/TotpField";
+import { fetchWithTotp } from "@/services/totpBridge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -220,7 +221,7 @@ export default function BrasilCashPixActions({ tenantId }: BrasilCashPixActionsP
           account_number: (data.account_number || '').trim(),
         };
 
-        const response = await fetch(`${API_BASE_URL}/api/brasilcash/transfer/p2p`, {
+        const response = await fetchWithTotp(`${API_BASE_URL}/api/brasilcash/transfer/p2p`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
