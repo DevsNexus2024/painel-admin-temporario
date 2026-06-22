@@ -15,6 +15,10 @@ export interface BrasilCashPixSendRequest {
   key_type: 'document' | 'phone' | 'email' | 'randomKey';
   key: string;
   external_id?: string; // ID externo opcional para rastreamento
+  /** UUID da conta BrasilCash de origem. Enviado como X-Account-Id — exigido pelo guard de pix-out quando a permissão é por conta (BRASILCASH_ACCOUNT) e seleciona a sub-conta no provedor. */
+  accountId?: string;
+  /** Alias OTC da conta. Enviado como x-otc-id — seleciona as credenciais corretas no backend. */
+  otcId?: string;
 }
 
 export interface BrasilCashPixSendResponse {
@@ -132,12 +136,20 @@ export async function sendPixBrasilCash(data: BrasilCashPixSendRequest): Promise
       requestBody.external_id = data.external_id.trim();
     }
 
-    // Preparar headers (X-Account-Id é opcional)
+    // Preparar headers. X-Account-Id / x-otc-id identificam a conta de origem:
+    // sem eles o guard de pix-out não enxerga permissões por conta (BRASILCASH_ACCOUNT)
+    // e bloqueia com 403. O backend também usa otcId para escolher as credenciais.
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
       'accept': 'application/json',
     };
+    if (data.accountId) {
+      headers['X-Account-Id'] = data.accountId;
+    }
+    if (data.otcId) {
+      headers['x-otc-id'] = data.otcId;
+    }
 
     const response = await fetchWithTotp(`${API_BASE_URL}/api/brasilcash/pix/cashout/payments`, {
       method: 'POST',

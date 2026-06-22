@@ -118,6 +118,12 @@ type PixSendDataTcr = z.infer<typeof pixSendSchemaTcr>;
 type QRDynamicData = z.infer<typeof qrDynamicSchema>;
 type QRStaticData = z.infer<typeof qrStaticSchema>;
 
+// Conta BrasilCash da tela TCR. Enviada como X-Account-Id / x-otc-id para que o
+// guard de pix-out enxergue a permissão por conta (BRASILCASH_ACCOUNT) e o backend
+// selecione as credenciais corretas. Mesmos valores usados na transferência P2P.
+const TCR_ACCOUNT_ID = '1be0c9de-e87b-4535-b3bb-d0d61515ed9e';
+const TCR_OTC_ID = 'DEFAULT';
+
 interface BrasilCashPixActionsProps {
   tenantId?: 2 | 3; // Opcional: se não fornecido, detecta pela rota
 }
@@ -219,8 +225,8 @@ export default function BrasilCashPixActions({ tenantId }: BrasilCashPixActionsP
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
-            'x-otc-id': 'DEFAULT', // TCR usa conta DEFAULT
-            'X-Account-Id': '1be0c9de-e87b-4535-b3bb-d0d61515ed9e', // TCR_ACCOUNT_ID
+            'x-otc-id': TCR_OTC_ID, // TCR usa conta DEFAULT
+            'X-Account-Id': TCR_ACCOUNT_ID,
           },
           body: JSON.stringify(body),
         });
@@ -260,6 +266,9 @@ export default function BrasilCashPixActions({ tenantId }: BrasilCashPixActionsP
         key_type: keyTypeMap[data.keyType] || 'randomKey',
         key: data.pixKey!,
         external_id: data.externalId?.trim() || undefined,
+        // Na tela TCR, identificar a conta de origem para o guard de pix-out
+        // (permissão BRASILCASH_ACCOUNT) e seleção de credenciais no backend.
+        ...(isTcrPage ? { accountId: TCR_ACCOUNT_ID, otcId: TCR_OTC_ID } : {}),
       });
 
       if (result.success) {
