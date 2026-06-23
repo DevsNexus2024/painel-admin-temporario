@@ -4,15 +4,14 @@ import { userTypeService } from '@/services/userType';
 import { toast } from 'sonner';
 import { useLoginTimeout } from '@/hooks/useLoginTimeout';
 import { LAST_ACTIVITY_STORAGE } from '@/config/api';
-import { 
-  User, 
-  UserTypeResult, 
-  AuthContextType, 
-  LoginCredentials, 
-  RegisterData, 
-  Permission, 
+import {
+  User,
+  UserTypeResult,
+  AuthContextType,
+  LoginCredentials,
+  Permission,
   UserRole,
-  getUserPermissions 
+  getUserPermissions
 } from '@/types/auth';
 
 // Criar o contexto
@@ -119,6 +118,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return;
           }
           
+          // [REFRESH] Se o access está expirado/expirando e há refresh válido, renova
+          // ANTES de buscar o perfil — evita 401→logout ao reabrir o painel com o
+          // access curto (1h) já vencido.
+          if (authService.isTokenExpiringSoon()) {
+            await authService.refreshAccessToken();
+          }
+
           // Tentar buscar perfil atualizado
           const profileResult = await authService.getProfile();
           
@@ -148,6 +154,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   /**
+   * [REFRESH] Renovação proativa do access token.
+   * Verifica a cada 60s; quando o access está perto de expirar (janela de 5min do
+   * authService), renova via refresh rotativo. Serializado no authService (sem race).
+   * Se o refresh falhar (revogado/troca de senha/logout-all) → logout limpo.
+   * Proativo de propósito: evita a tempestade de 401 e o "deslogou sozinho" do access curto.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const REFRESH_CHECK_INTERVAL_MS = 60 * 1000;
+    const intervalId = setInterval(async () => {
+      try {
+        if (authService.isTokenExpiringSoon()) {
+          const ok = await authService.refreshAccessToken();
+          if (!ok) performLogout();
+        }
+      } catch {
+        performLogout();
+      }
+    }, REFRESH_CHECK_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated]);
+
+  /**
    * Login de usuário
    */
   const login = async (credentials: LoginCredentials): Promise<boolean> => {
@@ -168,36 +199,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return true;
       } else {
         toast.error(result.mensagem || 'Erro no login');
-        return false;
-      }
-    } catch (error) {
-
-      toast.error('Erro de conexão. Tente novamente.');
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  /**
-   * Registro de usuário
-   */
-  const register = async (data: RegisterData): Promise<boolean> => {
-    try {
-      setIsLoading(true);
-      
-      const result = await authService.register(data);
-      
-      if (result.sucesso && result.data) {
-        setUser(result.data.user);
-        
-        // Verificar tipo de usuário e carregar permissões
-        await checkUserType(result.data.user);
-        
-        toast.success('Registro realizado com sucesso!');
-        return true;
-      } else {
-        toast.error(result.mensagem || 'Erro no registro');
         return false;
       }
     } catch (error) {
@@ -284,7 +285,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Ações
     login,
-    register,
     logout,
     refreshProfile,
     

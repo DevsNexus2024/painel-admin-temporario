@@ -2,6 +2,7 @@
  * 🔄 Bitso Failed Withdrawals Service
  * Serviço para gerenciar PIX falhados (withdrawals)
  */
+import { fetchWithTotp } from '@/services/totpBridge';
 
 const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
 
@@ -203,7 +204,9 @@ export async function retryFailedWithdrawal(journalId: string): Promise<RetryRes
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
 
-    const response = await fetch(`${API_BASE_URL}/bitso/failed-withdrawals/${journalId}/retry`, {
+    // [TOTP] Reprocessar PIX move dinheiro → rota passou a exigir TOTP (master). fetchWithTotp
+    // intercepta o 403 de TOTP e abre o step-up; drop-in do fetch.
+    const response = await fetchWithTotp(`${API_BASE_URL}/bitso/failed-withdrawals/${journalId}/retry`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -233,7 +236,9 @@ export async function reverseFailedWithdrawal(journalId: string): Promise<Revers
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
 
-    const response = await fetch(`${API_BASE_URL}/bitso/failed-withdrawals/${journalId}/reverse`, {
+    // [TOTP] Estorno manual move dinheiro → rota passou a exigir TOTP (master). fetchWithTotp
+    // intercepta o 403 de TOTP e abre o step-up; drop-in do fetch.
+    const response = await fetchWithTotp(`${API_BASE_URL}/bitso/failed-withdrawals/${journalId}/reverse`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,

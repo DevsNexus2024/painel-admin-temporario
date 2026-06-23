@@ -1,7 +1,7 @@
-import { API_CONFIG, createApiRequest, TOKEN_STORAGE, USER_STORAGE, LAST_ACTIVITY_STORAGE } from '@/config/api';
+import { API_CONFIG, createApiRequest, TOKEN_STORAGE, REFRESH_TOKEN_STORAGE, USER_STORAGE, LAST_ACTIVITY_STORAGE } from '@/config/api';
 import { logger } from '@/utils/logger';
 import { handleApiError } from '@/utils/error.handler';
-import { User, LoginCredentials, RegisterData } from '@/types/auth';
+import { User, LoginCredentials } from '@/types/auth';
 
 // Tipos de resposta da API
 export interface AuthResponse {
@@ -29,59 +29,11 @@ class AuthService {
   private readonly BAAS_V2_BASE_URL = (import.meta.env.X_BAAS_V2_API_URL as string) || 'https://api-bank-v2.gruponexus.com.br';
   private readonly BAAS_V2_LOGIN_PATH = '/auth/login';
   private readonly BAAS_V2_PROFILE_PATH = '/auth/me';
+  private readonly BAAS_V2_REFRESH_PATH = '/auth/refresh';
 
-  /**
-   * Registrar novo usuário
-   */
-  async register(data: RegisterData): Promise<AuthResponse> {
-    try {
-      const response = await createApiRequest(API_CONFIG.ENDPOINTS.AUTH.REGISTER, {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
-
-      const json: any = await response.json();
-
-      // Novo contrato (BaaS-W3Build) -> tokens + /auth/me
-      if (json?.accessToken) {
-        const tokenPair = json as TokenPairResponse;
-        TOKEN_STORAGE.set(tokenPair.accessToken);
-        LAST_ACTIVITY_STORAGE.set();
-
-        const profile = await this.getProfile();
-        if (profile.sucesso && profile.data) {
-          return {
-            sucesso: true,
-            mensagem: 'Registro realizado com sucesso',
-            data: {
-              user: profile.data,
-              token: tokenPair.accessToken,
-            },
-          };
-        }
-
-        return {
-          sucesso: false,
-          mensagem: profile.mensagem || 'Não foi possível carregar o perfil após registro.',
-        };
-      }
-
-      // Contrato legado (mantido como fallback)
-      const result: AuthResponse = json as AuthResponse;
-      if (result.sucesso && result.data) {
-        TOKEN_STORAGE.set(result.data.token);
-        USER_STORAGE.set(result.data.user);
-        LAST_ACTIVITY_STORAGE.set();
-      }
-      return result;
-    } catch (error) {
-      // console.error('Erro no registro:', error);
-      return {
-        sucesso: false,
-        mensagem: 'Erro de conexão. Tente novamente.'
-      };
-    }
-  }
+  /** Serializa o refresh: evita duas chamadas simultâneas reusarem o mesmo refresh
+   *  (o backend rotaciona single-use e revoga a família inteira em caso de reuso). */
+  private refreshInFlight: Promise<boolean> | null = null;
 
   /**
    * Login de usuário
@@ -111,6 +63,9 @@ class AuthService {
         }
 
         TOKEN_STORAGE.set(tokenPair.accessToken);
+        // [REFRESH] Guardar o refresh token rotativo (antes era descartado → o front
+        // dependia só do access de curta duração e deslogava ao expirar).
+        if (tokenPair.refreshToken) REFRESH_TOKEN_STORAGE.set(tokenPair.refreshToken);
         LAST_ACTIVITY_STORAGE.set();
 
         const profile = await this.getProfile();
@@ -169,17 +124,70 @@ class AuthService {
   }
 
   /**
+   * Renova o access token usando o refresh token rotativo (BaaS-W3Build).
+   * Single-use: o backend devolve um NOVO par e invalida o anterior; por isso
+   * salvamos sempre o novo refresh. Serializado para evitar reuso concorrente
+   * (reuso dispara revogação da família inteira no backend).
+   * @returns true se renovou; false se não há refresh ou ele é inválido/revogado.
+   */
+  async refreshAccessToken(): Promise<boolean> {
+    if (this.refreshInFlight) return this.refreshInFlight;
+
+    this.refreshInFlight = (async (): Promise<boolean> => {
+      const refreshToken = REFRESH_TOKEN_STORAGE.get();
+      if (!refreshToken) return false;
+
+      try {
+        const response = await fetch(`${this.BAAS_V2_BASE_URL}${this.BAAS_V2_REFRESH_PATH}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+
+        if (!response.ok) {
+          // 401 = refresh inválido/revogado (logout-all, troca de senha, reuso) → sessão morta.
+          logger.warn('[AUTH] Refresh falhou', { status: response.status });
+          return false;
+        }
+
+        const json: any = await response.json();
+        if (!json?.accessToken || !this.isTokenValid(json.accessToken)) {
+          logger.warn('[AUTH] Refresh devolveu token inválido');
+          return false;
+        }
+
+        TOKEN_STORAGE.set(json.accessToken);
+        // Salvar SEMPRE o novo refresh rotacionado (o anterior já foi invalidado).
+        if (json.refreshToken) REFRESH_TOKEN_STORAGE.set(json.refreshToken);
+        LAST_ACTIVITY_STORAGE.set();
+        logger.info('[AUTH] Access token renovado via refresh');
+        return true;
+      } catch (error) {
+        logger.error('[AUTH] Erro ao renovar token:', error);
+        return false;
+      }
+    })();
+
+    try {
+      return await this.refreshInFlight;
+    } finally {
+      this.refreshInFlight = null;
+    }
+  }
+
+  /**
    * Logout do usuário
    */
   logout(): void {
     const user = this.getCurrentUser();
-    
-    logger.info('[AUTH] Logout do usuário', { 
+
+    logger.info('[AUTH] Logout do usuário', {
       userId: user?.id,
-      email: user?.email 
+      email: user?.email
     });
 
     TOKEN_STORAGE.remove();
+    REFRESH_TOKEN_STORAGE.remove();
     USER_STORAGE.remove();
     LAST_ACTIVITY_STORAGE.remove();
   }

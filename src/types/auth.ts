@@ -244,7 +244,6 @@ export interface AuthContextType {
   
   // Ações
   login: (credentials: LoginCredentials) => Promise<boolean>;
-  register: (data: RegisterData) => Promise<boolean>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
   checkPermission: (permission: Permission) => boolean;
@@ -262,11 +261,6 @@ export interface LoginCredentials {
   totpCode?: string;
 }
 
-export interface RegisterData {
-  email: string;
-  password: string;
-  name?: string;
-}
 
 // ===== ROTAS PROTEGIDAS =====
 export interface RoutePermissions {

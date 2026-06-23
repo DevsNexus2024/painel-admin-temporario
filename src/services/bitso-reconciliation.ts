@@ -2,6 +2,7 @@
  * 🔄 Bitso Reconciliation Service
  * Serviço para reconciliação manual de depósitos Bitso
  */
+import { fetchWithTotp } from '@/services/totpBridge';
 
 const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
 
@@ -148,7 +149,9 @@ export async function reconcileDeposit(data: ReconciliationRequest): Promise<Rec
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
 
-    const response = await fetch(`${API_BASE_URL}/bitso/reconciliation`, {
+    // [TOTP] Reatribui saldo entre tenants → rota passou a exigir TOTP (master) + DTO
+    // validado (o ReconciliationRequest já bate). fetchWithTotp = drop-in com step-up.
+    const response = await fetchWithTotp(`${API_BASE_URL}/bitso/reconciliation`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,

@@ -38,10 +38,22 @@ export class UserTypeService {
    * - PLATFORM:OTC_USER    -> otc_user
    */
   private resolveRoleFromPlatformRoles(platformRoles: string[] = []): UserRole {
-    if (platformRoles.includes('PLATFORM:SUPER_ADMIN')) return 'super_admin';
-    if (platformRoles.includes('PLATFORM:ADMIN')) return 'admin';
-    if (platformRoles.includes('PLATFORM:TCR_USER')) return 'tcr_user';
-    if (platformRoles.includes('PLATFORM:OTC_USER')) return 'otc_user';
+    const has = (r: string) => platformRoles.includes(r);
+    const hasPrefix = (p: string) => platformRoles.some((r) => r.startsWith(p));
+
+    if (has('PLATFORM:SUPER_ADMIN')) return 'super_admin';
+    if (has('PLATFORM:ADMIN')) return 'admin';
+    // [MIGRAÇÃO 2026-06] PLATFORM:FINANCIAL_ADMIN é novo no contrato v2 e não tem
+    // equivalente 1:1 no front. DECIDIDO (Felipe, 2026-06-23): manter CONSERVADOR como
+    // 'tcr_user' (leitura financeira: saldos/extratos/relatórios), sem escrita/IAM/pix.
+    // Revisar só se um FINANCIAL_ADMIN precisar operar (OTC/pix-out).
+    if (has('PLATFORM:FINANCIAL_ADMIN')) return 'tcr_user';
+    if (has('PLATFORM:TCR_USER')) return 'tcr_user';
+    if (has('PLATFORM:OTC_USER')) return 'otc_user';
+    // [MIGRAÇÃO 2026-06] Roles de tenant (de-para §2.1 do doc de integração):
+    // otc_client → TENANT:ADMIN, otc_employee → TENANT:MEMBER. TENANT:OWNER = admin do tenant.
+    if (hasPrefix('TENANT:ADMIN') || hasPrefix('TENANT:OWNER')) return 'otc_client';
+    if (hasPrefix('TENANT:MEMBER')) return 'otc_employee';
     return 'viewer';
   }
 

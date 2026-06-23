@@ -2,6 +2,7 @@
  * 🔴 Serviço de PIX Falhados - Auditoria e Retry
  * API para gerenciar operações PIX que falharam
  */
+import { fetchWithTotp } from '@/services/totpBridge';
 
 const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
 
@@ -244,8 +245,11 @@ class PixAuditService {
   async retryFailure(id: string, retryData?: RetryRequest): Promise<RetryResponse> {
     try {
       const url = `${API_BASE_URL}/api/brasilcash/audit/failures/${id}/retry`;
-      
-      const response = await fetch(url, {
+
+      // [TOTP] Reprocessar PIX falhado (BrasilCash, provider ativo) move dinheiro → pode
+      // exigir TOTP. fetchWithTotp é pass-through fora do 403-TOTP, então é seguro mesmo
+      // se a rota ainda não estiver guardada.
+      const response = await fetchWithTotp(url, {
         method: 'POST',
         headers: this.getAuthHeaders(),
         body: JSON.stringify(retryData || {}),

@@ -131,6 +131,7 @@ export const API_CONFIG = {
 // Storage keys
 const STORAGE_KEYS = {
   TOKEN: 'auth_token',
+  REFRESH_TOKEN: 'auth_refresh_token',
   USER: 'auth_user',
   LAST_ACTIVITY: 'last_activity'
 };
@@ -171,6 +172,33 @@ export const TOKEN_STORAGE = {
       localStorage.removeItem(STORAGE_KEYS.TOKEN);
     } catch (error) {
       // Log seguro - erro ao remover token (dados não expostos)
+    }
+  }
+};
+
+// Refresh Token Storage utilities (BaaS-W3Build: refresh rotativo single-use)
+export const REFRESH_TOKEN_STORAGE = {
+  get: (): string | null => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+    } catch (error) {
+      return null;
+    }
+  },
+
+  set: (token: string): void => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, token);
+    } catch (error) {
+      // Log seguro
+    }
+  },
+
+  remove: (): void => {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+    } catch (error) {
+      // Log seguro
     }
   }
 };

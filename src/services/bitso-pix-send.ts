@@ -2,6 +2,7 @@
  * 💸 Bitso PIX Send Service
  * Serviço para enviar PIX via Bitso com ledger
  */
+import { fetchWithTotp } from '@/services/totpBridge';
 
 const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
 
@@ -55,7 +56,10 @@ export async function sendPixWithLedger(data: BitsoPixSendRequest): Promise<Bits
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
 
-    const response = await fetch(`${API_BASE_URL}/bitso/pix/send-with-ledger`, {
+    // [TOTP] fetchWithTotp: a rota /bitso/pix/send-with-ledger passou a exigir TOTP do
+    // usuário (UserTotpGuard). Drop-in do fetch — intercepta o 403 de TOTP, abre o modal
+    // e repete com x-totp-code; inerte quando não há 403 de TOTP.
+    const response = await fetchWithTotp(`${API_BASE_URL}/bitso/pix/send-with-ledger`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -65,7 +69,10 @@ export async function sendPixWithLedger(data: BitsoPixSendRequest): Promise<Bits
         tenant_id: data.tenant_id,
         pix_key: data.pix_key,
         pix_key_type: data.pix_key_type,
-        amount: data.amount,
+        // [AMOUNT] CreatePixWithLedgerDto valida maxDecimalPlaces:2 (doc §6.1). Arredonda
+        // para centavos antes de enviar — um valor com 3+ casas (ex.: vindo de cálculo)
+        // tomaria 400. Math.round(*100)/100 = arredondamento para o centavo mais próximo.
+        amount: Math.round(data.amount * 100) / 100,
       }),
     });
 

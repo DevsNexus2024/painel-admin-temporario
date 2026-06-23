@@ -1,4 +1,5 @@
 import { API_CONFIG, TOKEN_STORAGE } from "@/config/api";
+import { fetchWithTotp } from "@/services/totpBridge";
 
 const REVY_PROVIDER = "REVY";
 const REVY_API_BASE = "https://api-bank-v2.gruponexus.com.br";
@@ -205,7 +206,9 @@ export async function sendRevyPixPayment(
 
   const endpoint = `https://api-v2.tcr.finance/revy/accounts/${accountId}/pix/payment/simple`;
 
-  const response = await fetch(endpoint, {
+  // [TOTP] PIX-OUT Revy passou a exigir TOTP do usuário (UserTotpGuard). fetchWithTotp =
+  // drop-in do fetch: intercepta o 403 de TOTP e abre o step-up; inerte caso contrário.
+  const response = await fetchWithTotp(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

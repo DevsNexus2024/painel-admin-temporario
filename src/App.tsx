@@ -32,7 +32,6 @@ import ContasOrganizacoesLayout from "./pages/ContasOrganizacoes/ContasOrganizac
 import OrganizacaoDetailsPage from "./pages/ContasOrganizacoes/OrganizacaoDetailsPage";
 import ContaDetailsPage from "./pages/ContasOrganizacoes/ContaDetailsPage";
 import Login from "./pages/Login";
-import Register from "./pages/Register"; // ✅ REGISTRO DESBLOQUEADO TEMPORARIAMENTE
 import BotCotacao from "./pages/bot-cotacao/BotCotacao";
 import OTCClients from "./pages/otc/OTCClients";
 import OTCNegociar from "./pages/otc/OTCNegociar";
@@ -130,7 +129,9 @@ const App = () => (
                 {/* Redirect da rota antiga para a nova (compatibilidade) */}
                 <Route path="/login-cliente" element={<Navigate to="/login" replace />} />
                 {/* REGISTRO DESBLOQUEADO TEMPORARIAMENTE */}
-                <Route path="/register" element={<Register />} />
+                {/* [SEGURANÇA] Registro público removido no backend (vetor do account-takeover).
+                    A rota mostra a página de indisponível; não há mais fluxo funcional de registro. */}
+                <Route path="/register" element={<RegisterBlocked />} />
                 
                 {/* Rota específica para extrato do cliente (sem sidebar) */}
                 <Route path="/client-statement" element={

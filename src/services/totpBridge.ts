@@ -9,6 +9,8 @@
  * Seguro porque o guard do backend rejeita ANTES de executar a operação — um
  * 403 de TOTP significa que nada aconteceu, então repetir não duplica dinheiro.
  */
+import { toast } from 'sonner';
+
 type TotpMode = 'user' | 'master';
 
 type Requester = (opts?: {
@@ -32,6 +34,19 @@ export function setManualTotpCode(code: string): void {
 }
 export function getManualTotpCode(): string {
   return manualTotpCode;
+}
+
+/**
+ * [RATE LIMIT] §4.2 — rotas de saída têm rate limit (429). Mostra uma mensagem
+ * amigável (deduplicada por janela curta pra não empilhar toast). NÃO faz auto-retry:
+ * repetir um pix-out automaticamente é risco de double-send (money-path-baseline).
+ */
+let lastRateLimitToastAt = 0;
+function notifyRateLimited(): void {
+  const now = Date.now();
+  if (now - lastRateLimitToastAt < 5000) return; // 1 aviso a cada 5s
+  lastRateLimitToastAt = now;
+  toast.warning('Muitas requisições em sequência. Aguarde alguns instantes e tente novamente.');
 }
 
 interface TotpErrorInfo {
@@ -85,6 +100,12 @@ export async function fetchWithTotp(
     };
   }
   let res = await fetch(input, init);
+  // [RATE LIMIT] 429 em qualquer rota (inclui pix-out): avisa o usuário e devolve a
+  // resposta pro caller tratar. Sem retry automático — pix-out não se repete sozinho.
+  if (res.status === 429) {
+    notifyRateLimited();
+    return res;
+  }
   if (res.status !== 403 || !requester) return res;
 
   let info = classify(await peekJson(res));
