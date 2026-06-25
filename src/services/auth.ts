@@ -1,4 +1,5 @@
 import { API_CONFIG, createApiRequest, TOKEN_STORAGE, REFRESH_TOKEN_STORAGE, USER_STORAGE, LAST_ACTIVITY_STORAGE } from '@/config/api';
+import { setTokenRefresher } from '@/services/totpBridge';
 import { logger } from '@/utils/logger';
 import { handleApiError } from '@/utils/error.handler';
 import { User, LoginCredentials } from '@/types/auth';
@@ -410,4 +411,24 @@ class AuthService {
 
 // Instância única do serviço
 export const authService = new AuthService();
-export default authService; 
+
+// [AUTH] Liga o refresh REATIVO: o fetchWithTotp chama isto ao tomar 401 → renova →
+// repete a requisição. Complementa o refresh proativo do AuthContext (que não roda
+// com a aba em background / timer pausado). O single-flight em refreshAccessToken()
+// deduplica a corrida entre os dois caminhos.
+setTokenRefresher(async () => {
+  // [GATE] Só renova se HÁ access token e ele está de fato perto de vencer (≤5min,
+  // folga p/ skew de relógio). Um 401 com token ainda válido NÃO é expiração — é
+  // recurso proibido, backend que não aceita o JWT, ou rota admin (xPassRouteTCR, sem
+  // JWT). Nesses casos refresh não ajuda: só gastaria /auth/refresh (rate-limit 10/min,
+  // estourá-lo derruba o refresh proativo legítimo) e repetiria em backend cujo
+  // guard-order não foi verificado. Sem token / sem exp → não é problema nosso de expiração.
+  const info = authService.getTokenInfo();
+  if (!info?.exp) return null;
+  if (info.exp > Date.now() / 1000 + 300) return null;
+
+  const ok = await authService.refreshAccessToken();
+  return ok ? TOKEN_STORAGE.get() : null;
+});
+
+export default authService;

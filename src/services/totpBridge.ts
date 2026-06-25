@@ -25,6 +25,17 @@ export function setTotpRequester(fn: Requester | null): void {
 }
 
 /**
+ * Refresher do access token, injetado de fora pelo authService — mesmo padrão de
+ * injeção do `requester` acima, pra evitar ciclo de import totpBridge↔auth↔config/api.
+ * Retorna o NOVO access token em caso de sucesso, ou null se não há refresh válido.
+ */
+let tokenRefresher: (() => Promise<string | null>) | null = null;
+
+export function setTokenRefresher(fn: (() => Promise<string | null>) | null): void {
+  tokenRefresher = fn;
+}
+
+/**
  * Código TOTP digitado num campo fixo do painel. Quando presente, é anexado
  * direto na 1ª requisição (sem depender do modal). Simples e à prova de bala.
  */
@@ -82,6 +93,11 @@ async function peekJson(res: Response): Promise<any | null> {
 
 const MAX_TOTP_ATTEMPTS = 3;
 
+// Timeout da retry pós-refresh (401). Valor fixo e generoso: o timeout por-request do
+// caller (API_CONFIG.TIMEOUT) não é alcançável aqui sem ciclo de import, e um auto-retry
+// sem humano não pode pendurar pra sempre.
+const AUTH_RETRY_TIMEOUT_MS = 60_000;
+
 /**
  * Igual ao fetch, mas trata 403 de TOTP pedindo o código e repetindo a
  * requisição. Se o usuário cancelar ou não houver requester, devolve a
@@ -106,6 +122,35 @@ export async function fetchWithTotp(
     notifyRateLimited();
     return res;
   }
+
+  // [AUTH] 401 = JWT vencido/inválido → barrado na AUTENTICAÇÃO, antes de qualquer
+  // efeito (ordem dos guards: auth → autz → idempotência → negócio). Como nada
+  // aconteceu no servidor, renovar o access e repetir a MESMA requisição é seguro —
+  // não duplica dinheiro (mesmo argumento do retry de 403-TOTP abaixo). Tentativa
+  // única; se ainda 401, devolve pro caller, que limpa a sessão e vai pro /login.
+  // Cobre o caso que o refresh proativo do AuthContext não pega (timer pausado em
+  // aba de background / máquina dormindo): aqui é a rede de segurança reativa.
+  if (res.status === 401 && tokenRefresher) {
+    const newToken = await tokenRefresher();
+    if (newToken) {
+      init = {
+        ...init,
+        headers: {
+          ...(init.headers as Record<string, string>),
+          Authorization: `Bearer ${newToken}`,
+        },
+        // Timeout fresco: NÃO reusar o signal original (pode ter expirado durante o
+        // refresh) nem deixar a retry sem teto (auto-retry sem humano não pode pendurar).
+        signal: AbortSignal.timeout(AUTH_RETRY_TIMEOUT_MS),
+      };
+      res = await fetch(input, init);
+      if (res.status === 429) {
+        notifyRateLimited();
+        return res;
+      }
+    }
+  }
+
   if (res.status !== 403 || !requester) return res;
 
   let info = classify(await peekJson(res));
