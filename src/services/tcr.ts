@@ -54,6 +54,8 @@ const TCR_CONFIG = {
     // 💸 TRANSFERÊNCIAS PIX (CorpX v2 - 1 etapa)
     pixOut: '/api/corpx-v2/pix/out',
     bigPix: '/api/corpx-v2/pix/out/bigpix',
+    // 📲 PAGAR QR CODE (CorpX v2 - paga EMV copia-e-cola)
+    pagarQrCode: '/api/corpx-v2/pix/out/qr-code',
     // 🔄 TRANSFERÊNCIA INTERNA (CorpX v2 - MIGRACAO-FRONTEND-CORPX-V2.md)
     transferenciaInterna: '/api/corpx-v2/transfers/internal/simple',
     // v1 (legado - manter para referência)
@@ -1477,6 +1479,70 @@ export async function enviarPixCompletoTCR(
     console.error('[TCR-PIX-COMPLETO] Erro:', error.message);
     return null;
   }
+}
+
+/**
+ * Pagar QR Code (CorpX v2) — paga PIX via payload EMV (copia-e-cola).
+ * Endpoint: POST /api/corpx-v2/pix/out/qr-code
+ * Header: X-Corpx-Account-Context: TCR
+ *
+ * Mesma pilha de guards do pix-out (TOTP via fetchWithTotp + allowlist no backend).
+ * Diferente do enviarPixCompletoTCR, esta função NÃO engole o erro: propaga a
+ * mensagem do backend (ex.: PIX_OUT_NAO_AUTORIZADO) para o operador ver quando o
+ * QR não está na allowlist.
+ */
+export async function pagarQrCodeTCR(dados: {
+  emv: string;
+  valor?: number;
+  description?: string;
+}): Promise<{ endToEndId: string; paymentId?: string; status?: string }> {
+  const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+  const { TCR_CORPX_ALIAS } = await import('@/contexts/CorpXContext');
+  const userToken = TOKEN_STORAGE.get();
+  if (!userToken) {
+    throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+  }
+
+  const emv = dados.emv.trim();
+  if (!emv) {
+    throw new Error('Cole o código EMV (copia-e-cola) do QR Code.');
+  }
+
+  // amount em BRL (reais), enviado só quando o operador preenche (QR dinâmico sem
+  // valor embutido). NÃO multiplicar por 100 — o CorpX v2 recebe reais, igual ao
+  // enviarPixCompletoTCR (centavos é padrão da Brasilcash, outro provider).
+  const body: { emv: string; amount?: number; description?: string } = { emv };
+  if (typeof dados.valor === 'number' && dados.valor > 0) body.amount = dados.valor;
+  if (dados.description?.trim()) body.description = dados.description.trim();
+
+  const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+  const response = await fetchWithTotp(`${baseUrl}${TCR_CONFIG.endpoints.pagarQrCode}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${userToken}`,
+      'X-Corpx-Account-Context': TCR_CORPX_ALIAS,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const responseData = await response.json().catch(() => ({} as any));
+  const raw = responseData?.data ?? responseData;
+
+  if (!response.ok) {
+    const msg =
+      responseData?.message ||
+      responseData?.error?.message ||
+      `Erro HTTP ${response.status}`;
+    throw new Error(msg);
+  }
+
+  return {
+    endToEndId: raw?.endToEndId ?? raw?.endtoend ?? raw?.paymentId ?? raw?.id ?? '',
+    paymentId: raw?.paymentId,
+    status: raw?.status,
+  };
 }
 
 /**

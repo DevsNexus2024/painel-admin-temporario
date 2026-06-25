@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import TotpField from "@/components/totp/TotpField";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -870,6 +871,150 @@ function PixNormalComponentTCR() {
   );
 }
 
+// Componente Pagar QR Code para TCR (CorpX v2 — paga EMV copia-e-cola)
+function PagarQrCodeComponentTCR() {
+  const TCR_CNPJ = "53781325000115"; // CNPJ da TCR
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [emv, setEmv] = React.useState('');
+  const [valor, setValor] = React.useState('');
+  const [description, setDescription] = React.useState('');
+
+  const formatCurrency = (value: string) => {
+    const numbers = value.replace(/\D/g, '');
+    const amount = parseFloat(numbers) / 100;
+    return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '');
+    setValor(value ? formatCurrency(value) : '');
+  };
+
+  const pagar = async () => {
+    if (!emv.trim()) {
+      toast.error("Cole o código EMV (copia-e-cola) do QR Code");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const valorNumerico = valor
+        ? parseFloat(valor.replace(/[^\d,]/g, '').replace(',', '.'))
+        : undefined;
+
+      const { pagarQrCodeTCR } = await import('@/services/tcr');
+      const result = await pagarQrCodeTCR({
+        emv: emv.trim(),
+        valor: valorNumerico,
+        description: description || undefined,
+      });
+
+      toast.success("QR Code pago com sucesso!", {
+        description: `End-to-End: ${result.endToEndId || result.paymentId || 'N/A'}`,
+        duration: 5000
+      });
+
+      // Reset form
+      setEmv('');
+      setValor('');
+      setDescription('');
+    } catch (error: any) {
+      // Propaga a mensagem do backend (ex.: PIX_OUT_NAO_AUTORIZADO quando o QR não
+      // está na allowlist) — feedback que o operador precisa ver.
+      toast.error("Erro ao pagar QR Code", {
+        description: error.message || "Tente novamente"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 via-transparent to-green-600/5"></div>
+      <CardHeader className="relative pb-4">
+        <CardTitle className="text-lg flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-green-500/10">
+            <QrCode className="h-5 w-5 text-green-600" />
+          </div>
+          Pagar QR Code
+          <Badge className="bg-green-100 text-green-800 border-green-200 text-xs font-medium">
+            TCR
+          </Badge>
+        </CardTitle>
+        <CardDescription>
+          Pagamento via código QR (copia-e-cola)
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="relative space-y-4">
+        {/* Feedback Visual da Conta */}
+        <div className="p-3 bg-muted/30 rounded-lg border">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">TCR - Grupo TCR</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                CNPJ: {TCR_CNPJ.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="qr-emv-tcr">Código QR (copia-e-cola)</Label>
+            <Textarea
+              id="qr-emv-tcr"
+              value={emv}
+              onChange={(e) => setEmv(e.target.value)}
+              placeholder="Cole aqui o código EMV do QR Code (00020126...)"
+              rows={4}
+              className="font-mono text-xs"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="qr-valor-tcr">Valor (Opcional)</Label>
+            <Input
+              id="qr-valor-tcr"
+              value={valor}
+              onChange={handleValueChange}
+              placeholder="R$ 0,00 — vazio usa o valor do QR"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="qr-desc-tcr">Descrição (Opcional)</Label>
+            <Input
+              id="qr-desc-tcr"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Descrição do pagamento"
+            />
+          </div>
+        </div>
+
+        <TotpField className="mb-3" />
+
+        <Button
+          onClick={pagar}
+          disabled={isLoading}
+          className="w-full bg-green-600 hover:bg-green-700"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Pagando QR Code...
+            </>
+          ) : (
+            'Pagar QR Code'
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function PixActionsTabTCR() {
   return (
     <div className="w-full max-w-7xl mx-auto">
@@ -878,38 +1023,7 @@ function PixActionsTabTCR() {
         <PixNormalComponentTCR />
 
         {/* Pagar QR Code */}
-        <Card className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 via-transparent to-green-600/5"></div>
-          <CardHeader className="relative pb-4">
-            <CardTitle className="text-lg flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-green-500/10">
-                <QrCode className="h-5 w-5 text-green-600" />
-              </div>
-              Pagar QR Code
-              <Badge className="bg-green-100 text-green-800 border-green-200 text-xs font-medium">
-                TCR
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              Pagamento via código QR
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="relative">
-            <div className="space-y-4">
-              <div className="p-4 border rounded-lg text-center">
-                <p className="text-sm text-muted-foreground">
-                  Funcionalidade em desenvolvimento
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Aguardando integração com API TCR
-                </p>
-              </div>
-              <Button className="w-full" disabled>
-                Escanear QR Code
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <PagarQrCodeComponentTCR />
 
         {/* BigPIX — PIX > R$ 15k */}
         <BigPixComponentTCR />
