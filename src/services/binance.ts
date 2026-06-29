@@ -8,6 +8,7 @@
 
 import { API_CONFIG, TOKEN_STORAGE } from '@/config/api';
 import { logger } from '@/utils/logger';
+import { fetchWithTotp } from '@/services/totpBridge';
 import type {
   BinanceQuoteRequest,
   BinanceQuoteResponse,
@@ -699,21 +700,30 @@ export async function criarSaqueBinance(dados: BinanceWithdrawalRequest): Promis
     
     logger.debug('[BINANCE-WITHDRAWAL] Request URL:', requestUrl);
     
-    const response = await fetch(requestUrl, {
+    // fetchWithTotp: anexa o x-totp-code (campo TotpField) e, no 403 de TOTP,
+    // repete a MESMA requisição com o código — seguro, pois o guard rejeita
+    // ANTES do saque (403 = nada saiu da Binance).
+    const response = await fetchWithTotp(requestUrl, {
       method: 'POST',
       headers: requestHeaders,
       body: JSON.stringify(dados)
     });
-    
+
     if (!response.ok) {
-      const errorText = await response.text();
-      logger.error('[BINANCE-WITHDRAWAL] Erro HTTP:', { status: response.status, error: errorText });
-      throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+      // Propaga a mensagem humana do backend (TOTP_REQUERIDO/TOTP_INVALIDO,
+      // ACESSO_NEGADO, etc.) em vez do status cru — o operador vê o que corrigir.
+      let mensagem = `HTTP error! status: ${response.status}`;
+      try {
+        const body = await response.clone().json();
+        mensagem = body?.mensagem || body?.message || body?.erro || body?.error || mensagem;
+      } catch { /* corpo não-JSON: mantém o status */ }
+      logger.error('[BINANCE-WITHDRAWAL] Erro HTTP:', { status: response.status });
+      throw new Error(mensagem);
     }
-    
+
     const responseData = await response.json();
     logger.debug('[BINANCE-WITHDRAWAL] Resposta recebida:', responseData);
-    
+
     return responseData as BinanceWithdrawalResponse;
     
   } catch (error: any) {

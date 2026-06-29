@@ -25,6 +25,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { formatMonetaryInput, convertBrazilianToUS, getNumericValue } from '@/utils/monetaryInput';
 import { consultarTaxaRedeBinance } from '@/services/binance';
+import { TotpField } from '@/components/totp/TotpField';
 import type { OTCClient } from '@/types/otc';
 import type { BinanceQuoteData, BinanceNetworkFeeData } from '@/types/binance';
 
@@ -441,6 +442,10 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
                 </div>
               </CardContent>
             </Card>
+
+            {/* TOTP obrigatório no saque (enforce no backend). O TotpField escreve
+                o código no engine; o fetchWithTotp anexa o header x-totp-code. */}
+            <TotpField className="mt-1" />
           </div>
         )}
 
