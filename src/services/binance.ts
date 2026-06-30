@@ -17,8 +17,11 @@ import type {
   BinanceOrderStatusResponse,
   BinanceTradeHistoryResponse,
   BinanceOrderHistoryResponse,
-  BinanceWithdrawalRequest,
-  BinanceWithdrawalResponse,
+  BinanceSecureWithdrawalRequest,
+  BinanceSecureWithdrawalResponse,
+  BinanceForwardStatusResponse,
+  BinanceForwardStatusData,
+  BinanceForwardStatus,
   BinanceWithdrawalHistoryResponse,
   BinanceWithdrawalAddressesResponse,
   BinanceDepositAddressesResponse,
@@ -42,7 +45,8 @@ const BINANCE_CONFIG = {
     // 💸 WITHDRAWAL
     saldos: '/api/binance/withdrawal/saldos',
     historicoSaques: '/api/binance/withdrawal/historico',
-    criarSaque: '/api/binance/withdrawal/criar',
+    criarSaqueSeguro: '/api/binance/withdrawal/criar-seguro',
+    forwardStatus: '/api/binance/withdrawal/forward-status',
     statusSaque: '/api/binance/withdrawal/status', // GET /api/binance/withdrawal/status/:withdrawId
     enderecosSaque: '/api/binance/withdrawal/enderecos',
     enderecosDeposito: '/api/binance/withdrawal/enderecos-deposito',
@@ -664,77 +668,169 @@ export async function consultarHistoricoSaquesBinance(
 }
 
 /**
- * 💸 Criar Saque
- * Endpoint: POST /api/binance/withdrawal/criar
+ * 💸 Criar Saque Seguro (2 etapas: Binance → escrow TCR → cliente)
+ * Endpoint: POST /api/binance/withdrawal/criar-seguro
  */
-export async function criarSaqueBinance(dados: BinanceWithdrawalRequest): Promise<BinanceWithdrawalResponse | null> {
-  try {
-    logger.debug('[BINANCE-WITHDRAWAL] Criando saque...', dados);
+export async function criarSaqueSeguroBinance(
+  dados: BinanceSecureWithdrawalRequest,
+): Promise<BinanceSecureWithdrawalResponse> {
+  logger.debug('[BINANCE-WITHDRAWAL-SECURE] Criando saque seguro...', {
+    ...dados,
+    pin: '***',
+  });
 
-    // Validar configuração da API
+  const configValidation = validateApiConfiguration();
+  if (!configValidation.isValid) {
+    throw new Error(configValidation.error);
+  }
+
+  const tokenStatus = await checkTokenStatus();
+  if (!tokenStatus.isValid) {
+    throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
+  }
+
+  const userToken = TOKEN_STORAGE.get();
+  if (!userToken) {
+    throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+  }
+
+  const idempotencyKey = crypto.randomUUID();
+  const requestUrl = `${API_CONFIG.BASE_URL}${BINANCE_CONFIG.endpoints.criarSaqueSeguro}`;
+  const { addressTag, ...bodyFields } = dados;
+  const requestBody = {
+    coin: bodyFields.coin,
+    amount: bodyFields.amount,
+    address: bodyFields.address,
+    network: bodyFields.network,
+    otc_client_id: bodyFields.otc_client_id,
+    pin: bodyFields.pin,
+    ...(bodyFields.otc_binance_config_id != null
+      ? { otc_binance_config_id: bodyFields.otc_binance_config_id }
+      : {}),
+    ...(addressTag ? { addressTag } : {}),
+  };
+
+  const response = await fetchWithTotp(requestUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${userToken}`,
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    let mensagem = `HTTP error! status: ${response.status}`;
+    try {
+      const body = await response.clone().json();
+      mensagem = body?.mensagem || body?.message || body?.erro || body?.error || mensagem;
+    } catch {
+      /* corpo não-JSON */
+    }
+    logger.error('[BINANCE-WITHDRAWAL-SECURE] Erro HTTP:', { status: response.status });
+    throw new Error(mensagem);
+  }
+
+  const responseData = (await response.json()) as BinanceSecureWithdrawalResponse;
+  logger.debug('[BINANCE-WITHDRAWAL-SECURE] Resposta recebida:', responseData);
+  return responseData;
+}
+
+/** @deprecated Alias — use criarSaqueSeguroBinance */
+export const criarSaqueBinance = criarSaqueSeguroBinance;
+
+const TERMINAL_FORWARD_STATUSES: BinanceForwardStatus[] = ['concluido', 'falhou'];
+
+/**
+ * 📡 Consultar status de repasse (etapa 2)
+ * GET /api/binance/withdrawal/forward-status/:withdrawId
+ */
+export async function consultarForwardStatusBinance(
+  withdrawId: string,
+): Promise<BinanceForwardStatusResponse | null> {
+  try {
     const configValidation = validateApiConfiguration();
     if (!configValidation.isValid) {
       throw new Error(configValidation.error);
     }
 
-    // Verificar status do token
     const tokenStatus = await checkTokenStatus();
-    
     if (!tokenStatus.isValid) {
       throw new Error('Token de autenticação inválido ou expirado. Faça login novamente.');
     }
-    
-    // Obter token JWT
+
     const userToken = TOKEN_STORAGE.get();
-    
     if (!userToken) {
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
-    
-    const requestUrl = `${API_CONFIG.BASE_URL}${BINANCE_CONFIG.endpoints.criarSaque}`;
-    const requestHeaders = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${userToken}`
-    };
-    
-    logger.debug('[BINANCE-WITHDRAWAL] Request URL:', requestUrl);
-    
-    // fetchWithTotp: anexa o x-totp-code (campo TotpField) e, no 403 de TOTP,
-    // repete a MESMA requisição com o código — seguro, pois o guard rejeita
-    // ANTES do saque (403 = nada saiu da Binance).
-    const response = await fetchWithTotp(requestUrl, {
-      method: 'POST',
-      headers: requestHeaders,
-      body: JSON.stringify(dados)
+
+    const requestUrl = `${API_CONFIG.BASE_URL}${BINANCE_CONFIG.endpoints.forwardStatus}/${encodeURIComponent(withdrawId)}`;
+    const response = await fetch(requestUrl, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
     });
 
     if (!response.ok) {
-      // Propaga a mensagem humana do backend (TOTP_REQUERIDO/TOTP_INVALIDO,
-      // ACESSO_NEGADO, etc.) em vez do status cru — o operador vê o que corrigir.
-      let mensagem = `HTTP error! status: ${response.status}`;
-      try {
-        const body = await response.clone().json();
-        mensagem = body?.mensagem || body?.message || body?.erro || body?.error || mensagem;
-      } catch { /* corpo não-JSON: mantém o status */ }
-      logger.error('[BINANCE-WITHDRAWAL] Erro HTTP:', { status: response.status });
-      throw new Error(mensagem);
+      const errorText = await response.text();
+      logger.error('[BINANCE-FORWARD-STATUS] Erro HTTP:', {
+        status: response.status,
+        error: errorText,
+      });
+      return null;
     }
 
-    const responseData = await response.json();
-    logger.debug('[BINANCE-WITHDRAWAL] Resposta recebida:', responseData);
-
-    return responseData as BinanceWithdrawalResponse;
-    
+    return (await response.json()) as BinanceForwardStatusResponse;
   } catch (error: any) {
-    const errorMessage = error?.message || String(error);
-    logger.error('[BINANCE-WITHDRAWAL] Erro ao criar saque:', {
-      message: errorMessage,
-      isNetworkError: error instanceof TypeError,
-      type: error?.name
-    });
+    logger.error('[BINANCE-FORWARD-STATUS] Erro:', error?.message || error);
     return null;
   }
+}
+
+export interface PollForwardStatusOptions {
+  intervalMs?: number;
+  maxAttempts?: number;
+  onUpdate?: (data: BinanceForwardStatusData) => void;
+  /** Cancela o loop de polling (ex.: modal fechado / componente desmontado). */
+  signal?: AbortSignal;
+}
+
+/**
+ * Polling do forward_status até estado terminal (concluido / falhou).
+ * Cancelável via AbortSignal — sem isso, o loop seguiria fazendo requests
+ * por até maxAttempts*intervalMs mesmo após fechar a tela.
+ */
+export async function pollForwardStatusBinance(
+  withdrawId: string,
+  options: PollForwardStatusOptions = {},
+): Promise<BinanceForwardStatusData | null> {
+  const { intervalMs = 7000, maxAttempts = 120, onUpdate, signal } = options;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (signal?.aborted) return null;
+
+    const response = await consultarForwardStatusBinance(withdrawId);
+    const data = response?.success ? response.data : null;
+
+    if (data) {
+      if (!signal?.aborted) onUpdate?.(data);
+      if (TERMINAL_FORWARD_STATUSES.includes(data.forward_status)) {
+        return data;
+      }
+    }
+
+    if (signal?.aborted) return null;
+
+    if (attempt < maxAttempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
+  return null;
 }
 
 /**

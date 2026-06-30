@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TrendingUp, Search, Edit, Loader2, Wallet, Zap, ArrowUpDown, RefreshCw, Save, ExternalLink, Info, DollarSign, Hash, FileText, Calendar, User, ChevronDown, ChevronUp, Copy, TrendingDown, Percent, Receipt, Calculator } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -44,8 +44,8 @@ import { useBinanceBalances } from '@/hooks/useBinanceBalances';
 import type { BinanceWithdrawalHistoryItem } from '@/types/binance';
 import { useOTCClients, useOTCClient } from '@/hooks/useOTCClients';
 import { BinanceWithdrawalModal } from '@/components/otc/BinanceWithdrawalModal';
+import type { BinanceWithdrawalConfirmData } from '@/components/otc/BinanceWithdrawalModal';
 import { TradeConfirmationModal } from '@/components/otc/TradeConfirmationModal';
-import { PinVerificationModal } from '@/components/otc/PinVerificationModal';
 import { getBinanceConfigs, createBinanceTransaction, getBinanceTransactions, updateBinanceTransactionNotes, updateBinanceTransactionNotesByBinanceId } from '@/services/otc-binance';
 import { useOTCOperations } from '@/hooks/useOTCOperations';
 import { toastError, toastSuccess } from '@/utils/toast';
@@ -73,8 +73,12 @@ const OTCNegociar: React.FC = () => {
 
   // ==================== WITHDRAWAL HOOKS ====================
   const {
-    criarSaque,
+    criarSaqueSeguro,
+    acompanharRepasse,
+    pararAcompanhamento,
     withdrawalLoading,
+    forwardStatus,
+    isPollingForward,
     historicoSaques,
     historicoSaquesLoading,
     carregarHistoricoSaques,
@@ -136,16 +140,10 @@ const OTCNegociar: React.FC = () => {
   // Modal states
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
-  const [showPinVerificationModal, setShowPinVerificationModal] = useState(false);
-  const [pendingWithdrawalData, setPendingWithdrawalData] = useState<{
-    coin: string;
-    amount: string; // Valor total (valor informado + taxa)
-    originalAmount: string; // Valor que o cliente deve receber (sem taxa)
-    address: string;
-    network?: string;
-    addressTag?: string;
-  } | null>(null);
+  const [withdrawalProgressActive, setWithdrawalProgressActive] = useState(false);
+  const [activeWithdrawId, setActiveWithdrawId] = useState<string | null>(null);
   const [clientPopoverOpen, setClientPopoverOpen] = useState(false);
+  const withdrawalSubmitLockRef = useRef(false);
   
   // Binance config
   const [binanceConfig, setBinanceConfig] = useState<{ fee: number; id: number } | null>(null);
@@ -484,141 +482,120 @@ const OTCNegociar: React.FC = () => {
   };
 
   /**
-   * Handler intermediário - armazena dados e pede PIN
+   * Executar saque seguro (criar-seguro + polling de repasse)
    */
-  const handleSolicitarSaqueRequest = (data: {
-    coin: string;
-    amount: string; // Valor total (valor informado + taxa)
-    originalAmount: string; // Valor que o cliente deve receber (sem taxa)
-    address: string;
-    network?: string;
-    addressTag?: string;
-  }) => {
-    // Validar se cliente foi selecionado
+  const handleSolicitarSaque = async (data: BinanceWithdrawalConfirmData) => {
     if (!selectedClient) {
       toastError('Cliente não selecionado', 'Por favor, selecione um cliente antes de realizar o saque');
       return;
     }
 
-    // Validar se há usuário logado
     if (!user?.email) {
       toastError('Usuário não identificado', 'Não foi possível identificar o usuário logado');
       return;
     }
 
-    // Armazenar dados do saque e pedir PIN
-    setPendingWithdrawalData(data);
-    setShowWithdrawalModal(false); // Fechar modal de saque
-    setShowPinVerificationModal(true); // Abrir modal de PIN
-  };
-
-  /**
-   * Executar saque após PIN verificado
-   */
-  const handleSolicitarSaque = async () => {
-    if (!pendingWithdrawalData) {
-      toastError('Erro', 'Dados do saque não encontrados');
-      return;
-    }
-
-    const data = pendingWithdrawalData;
-
-    // Validar se cliente foi selecionado
-    if (!selectedClient) {
-      toastError('Cliente não selecionado', 'Por favor, selecione um cliente antes de realizar o saque');
-      setPendingWithdrawalData(null);
-      return;
-    }
-
-    // Validar se há usuário logado
-    if (!user?.email) {
-      toastError('Usuário não identificado', 'Não foi possível identificar o usuário logado');
-      setPendingWithdrawalData(null);
-      return;
-    }
+    // Lock síncrono anti duplo-clique: cada saque gera nova Idempotency-Key,
+    // então dois cliques rápidos virariam DOIS saques distintos (double-send).
+    if (withdrawalSubmitLockRef.current) return;
+    withdrawalSubmitLockRef.current = true;
 
     try {
-      const response = await criarSaque(
-        data.coin,
-        data.amount,
-        data.address,
-        data.network,
-        data.addressTag
-      );
+      const response = await criarSaqueSeguro({
+        coin: data.coin,
+        amount: data.amount,
+        address: data.address,
+        network: data.network,
+        otc_client_id: parseInt(selectedClient, 10),
+        pin: data.pin,
+        // NÃO enviar otc_binance_config_id: o backend resolve a config de wallet
+        // escrow correta pela rede. O id que o front tem (binanceConfig.id) é da
+        // conta de trading, NÃO da config de wallet — enviá-lo arriscaria escrow errada.
+        addressTag: data.addressTag,
+      });
 
-      if (response && response.data) {
-        // Fechar modais e limpar dados pendentes
-        setShowWithdrawalModal(false);
-        setShowPinVerificationModal(false);
-        setPendingWithdrawalData(null);
-        
-          // Criar operação de débito USD automaticamente
-        try {
-          // IMPORTANTE: O withdrawId é o ID interno da Binance, NÃO o hash da blockchain
-          // O txId (hash da transação) só será disponível depois que o saque for confirmado
-          // na blockchain. Por isso, por enquanto, vamos usar o withdrawId como referência
-          const withdrawId = response.data.withdrawId || 'N/A';
-          
-          // Usar originalAmount (valor sem taxa) para o débito
-          const valorDebito = parseFloat(data.originalAmount || data.amount);
-          if (Number.isNaN(valorDebito) || valorDebito <= 0) {
-            throw new Error('Valor inválido para débito');
+      if (!response?.data) {
+        return;
+      }
+
+      const withdrawId = response.data.withdrawId;
+      setActiveWithdrawId(withdrawId);
+      setWithdrawalProgressActive(true);
+
+      const valorDebito = parseFloat(data.amount);
+      const valorDebitoValido = !Number.isNaN(valorDebito) && valorDebito > 0;
+      if (!valorDebitoValido) {
+        toastError('Aviso', 'Saque criado, mas valor inválido para débito OTC');
+      }
+
+      const { startTime, endTime } = getMonthDateRange();
+      await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
+
+      if (response.data.forward_status) {
+        // Fluxo 2 etapas: NÃO debita agora. O débito do cliente só é lançado
+        // quando o repasse chega ao cliente (forward_status === 'concluido').
+        // Se falhar, NÃO debita (o cliente não recebeu).
+        // ATENÇÃO: isto depende do polling em aberto. A solução robusta é o
+        // BACKEND lançar o débito ao concluir o repasse (cobre aba fechada e
+        // retry do admin) — este front é um paliativo.
+        void (async () => {
+          const finalStatus = await acompanharRepasse(withdrawId);
+          if (finalStatus?.forward_status === 'concluido' && valorDebitoValido) {
+            await criarDebitoSaqueOTC(withdrawId, valorDebito);
+            await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
           }
-          
-          // Construir descrição com email do usuário
-          // O link da blockchain será adicionado depois quando o txId estiver disponível
-          const description = `Operação Automática USDT por ${user.email}: SAQUE - ID: ${withdrawId}`;
-          
-          console.log('📝 Criando operação de débito:', {
-            clientId: selectedClient,
-            valorSolicitadoBinance: data.amount, // Valor total (com taxa)
-            valorDebito: valorDebito, // Valor original (sem taxa)
-            withdrawId,
-            description
-          });
-          
-          // Criar operação de débito USD (usar apenas valor original, sem taxa)
-          const debitOperation = {
-            otc_client_id: parseInt(selectedClient),
-            operation_type: 'debit' as const,
-            currency: 'USD' as const,
-            amount: valorDebito, // Apenas o valor que o cliente deve receber (sem taxa)
-            description: description,
-            reference_external_id: withdrawId,
-            reference_provider: 'binance',
-            reference_code: withdrawId,
-          };
-          // ✅ Tentar criar operação e permitir retry simples em caso de falha transitória
-          try {
-            await createOperation(debitOperation);
-          } catch (firstError) {
-            console.warn('⚠️ Falha ao criar operação, tentando novamente...', firstError);
-            await createOperation(debitOperation);
-          }
-          
-          console.log('✅ Operação de débito USD criada automaticamente:', debitOperation);
-          
-          // Recarregar histórico de saques
-          const { startTime, endTime } = getMonthDateRange();
-          await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
-          
-        } catch (error) {
-          console.error('❌ Erro ao criar operação de débito:', error);
-          toastError('Aviso', 'Saque realizado mas não foi possível criar operação de débito USD');
-        }
-      } else {
-        // Se não houver resposta válida, ainda limpar os dados pendentes
-        setPendingWithdrawalData(null);
-        setShowPinVerificationModal(false);
-        toastError('Erro', 'Não foi possível realizar o saque. Resposta inválida.');
+          // 'falhou' / null: nenhum débito lançado (toast de falha vem do hook).
+        })();
+      } else if (valorDebitoValido) {
+        // Fluxo direto (1 etapa): o saque vai direto ao cliente, então debita já.
+        await criarDebitoSaqueOTC(withdrawId, valorDebito);
+        await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
       }
     } catch (error) {
       console.error('❌ Erro ao criar saque:', error);
-      toastError('Erro', 'Não foi possível realizar o saque. Tente novamente.');
-      // Limpar dados pendentes em caso de erro
-      setPendingWithdrawalData(null);
-      setShowPinVerificationModal(false);
+    } finally {
+      // Libera o lock após a criação do saque (o polling segue em background).
+      withdrawalSubmitLockRef.current = false;
     }
+  };
+
+  /**
+   * Lança o débito USD do saque no cliente OTC (idempotente por withdrawId no
+   * backend via reference_*). Usado só quando o saque é efetivamente entregue.
+   */
+  const criarDebitoSaqueOTC = async (withdrawId: string, valorDebito: number) => {
+    if (!selectedClient || !user?.email) return;
+    try {
+      const description = `Operação Automática USDT por ${user.email}: SAQUE - ID: ${withdrawId}`;
+      const debitOperation = {
+        otc_client_id: parseInt(selectedClient, 10),
+        operation_type: 'debit' as const,
+        currency: 'USD' as const,
+        amount: valorDebito,
+        description,
+        reference_external_id: withdrawId,
+        reference_provider: 'binance',
+        reference_code: withdrawId,
+      };
+
+      try {
+        await createOperation(debitOperation);
+      } catch (firstError) {
+        console.warn('⚠️ Falha ao criar operação, tentando novamente...', firstError);
+        await createOperation(debitOperation);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao criar operação de débito:', error);
+      toastError('Aviso', 'Saque concluído, mas não foi possível lançar o débito USD. Lance manualmente.');
+    }
+  };
+
+  const handleCloseWithdrawalModal = () => {
+    if (withdrawalLoading || isPollingForward) return;
+    setShowWithdrawalModal(false);
+    setWithdrawalProgressActive(false);
+    setActiveWithdrawId(null);
+    pararAcompanhamento();
   };
 
   /**
@@ -2066,17 +2043,20 @@ const OTCNegociar: React.FC = () => {
       {/* Modais */}
       <BinanceWithdrawalModal
         isOpen={showWithdrawalModal}
-        onClose={() => setShowWithdrawalModal(false)}
-        onConfirm={handleSolicitarSaqueRequest}
+        onClose={handleCloseWithdrawalModal}
+        onConfirm={handleSolicitarSaque}
         loading={withdrawalLoading}
         balances={balances}
         client={(() => {
-          // Usar dados do cliente específico (que tem fee) se disponível, senão usar da lista
           const clientToUse = selectedClientData || clients.find((c) => c.id.toString() === selectedClient);
           return clientToUse || null;
         })()}
         quote={quote}
         onRequestQuote={handleRequestQuoteForWithdrawal}
+        showProgress={withdrawalProgressActive}
+        forwardStatus={forwardStatus}
+        withdrawId={activeWithdrawId}
+        isPollingForward={isPollingForward}
       />
 
       <TradeConfirmationModal
@@ -2091,19 +2071,7 @@ const OTCNegociar: React.FC = () => {
           return clientToUse || null;
         })()}
         operationType={operationType}
-        binanceFee={binanceConfig?.fee || 0.039} // Taxa da Binance em %
-      />
-
-      {/* Modal de Verificação de PIN */}
-      <PinVerificationModal
-        isOpen={showPinVerificationModal}
-        onClose={() => {
-          setShowPinVerificationModal(false);
-          setPendingWithdrawalData(null);
-        }}
-        onVerified={handleSolicitarSaque}
-        title="Confirmar Saque"
-        description="Digite seu PIN de 6 dígitos para autorizar o saque"
+        binanceFee={binanceConfig?.fee || 0.039}
       />
     </div>
   );

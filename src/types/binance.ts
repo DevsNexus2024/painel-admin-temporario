@@ -34,6 +34,7 @@ export interface BinanceExecuteTradeRequest {
   fromCurrency: 'BRL' | 'USDT'; // Obrigatório
 }
 
+/** @deprecated Usar BinanceSecureWithdrawalRequest com /criar-seguro */
 export interface BinanceWithdrawalRequest {
   coin: string;
   amount: string;
@@ -41,6 +42,56 @@ export interface BinanceWithdrawalRequest {
   network?: string;
   addressTag?: string;
 }
+
+/** POST /api/binance/withdrawal/criar-seguro */
+export interface BinanceSecureWithdrawalRequest {
+  coin: string;
+  /** Valor que o cliente final recebe (gross-up feito pelo backend) */
+  amount: string;
+  address: string;
+  network: string;
+  otc_client_id: number;
+  pin: string;
+  otc_binance_config_id?: number;
+  addressTag?: string;
+}
+
+export type BinanceForwardStatus =
+  | 'aguardando_escrow'
+  | 'escrow_recebido'
+  | 'repasse_enviado'
+  | 'concluido'
+  | 'falhou';
+
+export interface BinanceSecureWithdrawalData {
+  withdrawId: string;
+  coin: string;
+  amount: string;
+  address: string;
+  wallet_official?: string;
+  status: string;
+  forward_status: BinanceForwardStatus;
+  savedInternally?: boolean;
+  timestamp: string;
+}
+
+export interface BinanceSecureWithdrawalResponse
+  extends BinanceBackendResponse<BinanceSecureWithdrawalData> {}
+
+export interface BinanceForwardStatusData {
+  withdraw_id_binance: string;
+  otc_client_id: number;
+  forward_status: BinanceForwardStatus;
+  status: string;
+  last_error: string | null;
+  txid_recebimento: string | null;
+  txid_reenvio_cliente: string | null;
+  forwarded_at: string | null;
+  created_at: string;
+}
+
+export interface BinanceForwardStatusResponse
+  extends BinanceBackendResponse<BinanceForwardStatusData> {}
 
 // ==================== RESPONSE TYPES ====================
 
@@ -182,6 +233,7 @@ export interface BinanceWithdrawalData {
   amount: string;
   address: string;
   status: string;
+  forward_status?: BinanceForwardStatus;
   timestamp: string;
 }
 
