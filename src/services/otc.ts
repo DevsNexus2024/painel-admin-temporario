@@ -20,7 +20,8 @@ import {
   TransferBalanceRequest,
   TransferBalanceResult
 } from '@/types/otc';
-import { api } from '@/config/api';
+import { api, API_CONFIG, TOKEN_STORAGE } from '@/config/api';
+import { fetchWithTotp } from '@/services/totpBridge';
 
 const OTC_BASE_URL = '/api/otc';
 
@@ -282,8 +283,63 @@ export class OTCService {
     const response = await api.get<OTCApiResponse<OTCOperation[]>>(
       `${OTC_BASE_URL}/operations${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
     );
-    
+
     return response.data;
+  }
+
+  /**
+   * Exporta as operações filtradas em CSV (download autenticado por blob).
+   * Usa fetch cru porque o wrapper `api` sempre faz response.json() — não serve p/ CSV.
+   * Envia os MESMOS filtros da listagem, sem page/limit (o backend traz tudo).
+   */
+  async exportOperations(params: OTCOperationsParams = {}): Promise<void> {
+    const searchParams = new URLSearchParams();
+
+    if (params.otc_client_id) searchParams.append('otc_client_id', String(params.otc_client_id));
+    if (params.operation_type) searchParams.append('operation_type', params.operation_type);
+    if (params.currency) searchParams.append('currency', params.currency);
+    if (params.dateFrom) searchParams.append('dateFrom', params.dateFrom);
+    if (params.dateTo) searchParams.append('dateTo', params.dateTo);
+    if (params.search) searchParams.append('search', params.search);
+
+    const qs = searchParams.toString();
+    const url = `${API_CONFIG.BASE_URL}${OTC_BASE_URL}/operations/export${qs ? `?${qs}` : ''}`;
+
+    const response = await fetchWithTotp(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${TOKEN_STORAGE.get() || ''}`,
+      },
+    });
+
+    if (!response.ok) {
+      // Backend devolve { message } (cap 400) ou { mensagem } (rate-limit 429)
+      let message = `Erro ao exportar (HTTP ${response.status})`;
+      try {
+        const err = await response.json();
+        message = err?.message || err?.mensagem || message;
+      } catch {
+        // resposta sem corpo JSON — mantém a mensagem padrão
+      }
+      throw new Error(message);
+    }
+
+    const blob = await response.blob();
+
+    // Nome do arquivo: tenta o Content-Disposition, senão monta com a data atual
+    let filename = `operacoes_otc_${new Date().toISOString().split('T')[0]}.csv`;
+    const disposition = response.headers.get('Content-Disposition');
+    const match = disposition ? /filename="?([^"]+)"?/.exec(disposition) : null;
+    if (match && match[1]) filename = match[1];
+
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(objectUrl);
   }
 
   /**

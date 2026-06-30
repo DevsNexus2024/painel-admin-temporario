@@ -85,6 +85,7 @@ const OTCOperations: React.FC = () => {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [clients, setClients] = useState<Array<{ id: number; name: string }>>([]);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -164,6 +165,35 @@ const OTCOperations: React.FC = () => {
   const handleSearch = () => {
     setPagination((prev) => ({ ...prev, page: 1 }));
     loadOperations();
+  };
+
+  // Exporta em CSV o resultado dos filtros ATUAIS (todas as linhas, não só a página).
+  // Reaproveita os mesmos filtros de loadOperations — sem page/limit.
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+
+      const params: any = {};
+      if (filters.otc_client_id) params.otc_client_id = parseInt(filters.otc_client_id);
+      if (filters.dateFrom) params.dateFrom = filters.dateFrom;
+      if (filters.dateTo) params.dateTo = filters.dateTo;
+      if (filters.operation_type) params.operation_type = filters.operation_type;
+
+      await otcService.exportOperations(params);
+
+      toast({
+        title: 'Exportação concluída',
+        description: 'O CSV das operações filtradas foi baixado.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao exportar CSV',
+        description: error?.message || 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleClearFilters = () => {
@@ -381,6 +411,19 @@ const OTCOperations: React.FC = () => {
               </Button>
               <Button variant="outline" onClick={handleClearFilters}>
                 Limpar
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleExport}
+                disabled={exporting || loading}
+                title="Exportar resultado filtrado em CSV"
+              >
+                {exporting ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Exportar CSV
               </Button>
             </div>
           </div>
