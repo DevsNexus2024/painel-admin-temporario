@@ -3,7 +3,7 @@
  * Saque seguro em 2 etapas (Binance → escrow TCR → cliente)
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, Wallet, ArrowDown, Check } from 'lucide-react';
 import {
   Dialog,
@@ -119,11 +119,22 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
     }
   }, [isOpen]);
 
+  const onRequestQuoteRef = useRef(onRequestQuote);
   useEffect(() => {
-    if (isOpen && !quote && onRequestQuote) {
-      onRequestQuote();
+    onRequestQuoteRef.current = onRequestQuote;
+  }, [onRequestQuote]);
+
+  const quoteRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen) {
+      quoteRequestedRef.current = false;
+      return;
     }
-  }, [isOpen, quote, onRequestQuote]);
+    if (!quoteRequestedRef.current) {
+      quoteRequestedRef.current = true;
+      onRequestQuoteRef.current?.();
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const buscarTaxaRede = async () => {

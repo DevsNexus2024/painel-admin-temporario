@@ -328,13 +328,9 @@ const OTCNegociar: React.FC = () => {
   /**
    * Solicitar cotação automática para saques (1000 USDT padrão)
    */
-  const handleRequestQuoteForWithdrawal = async () => {
-    const symbol = 'USDTBRL';
-    const side = 'SELL'; // Para saque, vamos vender USDT por BRL
-    
-    // Solicitar cotação com 1000 USDT padrão
-    await solicitarCotacao(1000, 'USDT', symbol, side);
-  };
+  const handleRequestQuoteForWithdrawal = useCallback(async () => {
+    await solicitarCotacao(1000, 'USDT', 'USDTBRL', 'SELL');
+  }, [solicitarCotacao]);
 
   /**
    * Executar trade direto
