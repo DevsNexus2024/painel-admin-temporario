@@ -55,6 +55,10 @@ interface BinanceWithdrawalModalProps {
   client?: OTCClient | null;
   quote?: BinanceQuoteData | null;
   onRequestQuote?: () => Promise<void>;
+  /** Saldo OTC do cliente (GET /api/otc/clients/:id/balance) */
+  otcUsdAvailable?: number | null;
+  otcUsdReserved?: number | null;
+  otcUsdBalance?: number | null;
   /** Após saque criado — exibe stepper de repasse */
   showProgress?: boolean;
   forwardStatus?: BinanceForwardStatusData | null;
@@ -83,6 +87,9 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   client = null,
   quote = null,
   onRequestQuote,
+  otcUsdAvailable = null,
+  otcUsdReserved = null,
+  otcUsdBalance = null,
   showProgress = false,
   forwardStatus = null,
   withdrawId = null,
@@ -241,16 +248,40 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
 
         {step === 'form' && (
           <>
-            {client && (
-              <Card className="bg-muted/30 border-border/50">
-                <CardContent className="py-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Cliente:</span>
-                    <span className="font-semibold">{client.name}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+          {client && (
+            <Card className="bg-muted/30 border-border/50">
+              <CardContent className="py-3 space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Cliente:</span>
+                  <span className="font-semibold">{client.name}</span>
+                </div>
+                {otcUsdAvailable != null && (
+                  <>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">USD disponível</span>
+                      <span className="font-semibold text-green-600">
+                        {otcUsdAvailable.toFixed(2).replace('.', ',')} USD
+                      </span>
+                    </div>
+                    {(otcUsdReserved ?? 0) > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">USD reservado</span>
+                        <span className="font-medium text-amber-600">
+                          {(otcUsdReserved ?? 0).toFixed(2).replace('.', ',')} USD
+                        </span>
+                      </div>
+                    )}
+                    {otcUsdBalance != null && (
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>USD total</span>
+                        <span>{otcUsdBalance.toFixed(2).replace('.', ',')} USD</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
             <div className="space-y-3">
               <div>
@@ -431,6 +462,7 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
             )}
             <BinanceWithdrawalForwardProgress
               forwardStatus={forwardStatus?.forward_status ?? 'aguardando_escrow'}
+              otcHoldStatus={forwardStatus?.otc_hold_status}
               lastError={forwardStatus?.last_error}
               txidRecebimento={forwardStatus?.txid_recebimento}
               txidReenvioCliente={forwardStatus?.txid_reenvio_cliente}

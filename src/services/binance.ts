@@ -47,6 +47,7 @@ const BINANCE_CONFIG = {
     historicoSaques: '/api/binance/withdrawal/historico',
     criarSaqueSeguro: '/api/binance/withdrawal/criar-seguro',
     forwardStatus: '/api/binance/withdrawal/forward-status',
+    forwardQueueCancel: '/api/binance/withdrawal/forward-queue',
     statusSaque: '/api/binance/withdrawal/status', // GET /api/binance/withdrawal/status/:withdrawId
     enderecosSaque: '/api/binance/withdrawal/enderecos',
     enderecosDeposito: '/api/binance/withdrawal/enderecos-deposito',
@@ -741,7 +742,7 @@ export async function criarSaqueSeguroBinance(
 /** @deprecated Alias — use criarSaqueSeguroBinance */
 export const criarSaqueBinance = criarSaqueSeguroBinance;
 
-const TERMINAL_FORWARD_STATUSES: BinanceForwardStatus[] = ['concluido', 'falhou'];
+const TERMINAL_FORWARD_STATUSES: BinanceForwardStatus[] = ['concluido', 'cancelado'];
 
 /**
  * 📡 Consultar status de repasse (etapa 2)
@@ -800,9 +801,8 @@ export interface PollForwardStatusOptions {
 }
 
 /**
- * Polling do forward_status até estado terminal (concluido / falhou).
- * Cancelável via AbortSignal — sem isso, o loop seguiria fazendo requests
- * por até maxAttempts*intervalMs mesmo após fechar a tela.
+ * Polling do forward_status até estado terminal (concluido / cancelado).
+ * `falhou` não é terminal — o backend pode retentar automaticamente.
  */
 export async function pollForwardStatusBinance(
   withdrawId: string,
@@ -831,6 +831,40 @@ export async function pollForwardStatusBinance(
   }
 
   return null;
+}
+
+/**
+ * Cancela item da fila de repasse (admin). Libera reserva OTC (RELEASED).
+ * POST /api/binance/withdrawal/forward-queue/:id/cancel
+ */
+export async function cancelarForwardQueueBinance(
+  queueId: string | number,
+  reason?: string,
+): Promise<{ success: boolean; message?: string } | null> {
+  try {
+    const userToken = TOKEN_STORAGE.get();
+    if (!userToken) throw new Error('Token não encontrado');
+
+    const url = `${API_CONFIG.BASE_URL}${BINANCE_CONFIG.endpoints.forwardQueueCancel}/${queueId}/cancel`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify(reason ? { reason } : {}),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.mensagem || data?.message || data?.error || `HTTP ${response.status}`);
+    }
+    return data;
+  } catch (error: any) {
+    logger.error('[BINANCE-FORWARD-CANCEL] Erro:', error?.message || error);
+    throw error;
+  }
 }
 
 /**

@@ -34,7 +34,10 @@ export function useOTCBalance(clientId: number) {
     client_id: clientId,
     client_name: '',
     current_balance: 0,
-    last_updated: new Date().toISOString()
+    usd_balance: 0,
+    usd_balance_reserved: 0,
+    usd_available: 0,
+    last_updated: new Date().toISOString(),
   };
 
   return {

@@ -61,7 +61,11 @@ export type BinanceForwardStatus =
   | 'escrow_recebido'
   | 'repasse_enviado'
   | 'concluido'
-  | 'falhou';
+  | 'falhou'
+  | 'cancelado';
+
+/** Reserva OTC vinculada ao saque (capturada/liberada pelo backend). */
+export type OTCHoldStatus = 'ACTIVE' | 'CAPTURED' | 'RELEASED';
 
 export interface BinanceSecureWithdrawalData {
   withdrawId: string;
@@ -83,6 +87,8 @@ export interface BinanceForwardStatusData {
   otc_client_id: number;
   forward_status: BinanceForwardStatus;
   status: string;
+  /** ACTIVE | CAPTURED | RELEASED | null (saques antigos sem hold) */
+  otc_hold_status?: OTCHoldStatus | null;
   last_error: string | null;
   txid_recebimento: string | null;
   txid_reenvio_cliente: string | null;

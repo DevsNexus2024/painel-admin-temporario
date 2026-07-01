@@ -167,13 +167,13 @@ export function useBinanceWithdrawal(): UseBinanceWithdrawalReturn {
           if (result.forward_status === 'concluido') {
             toast({
               title: 'Repasse concluído',
-              description: 'O cliente recebeu o valor na wallet informada.',
+              description:
+                'Cliente recebeu o valor. O débito OTC foi lançado automaticamente pelo backend.',
             });
-          } else if (result.forward_status === 'falhou') {
+          } else if (result.forward_status === 'cancelado') {
             toast({
-              title: 'Repasse falhou',
-              description: result.last_error || 'Verifique a fila de repasse no painel admin.',
-              variant: 'destructive',
+              title: 'Saque cancelado',
+              description: 'A reserva OTC foi liberada. Nenhum débito foi lançado.',
             });
           }
         }
@@ -220,6 +220,7 @@ export function useBinanceWithdrawal(): UseBinanceWithdrawalReturn {
               withdraw_id_binance: response.data.withdrawId,
               otc_client_id: params.otc_client_id,
               forward_status: response.data.forward_status,
+              otc_hold_status: 'ACTIVE',
               status: response.data.status,
               last_error: null,
               txid_recebimento: null,

@@ -45,11 +45,13 @@ export interface OTCBalance {
   client_id: number;
   client_name: string;
   current_balance: number;      // BRL
-  usd_balance: number;          // USD - NOVO
+  usd_balance: number;          // USD total
+  usd_balance_reserved?: number; // USD reservado (saques pendentes)
+  usd_available?: number;       // USD disponível = total - reservado
   last_updated: string;
   last_transaction_id?: number;
-  last_usd_transaction_id?: number; // NOVO
-  last_conversion_rate?: number; // NOVO
+  last_usd_transaction_id?: number;
+  last_conversion_rate?: number;
 }
 
 // Interface para transação

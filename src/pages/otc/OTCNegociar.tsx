@@ -43,6 +43,7 @@ import { useBinanceWithdrawal } from '@/hooks/useBinanceWithdrawal';
 import { useBinanceBalances } from '@/hooks/useBinanceBalances';
 import type { BinanceWithdrawalHistoryItem } from '@/types/binance';
 import { useOTCClients, useOTCClient } from '@/hooks/useOTCClients';
+import { useOTCBalance } from '@/hooks/useOTCBalance';
 import { BinanceWithdrawalModal } from '@/components/otc/BinanceWithdrawalModal';
 import type { BinanceWithdrawalConfirmData } from '@/components/otc/BinanceWithdrawalModal';
 import { TradeConfirmationModal } from '@/components/otc/TradeConfirmationModal';
@@ -108,6 +109,10 @@ const OTCNegociar: React.FC = () => {
   const { client: selectedClientData } = useOTCClient(
     selectedClient ? parseInt(selectedClient) : 0
   );
+
+  const selectedClientIdNum = selectedClient ? parseInt(selectedClient, 10) : 0;
+  const { balance: otcClientBalance, refetch: refetchOtcClientBalance } =
+    useOTCBalance(selectedClientIdNum);
 
   // Hook para operações OTC
   const { createOperation, operations } = useOTCOperations();
@@ -522,71 +527,25 @@ const OTCNegociar: React.FC = () => {
       setActiveWithdrawId(withdrawId);
       setWithdrawalProgressActive(true);
 
-      const valorDebito = parseFloat(data.amount);
-      const valorDebitoValido = !Number.isNaN(valorDebito) && valorDebito > 0;
-      if (!valorDebitoValido) {
-        toastError('Aviso', 'Saque criado, mas valor inválido para débito OTC');
-      }
-
       const { startTime, endTime } = getMonthDateRange();
       await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
+      void refetchOtcClientBalance();
 
       if (response.data.forward_status) {
-        // Fluxo 2 etapas: NÃO debita agora. O débito do cliente só é lançado
-        // quando o repasse chega ao cliente (forward_status === 'concluido').
-        // Se falhar, NÃO debita (o cliente não recebeu).
-        // ATENÇÃO: isto depende do polling em aberto. A solução robusta é o
-        // BACKEND lançar o débito ao concluir o repasse (cobre aba fechada e
-        // retry do admin) — este front é um paliativo.
-        void (async () => {
-          const finalStatus = await acompanharRepasse(withdrawId);
-          if (finalStatus?.forward_status === 'concluido' && valorDebitoValido) {
-            await criarDebitoSaqueOTC(withdrawId, valorDebito);
-            await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
+        // Polling apenas para UI (stepper). Débito/reserva OTC = backend.
+        void acompanharRepasse(withdrawId).then((finalStatus) => {
+          if (
+            finalStatus?.forward_status === 'concluido' ||
+            finalStatus?.forward_status === 'cancelado'
+          ) {
+            void refetchOtcClientBalance();
           }
-          // 'falhou' / null: nenhum débito lançado (toast de falha vem do hook).
-        })();
-      } else if (valorDebitoValido) {
-        // Fluxo direto (1 etapa): o saque vai direto ao cliente, então debita já.
-        await criarDebitoSaqueOTC(withdrawId, valorDebito);
-        await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
+        });
       }
     } catch (error) {
       console.error('❌ Erro ao criar saque:', error);
     } finally {
-      // Libera o lock após a criação do saque (o polling segue em background).
       withdrawalSubmitLockRef.current = false;
-    }
-  };
-
-  /**
-   * Lança o débito USD do saque no cliente OTC (idempotente por withdrawId no
-   * backend via reference_*). Usado só quando o saque é efetivamente entregue.
-   */
-  const criarDebitoSaqueOTC = async (withdrawId: string, valorDebito: number) => {
-    if (!selectedClient || !user?.email) return;
-    try {
-      const description = `Operação Automática USDT por ${user.email}: SAQUE - ID: ${withdrawId}`;
-      const debitOperation = {
-        otc_client_id: parseInt(selectedClient, 10),
-        operation_type: 'debit' as const,
-        currency: 'USD' as const,
-        amount: valorDebito,
-        description,
-        reference_external_id: withdrawId,
-        reference_provider: 'binance',
-        reference_code: withdrawId,
-      };
-
-      try {
-        await createOperation(debitOperation);
-      } catch (firstError) {
-        console.warn('⚠️ Falha ao criar operação, tentando novamente...', firstError);
-        await createOperation(debitOperation);
-      }
-    } catch (error) {
-      console.error('❌ Erro ao criar operação de débito:', error);
-      toastError('Aviso', 'Saque concluído, mas não foi possível lançar o débito USD. Lance manualmente.');
     }
   };
 
@@ -2057,6 +2016,11 @@ const OTCNegociar: React.FC = () => {
         forwardStatus={forwardStatus}
         withdrawId={activeWithdrawId}
         isPollingForward={isPollingForward}
+        otcUsdAvailable={
+          otcClientBalance.usd_available ?? otcClientBalance.usd_balance ?? null
+        }
+        otcUsdReserved={otcClientBalance.usd_balance_reserved ?? 0}
+        otcUsdBalance={otcClientBalance.usd_balance ?? null}
       />
 
       <TradeConfirmationModal
