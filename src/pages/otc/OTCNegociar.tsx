@@ -46,6 +46,7 @@ import { useOTCClients, useOTCClient } from '@/hooks/useOTCClients';
 import { useOTCBalance } from '@/hooks/useOTCBalance';
 import { BinanceWithdrawalModal } from '@/components/otc/BinanceWithdrawalModal';
 import type { BinanceWithdrawalConfirmData } from '@/components/otc/BinanceWithdrawalModal';
+import { BinanceForwardQueuePanel } from '@/components/otc/BinanceForwardQueuePanel';
 import { TradeConfirmationModal } from '@/components/otc/TradeConfirmationModal';
 import { getBinanceConfigs, createBinanceTransaction, getBinanceTransactions, updateBinanceTransactionNotes, updateBinanceTransactionNotesByBinanceId } from '@/services/otc-binance';
 import { useOTCOperations } from '@/hooks/useOTCOperations';
@@ -53,7 +54,7 @@ import { toastError, toastSuccess } from '@/utils/toast';
 import type { BinanceTransaction } from '@/types/binance';
 import type { OTCClient } from '@/types/otc';
 import type { BinanceTransaction as SavedBinanceTransaction } from '@/services/otc-binance';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth, usePermissions } from '@/hooks/useAuth';
 import { formatUSDTInput, formatMonetaryInput, convertBrazilianUSDTToUS, convertBrazilianToUS, getNumericUSDTValue, getNumericValue } from '@/utils/monetaryInput';
 import { toast } from 'sonner';
 
@@ -111,14 +112,18 @@ const OTCNegociar: React.FC = () => {
   );
 
   const selectedClientIdNum = selectedClient ? parseInt(selectedClient, 10) : 0;
-  const { balance: otcClientBalance, refetch: refetchOtcClientBalance } =
-    useOTCBalance(selectedClientIdNum);
+  const {
+    balance: otcClientBalance,
+    refetch: refetchOtcClientBalance,
+    isLoading: otcBalanceLoading,
+  } = useOTCBalance(selectedClientIdNum);
 
   // Hook para operações OTC
   const { createOperation, operations } = useOTCOperations();
 
   // Hook para autenticação (pegar email do usuário logado)
   const { user } = useAuth();
+  const { isAdmin } = usePermissions();
 
   const [quantity, setQuantity] = useState('');
   const [total, setTotal] = useState('0,00');
@@ -1339,6 +1344,41 @@ const OTCNegociar: React.FC = () => {
                     </Command>
                   </PopoverContent>
                 </Popover>
+                {selectedClient && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {otcBalanceLoading ? (
+                      <Badge variant="outline" className="text-[10px] font-normal">
+                        <Loader2 className="h-3 w-3 animate-spin mr-1 inline" />
+                        Saldo OTC…
+                      </Badge>
+                    ) : (
+                      <>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] font-normal bg-green-500/10 text-green-700 border-green-500/30 dark:text-green-400"
+                        >
+                          Disponível:{' '}
+                          {(otcClientBalance.usd_available ?? otcClientBalance.usd_balance ?? 0)
+                            .toFixed(2)
+                            .replace('.', ',')}{' '}
+                          USD
+                        </Badge>
+                        {(otcClientBalance.usd_balance_reserved ?? 0) > 0 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] font-normal bg-amber-500/10 text-amber-800 border-amber-500/30 dark:text-amber-300"
+                          >
+                            Reservado:{' '}
+                            {(otcClientBalance.usd_balance_reserved ?? 0)
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            USD
+                          </Badge>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Seleção de Moeda */}
@@ -1853,6 +1893,13 @@ const OTCNegociar: React.FC = () => {
             
             {/* Aba 2: Saques USDT */}
             <TabsContent value="withdrawals" className="mt-0">
+              {isAdmin() && (
+                <BinanceForwardQueuePanel
+                  otcClientId={selectedClientIdNum || undefined}
+                  clientNameById={(id) => clients.find((c) => c.id === id)?.name}
+                  onCancelled={() => void refetchOtcClientBalance()}
+                />
+              )}
               {historicoSaquesLoading ? (
                 <div className="flex items-center justify-center py-12 px-6">
                   <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />

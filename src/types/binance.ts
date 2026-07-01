@@ -99,6 +99,30 @@ export interface BinanceForwardStatusData {
 export interface BinanceForwardStatusResponse
   extends BinanceBackendResponse<BinanceForwardStatusData> {}
 
+/** Item da fila GET /api/binance/withdrawal/forward-queue */
+export interface BinanceForwardQueueItem {
+  id: number;
+  withdraw_id_binance: string;
+  otc_client_id: number;
+  coin?: string;
+  amount?: string;
+  network?: string;
+  forward_status: BinanceForwardStatus;
+  otc_hold_status?: OTCHoldStatus | null;
+  status: string;
+  last_error?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BinanceForwardQueueData {
+  items: BinanceForwardQueueItem[];
+  total?: number;
+}
+
+export interface BinanceForwardQueueResponse
+  extends BinanceBackendResponse<BinanceForwardQueueItem[] | BinanceForwardQueueData> {}
+
 // ==================== RESPONSE TYPES ====================
 
 export interface BinanceBackendResponse<T = any> {

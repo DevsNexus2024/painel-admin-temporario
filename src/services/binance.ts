@@ -22,6 +22,8 @@ import type {
   BinanceForwardStatusResponse,
   BinanceForwardStatusData,
   BinanceForwardStatus,
+  BinanceForwardQueueResponse,
+  BinanceForwardQueueItem,
   BinanceWithdrawalHistoryResponse,
   BinanceWithdrawalAddressesResponse,
   BinanceDepositAddressesResponse,
@@ -47,6 +49,7 @@ const BINANCE_CONFIG = {
     historicoSaques: '/api/binance/withdrawal/historico',
     criarSaqueSeguro: '/api/binance/withdrawal/criar-seguro',
     forwardStatus: '/api/binance/withdrawal/forward-status',
+    forwardQueue: '/api/binance/withdrawal/forward-queue',
     forwardQueueCancel: '/api/binance/withdrawal/forward-queue',
     statusSaque: '/api/binance/withdrawal/status', // GET /api/binance/withdrawal/status/:withdrawId
     enderecosSaque: '/api/binance/withdrawal/enderecos',
@@ -831,6 +834,45 @@ export async function pollForwardStatusBinance(
   }
 
   return null;
+}
+
+/**
+ * Lista fila de repasse (admin).
+ * GET /api/binance/withdrawal/forward-queue?status=&otc_client_id=&limit=
+ */
+export async function listarForwardQueueBinance(params?: {
+  status?: string;
+  otc_client_id?: number;
+  limit?: number;
+}): Promise<BinanceForwardQueueItem[]> {
+  try {
+    const userToken = TOKEN_STORAGE.get();
+    if (!userToken) throw new Error('Token não encontrado');
+
+    const qs = new URLSearchParams();
+    if (params?.status) qs.append('status', params.status);
+    if (params?.otc_client_id != null) qs.append('otc_client_id', String(params.otc_client_id));
+    if (params?.limit != null) qs.append('limit', String(params.limit));
+
+    const url = `${API_CONFIG.BASE_URL}${BINANCE_CONFIG.endpoints.forwardQueue}${
+      qs.toString() ? `?${qs.toString()}` : ''
+    }`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${userToken}` },
+    });
+
+    if (!response.ok) return [];
+
+    const body = (await response.json()) as BinanceForwardQueueResponse;
+    if (!body.success || !body.data) return [];
+
+    if (Array.isArray(body.data)) return body.data;
+    return body.data.items ?? [];
+  } catch (error: any) {
+    logger.error('[BINANCE-FORWARD-QUEUE] Erro:', error?.message || error);
+    return [];
+  }
 }
 
 /**
