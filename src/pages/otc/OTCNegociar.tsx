@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { TrendingUp, Search, Edit, Loader2, Wallet, Zap, ArrowUpDown, RefreshCw, Save, ExternalLink, Info, DollarSign, Hash, FileText, Calendar, User, ChevronDown, ChevronUp, Copy, TrendingDown, Percent, Receipt, Calculator } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { TrendingUp, Search, Edit, Loader2, Wallet, Zap, ArrowUpDown, RefreshCw, Save, ExternalLink, Info, DollarSign, Hash, FileText, Calendar, User, ChevronDown, ChevronUp, Copy, TrendingDown, Percent, Receipt, Calculator, Eye, Ban } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,15 +41,20 @@ import {
 import { useBinanceTrade } from '@/hooks/useBinanceTrade';
 import { useBinanceWithdrawal } from '@/hooks/useBinanceWithdrawal';
 import { useBinanceBalances } from '@/hooks/useBinanceBalances';
-import type { BinanceWithdrawalHistoryItem } from '@/types/binance';
+import type { BinanceForwardQueueItem, BinanceWithdrawalHistoryItem } from '@/types/binance';
 import { useOTCClients, useOTCClient } from '@/hooks/useOTCClients';
 import { useOTCBalance } from '@/hooks/useOTCBalance';
 import { BinanceWithdrawalModal } from '@/components/otc/BinanceWithdrawalModal';
 import type { BinanceWithdrawalConfirmData } from '@/components/otc/BinanceWithdrawalModal';
-import { BinanceForwardQueuePanel } from '@/components/otc/BinanceForwardQueuePanel';
 import { BinanceForwardTrackingModal } from '@/components/otc/BinanceForwardTrackingModal';
+import { BinanceForwardCancelDialog } from '@/components/otc/BinanceForwardCancelDialog';
+import { useBinanceForwardQueue } from '@/hooks/useBinanceForwardQueue';
 import { consultarForwardStatusBinance } from '@/services/binance';
-import { isTerminalForwardStatus } from '@/utils/binanceWithdrawal';
+import {
+  FORWARD_STATUS_LABEL,
+  canCancelForwardQueueItem,
+  isTerminalForwardStatus,
+} from '@/utils/binanceWithdrawal';
 import { TradeConfirmationModal } from '@/components/otc/TradeConfirmationModal';
 import { getBinanceConfigs, createBinanceTransaction, getBinanceTransactions, updateBinanceTransactionNotes, updateBinanceTransactionNotesByBinanceId } from '@/services/otc-binance';
 import { useOTCOperations } from '@/hooks/useOTCOperations';
@@ -206,6 +211,32 @@ const OTCNegociar: React.FC = () => {
       endTime: lastDay.getTime()
     };
   };
+
+  const reloadWithdrawalsData = useCallback(async () => {
+    const { startTime, endTime } = getMonthDateRange();
+    await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
+  }, [carregarHistoricoSaques]);
+
+  const {
+    items: forwardQueueItems,
+    loading: forwardQueueLoading,
+    queueByWithdrawId,
+    load: loadForwardQueue,
+    cancelTarget: forwardCancelTarget,
+    cancelReason: forwardCancelReason,
+    setCancelReason: setForwardCancelReason,
+    cancelling: forwardCancelling,
+    confirmCancel: confirmForwardCancel,
+    openCancelDialog: openForwardCancelDialog,
+    closeCancelDialog: closeForwardCancelDialog,
+  } = useBinanceForwardQueue({
+    otcClientId: selectedClientIdNum || undefined,
+    enabled: isAdmin(),
+    onCancelled: () => {
+      void refetchOtcClientBalance();
+      void reloadWithdrawalsData();
+    },
+  });
 
   // Carregar saldos e histórico ao montar o componente
   useEffect(() => {
@@ -543,6 +574,7 @@ const OTCNegociar: React.FC = () => {
         // Fecha o modal de solicitação e abre o de acompanhamento (stepper).
         setShowWithdrawalModal(false);
         setShowTrackingModal(true);
+        void loadForwardQueue();
         // Polling apenas para UI (stepper). Débito/reserva OTC = backend.
         void acompanharRepasse(withdrawId).then((finalStatus) => {
           if (
@@ -1206,7 +1238,15 @@ const OTCNegociar: React.FC = () => {
   /**
    * Converter saques para exibição
    */
-  const converterSaques = (operationsList: any[]): Array<BinanceWithdrawalHistoryItem & { displayId: string; displayDate: string; clientName: string | null }> => {
+  type SaqueRow = BinanceWithdrawalHistoryItem & {
+    displayId: string;
+    displayDate: string;
+    clientName: string | null;
+    forwardQueueItem?: BinanceForwardQueueItem;
+    isOrphan?: boolean;
+  };
+
+  const converterSaques = (operationsList: any[]): SaqueRow[] => {
     return historicoSaques.map((saque) => {
       const withdrawId = saque.withdrawId || saque.id || 'N/A';
       return {
@@ -1235,12 +1275,53 @@ const OTCNegociar: React.FC = () => {
   // Converter saques com informações de cliente (garantir que operations seja array)
   const operationsArray = Array.isArray(operations) ? operations : [];
   const saquesConvertidos = converterSaques(operationsArray);
+
+  const mergedWithdrawals = useMemo((): SaqueRow[] => {
+    if (!isAdmin()) return saquesConvertidos;
+
+    const historyIds = new Set<string>();
+    const historyRows: SaqueRow[] = saquesConvertidos.map((saque) => {
+      const id = String(saque.withdrawId || saque.id);
+      historyIds.add(id);
+      return {
+        ...saque,
+        forwardQueueItem: queueByWithdrawId.get(id),
+        isOrphan: false,
+      };
+    });
+
+    const orphanRows: SaqueRow[] = forwardQueueItems
+      .filter((item) => !historyIds.has(item.withdraw_id_binance))
+      .map((item) => ({
+        withdrawId: item.withdraw_id_binance,
+        id: item.withdraw_id_binance,
+        coin: item.coin ?? 'USDT',
+        amount: parseFloat(item.amount ?? '0') || 0,
+        address: '—',
+        network: item.network ?? '—',
+        status: item.status,
+        transactionFee: 0,
+        applyTime: item.created_at ?? '',
+        displayId: item.withdraw_id_binance,
+        displayDate: item.created_at ? formatDate(item.created_at) : '—',
+        clientName: clients.find((c) => c.id === item.otc_client_id)?.name ?? null,
+        forwardQueueItem: item,
+        isOrphan: true,
+      }));
+
+    return [...orphanRows, ...historyRows];
+  }, [saquesConvertidos, queueByWithdrawId, forwardQueueItems, clients, isAdmin]);
   
   // Paginação Saques
-  const filteredWithdrawals = saquesConvertidos.filter((s) => 
+  const filteredWithdrawals = mergedWithdrawals.filter((s) => 
     s.coin.toLowerCase().includes(searchQuery.toLowerCase()) ||
     s.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.clientName && s.clientName.toLowerCase().includes(searchQuery.toLowerCase()))
+    (s.clientName && s.clientName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    s.displayId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.forwardQueueItem &&
+      (FORWARD_STATUS_LABEL[s.forwardQueueItem.forward_status] ?? s.forwardQueueItem.forward_status)
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()))
   );
   const totalPagesWithdrawals = Math.ceil(filteredWithdrawals.length / itemsPerPageWithdrawals);
   const startIndexWithdrawals = (currentPageWithdrawals - 1) * itemsPerPageWithdrawals;
@@ -1252,6 +1333,12 @@ const OTCNegociar: React.FC = () => {
     setCurrentPage(1);
     setCurrentPageWithdrawals(1);
   }, [searchQuery, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'withdrawals' && isAdmin()) {
+      void loadForwardQueue();
+    }
+  }, [activeTab, loadForwardQueue, isAdmin]);
 
   return (
     <div className="p-4 sm:p-6 space-y-4 bg-gradient-to-br from-background via-background to-muted/20 min-h-screen">
@@ -1279,6 +1366,10 @@ const OTCNegociar: React.FC = () => {
             carregarSaldos();
             carregarOrdens('USDTBRL', 500);
             carregarTransacoesSalvas();
+            if (isAdmin()) {
+              void loadForwardQueue();
+              void reloadWithdrawalsData();
+            }
           }}
           className="gap-2 h-8 text-xs"
         >
@@ -1960,15 +2051,7 @@ const OTCNegociar: React.FC = () => {
             
             {/* Aba 2: Saques USDT */}
             <TabsContent value="withdrawals" className="mt-0">
-              {isAdmin() && (
-                <BinanceForwardQueuePanel
-                  otcClientId={selectedClientIdNum || undefined}
-                  clientNameById={(id) => clients.find((c) => c.id === id)?.name}
-                  onCancelled={() => void refetchOtcClientBalance()}
-                  onTrack={(withdrawId) => void handleTrackWithdrawal(withdrawId)}
-                />
-              )}
-              {historicoSaquesLoading ? (
+              {historicoSaquesLoading || (isAdmin() && forwardQueueLoading && mergedWithdrawals.length === 0) ? (
                 <div className="flex items-center justify-center py-12 px-6">
                   <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                 </div>
@@ -1990,22 +2073,26 @@ const OTCNegociar: React.FC = () => {
                           <TableHead className="text-xs px-4">Rede</TableHead>
                           <TableHead className="text-xs px-4">Cliente</TableHead>
                           <TableHead className="text-xs px-4">Data</TableHead>
+                          {isAdmin() && (
+                            <>
+                              <TableHead className="text-xs px-4">Repasse</TableHead>
+                              <TableHead className="text-xs px-4 w-40">Ações</TableHead>
+                            </>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {paginatedWithdrawals.map((saque) => {
                           const blockchainLink = getBlockchainLink(saque.network, saque.txId);
                           const trackWithdrawId = saque.withdrawId || saque.id;
+                          const queueItem = saque.forwardQueueItem;
+                          const canTrack = !!trackWithdrawId && !!queueItem;
+                          const canCancel = queueItem && canCancelForwardQueueItem(queueItem);
+
                           return (
                           <TableRow
                             key={saque.withdrawId || saque.id}
-                            className="hover:bg-muted/50 h-8 cursor-pointer"
-                            title="Clique para acompanhar o repasse"
-                            onClick={
-                              trackWithdrawId
-                                ? () => void handleTrackWithdrawal(String(trackWithdrawId))
-                                : undefined
-                            }
+                            className="hover:bg-muted/50 h-8"
                           >
                             <TableCell className="font-medium text-primary text-xs px-4">
                               {blockchainLink ? (
@@ -2013,7 +2100,6 @@ const OTCNegociar: React.FC = () => {
                                   href={blockchainLink}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
                                   className="flex items-center gap-1 hover:underline text-primary hover:text-primary/80 transition-colors"
                                 >
                                   #{saque.withdrawId || saque.id}
@@ -2021,6 +2107,11 @@ const OTCNegociar: React.FC = () => {
                                 </a>
                               ) : (
                                 `#${saque.withdrawId || saque.id}`
+                              )}
+                              {saque.isOrphan && (
+                                <Badge variant="outline" className="ml-1 text-[9px] text-amber-600 border-amber-500/30">
+                                  Pendente histórico
+                                </Badge>
                               )}
                             </TableCell>
                             <TableCell className="px-4">
@@ -2035,7 +2126,7 @@ const OTCNegociar: React.FC = () => {
                               })}
                             </TableCell>
                             <TableCell className="text-right font-mono text-xs px-4">
-                              {saque.transactionFee}
+                              {saque.isOrphan ? '—' : saque.transactionFee}
                             </TableCell>
                             <TableCell className="text-xs px-4 font-mono max-w-[150px] truncate">
                               {saque.address}
@@ -2051,6 +2142,48 @@ const OTCNegociar: React.FC = () => {
                             <TableCell className="text-xs text-muted-foreground whitespace-nowrap px-4">
                               {saque.displayDate}
                             </TableCell>
+                            {isAdmin() && (
+                              <>
+                                <TableCell className="px-4">
+                                  {queueItem ? (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {FORWARD_STATUS_LABEL[queueItem.forward_status] ?? queueItem.forward_status}
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="px-4">
+                                  <div className="flex items-center gap-1">
+                                    {canTrack && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2"
+                                        onClick={() => void handleTrackWithdrawal(String(trackWithdrawId))}
+                                      >
+                                        <Eye className="h-3.5 w-3.5 mr-1" />
+                                        Acompanhar
+                                      </Button>
+                                    )}
+                                    {canCancel && queueItem && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-destructive hover:text-destructive"
+                                        onClick={() => openForwardCancelDialog(queueItem)}
+                                      >
+                                        <Ban className="h-3.5 w-3.5 mr-1" />
+                                        Cancelar
+                                      </Button>
+                                    )}
+                                    {!canTrack && !canCancel && (
+                                      <span className="text-xs text-muted-foreground">—</span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </>
+                            )}
                           </TableRow>
                           );
                         })}
@@ -2152,6 +2285,15 @@ const OTCNegociar: React.FC = () => {
         isPollingForward={isPollingForward}
         onContinueInBackground={handleContinueTrackingInBackground}
         onDismiss={handleDismissTracking}
+      />
+
+      <BinanceForwardCancelDialog
+        target={forwardCancelTarget}
+        reason={forwardCancelReason}
+        onReasonChange={setForwardCancelReason}
+        cancelling={forwardCancelling}
+        onConfirm={() => void confirmForwardCancel()}
+        onClose={closeForwardCancelDialog}
       />
 
       <TradeConfirmationModal

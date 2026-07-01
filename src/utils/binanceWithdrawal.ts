@@ -1,7 +1,26 @@
 /**
  * Helpers para saque Binance em 2 etapas (extração de withdrawId e status de repasse).
  */
-import type { BinanceForwardStatus } from '@/types/binance';
+import type { BinanceForwardQueueItem, BinanceForwardStatus } from '@/types/binance';
+
+export const FORWARD_STATUS_LABEL: Record<string, string> = {
+  aguardando_escrow: 'Aguardando escrow',
+  escrow_recebido: 'Escrow recebido',
+  repasse_enviado: 'Repasse enviado',
+  concluido: 'Concluído',
+  falhou: 'Falhou (retry auto)',
+  cancelado: 'Cancelado',
+};
+
+export const HOLD_LABEL: Record<string, string> = {
+  ACTIVE: 'Reservado',
+  CAPTURED: 'Debitado',
+  RELEASED: 'Liberado',
+};
+
+export function canCancelForwardQueueItem(item: BinanceForwardQueueItem): boolean {
+  return item.forward_status !== 'concluido' && item.forward_status !== 'cancelado';
+}
 
 /**
  * Extrai o withdrawId do texto de uma operação OTC.
