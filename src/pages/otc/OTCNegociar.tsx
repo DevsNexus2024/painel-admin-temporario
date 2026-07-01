@@ -47,6 +47,9 @@ import { useOTCBalance } from '@/hooks/useOTCBalance';
 import { BinanceWithdrawalModal } from '@/components/otc/BinanceWithdrawalModal';
 import type { BinanceWithdrawalConfirmData } from '@/components/otc/BinanceWithdrawalModal';
 import { BinanceForwardQueuePanel } from '@/components/otc/BinanceForwardQueuePanel';
+import { BinanceForwardTrackingModal } from '@/components/otc/BinanceForwardTrackingModal';
+import { consultarForwardStatusBinance } from '@/services/binance';
+import { isTerminalForwardStatus } from '@/utils/binanceWithdrawal';
 import { TradeConfirmationModal } from '@/components/otc/TradeConfirmationModal';
 import { getBinanceConfigs, createBinanceTransaction, getBinanceTransactions, updateBinanceTransactionNotes, updateBinanceTransactionNotesByBinanceId } from '@/services/otc-binance';
 import { useOTCOperations } from '@/hooks/useOTCOperations';
@@ -150,7 +153,8 @@ const OTCNegociar: React.FC = () => {
   // Modal states
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
-  const [withdrawalProgressActive, setWithdrawalProgressActive] = useState(false);
+  // Modal de acompanhamento do repasse (independente do modal de solicitação).
+  const [showTrackingModal, setShowTrackingModal] = useState(false);
   const [activeWithdrawId, setActiveWithdrawId] = useState<string | null>(null);
   const [clientPopoverOpen, setClientPopoverOpen] = useState(false);
   const withdrawalSubmitLockRef = useRef(false);
@@ -530,13 +534,15 @@ const OTCNegociar: React.FC = () => {
 
       const withdrawId = response.data.withdrawId;
       setActiveWithdrawId(withdrawId);
-      setWithdrawalProgressActive(true);
 
       const { startTime, endTime } = getMonthDateRange();
       await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
       void refetchOtcClientBalance();
 
       if (response.data.forward_status) {
+        // Fecha o modal de solicitação e abre o de acompanhamento (stepper).
+        setShowWithdrawalModal(false);
+        setShowTrackingModal(true);
         // Polling apenas para UI (stepper). Débito/reserva OTC = backend.
         void acompanharRepasse(withdrawId).then((finalStatus) => {
           if (
@@ -546,6 +552,9 @@ const OTCNegociar: React.FC = () => {
             void refetchOtcClientBalance();
           }
         });
+      } else {
+        // Fluxo 1 etapa (sem repasse): apenas fecha o modal.
+        setShowWithdrawalModal(false);
       }
     } catch (error) {
       console.error('❌ Erro ao criar saque:', error);
@@ -555,9 +564,49 @@ const OTCNegociar: React.FC = () => {
   };
 
   const handleCloseWithdrawalModal = () => {
-    if (withdrawalLoading || isPollingForward) return;
+    if (withdrawalLoading) return;
     setShowWithdrawalModal(false);
-    setWithdrawalProgressActive(false);
+  };
+
+  /**
+   * Abre o acompanhamento de um saque existente (extrato, fila ou histórico).
+   * Consulta o status atual; se ainda em andamento, retoma o polling.
+   */
+  const handleTrackWithdrawal = async (withdrawId: string) => {
+    if (!withdrawId) return;
+
+    const response = await consultarForwardStatusBinance(withdrawId);
+    if (!response?.success || !response.data) {
+      toastError(
+        'Sem fila de repasse',
+        'Este saque não está na fila de repasse (legado ou saque direto em 1 etapa).',
+      );
+      return;
+    }
+
+    setActiveWithdrawId(withdrawId);
+    setShowTrackingModal(true);
+
+    if (!isTerminalForwardStatus(response.data.forward_status)) {
+      void acompanharRepasse(withdrawId).then((finalStatus) => {
+        if (
+          finalStatus?.forward_status === 'concluido' ||
+          finalStatus?.forward_status === 'cancelado'
+        ) {
+          void refetchOtcClientBalance();
+        }
+      });
+    }
+  };
+
+  /** Fecha o modal de acompanhamento mantendo o polling ativo em segundo plano. */
+  const handleContinueTrackingInBackground = () => {
+    setShowTrackingModal(false);
+  };
+
+  /** Encerra a sessão de acompanhamento (aborta polling e limpa estado). */
+  const handleDismissTracking = () => {
+    setShowTrackingModal(false);
     setActiveWithdrawId(null);
     pararAcompanhamento();
   };
@@ -1238,6 +1287,24 @@ const OTCNegociar: React.FC = () => {
         </Button>
       </div>
 
+      {/* Indicador de repasse em andamento (polling em segundo plano) */}
+      {activeWithdrawId && !showTrackingModal && isPollingForward && (
+        <button
+          type="button"
+          onClick={() => setShowTrackingModal(true)}
+          className="flex w-full items-center justify-between gap-2 rounded-lg border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-left transition-colors hover:bg-orange-500/20"
+        >
+          <span className="flex items-center gap-2 text-sm text-orange-700 dark:text-orange-300">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Repasse em andamento
+            <span className="font-mono text-xs opacity-80">#{activeWithdrawId}</span>
+          </span>
+          <span className="text-xs font-medium text-orange-700 dark:text-orange-300">
+            Ver status
+          </span>
+        </button>
+      )}
+
       {/* Grid Principal */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* Coluna Esquerda - Área de Negociação */}
@@ -1898,6 +1965,7 @@ const OTCNegociar: React.FC = () => {
                   otcClientId={selectedClientIdNum || undefined}
                   clientNameById={(id) => clients.find((c) => c.id === id)?.name}
                   onCancelled={() => void refetchOtcClientBalance()}
+                  onTrack={(withdrawId) => void handleTrackWithdrawal(withdrawId)}
                 />
               )}
               {historicoSaquesLoading ? (
@@ -1927,14 +1995,25 @@ const OTCNegociar: React.FC = () => {
                       <TableBody>
                         {paginatedWithdrawals.map((saque) => {
                           const blockchainLink = getBlockchainLink(saque.network, saque.txId);
+                          const trackWithdrawId = saque.withdrawId || saque.id;
                           return (
-                          <TableRow key={saque.withdrawId || saque.id} className="hover:bg-muted/50 h-8">
+                          <TableRow
+                            key={saque.withdrawId || saque.id}
+                            className="hover:bg-muted/50 h-8 cursor-pointer"
+                            title="Clique para acompanhar o repasse"
+                            onClick={
+                              trackWithdrawId
+                                ? () => void handleTrackWithdrawal(String(trackWithdrawId))
+                                : undefined
+                            }
+                          >
                             <TableCell className="font-medium text-primary text-xs px-4">
                               {blockchainLink ? (
                                 <a
                                   href={blockchainLink}
                                   target="_blank"
                                   rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
                                   className="flex items-center gap-1 hover:underline text-primary hover:text-primary/80 transition-colors"
                                 >
                                   #{saque.withdrawId || saque.id}
@@ -2059,15 +2138,20 @@ const OTCNegociar: React.FC = () => {
         })()}
         quote={quote}
         onRequestQuote={handleRequestQuoteForWithdrawal}
-        showProgress={withdrawalProgressActive}
-        forwardStatus={forwardStatus}
-        withdrawId={activeWithdrawId}
-        isPollingForward={isPollingForward}
         otcUsdAvailable={
           otcClientBalance.usd_available ?? otcClientBalance.usd_balance ?? null
         }
         otcUsdReserved={otcClientBalance.usd_balance_reserved ?? 0}
         otcUsdBalance={otcClientBalance.usd_balance ?? null}
+      />
+
+      <BinanceForwardTrackingModal
+        isOpen={showTrackingModal}
+        withdrawId={activeWithdrawId}
+        forwardStatus={forwardStatus}
+        isPollingForward={isPollingForward}
+        onContinueInBackground={handleContinueTrackingInBackground}
+        onDismiss={handleDismissTracking}
       />
 
       <TradeConfirmationModal

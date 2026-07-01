@@ -2,7 +2,7 @@
  * Fila de repasse Binance (admin) — acompanhamento e cancelamento.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Ban, Loader2, RefreshCw } from 'lucide-react';
+import { Ban, Eye, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -53,12 +53,15 @@ interface BinanceForwardQueuePanelProps {
   otcClientId?: number;
   clientNameById?: (id: number) => string | undefined;
   onCancelled?: () => void;
+  /** Abre o modal de acompanhamento do repasse para o saque informado. */
+  onTrack?: (withdrawId: string) => void;
 }
 
 export const BinanceForwardQueuePanel: React.FC<BinanceForwardQueuePanelProps> = ({
   otcClientId,
   clientNameById,
   onCancelled,
+  onTrack,
 }) => {
   const [items, setItems] = useState<BinanceForwardQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -149,7 +152,7 @@ export const BinanceForwardQueuePanel: React.FC<BinanceForwardQueuePanelProps> =
                 <TableHead className="text-xs">Repasse</TableHead>
                 <TableHead className="text-xs">Reserva</TableHead>
                 <TableHead className="text-xs">Erro</TableHead>
-                <TableHead className="text-xs w-24" />
+                <TableHead className="text-xs w-44" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -179,17 +182,30 @@ export const BinanceForwardQueuePanel: React.FC<BinanceForwardQueuePanelProps> =
                     {item.last_error || '—'}
                   </TableCell>
                   <TableCell>
-                    {canCancel(item) && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-destructive hover:text-destructive"
-                        onClick={() => setCancelTarget(item)}
-                      >
-                        <Ban className="h-3.5 w-3.5 mr-1" />
-                        Cancelar
-                      </Button>
-                    )}
+                    <div className="flex items-center justify-end gap-1">
+                      {onTrack && canCancel(item) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2"
+                          onClick={() => onTrack(item.withdraw_id_binance)}
+                        >
+                          <Eye className="h-3.5 w-3.5 mr-1" />
+                          Acompanhar
+                        </Button>
+                      )}
+                      {canCancel(item) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-destructive hover:text-destructive"
+                          onClick={() => setCancelTarget(item)}
+                        >
+                          <Ban className="h-3.5 w-3.5 mr-1" />
+                          Cancelar
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

@@ -35,7 +35,7 @@ function stepIndex(forwardStatus: BinanceForwardStatus | null | undefined): numb
   ) {
     return 2;
   }
-  if (forwardStatus === 'concluido') return 3;
+  if (forwardStatus === 'concluido') return STEPS.length;
   if (forwardStatus === 'cancelado') return -2;
   return 1;
 }

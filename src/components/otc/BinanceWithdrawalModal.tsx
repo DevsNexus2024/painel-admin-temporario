@@ -28,9 +28,8 @@ import { formatMonetaryInput, convertBrazilianToUS, getNumericValue } from '@/ut
 import { consultarTaxaRedeBinance } from '@/services/binance';
 import { TotpField } from '@/components/totp/TotpField';
 import { setManualTotpCode } from '@/services/totpBridge';
-import { BinanceWithdrawalForwardProgress } from '@/components/otc/BinanceWithdrawalForwardProgress';
 import type { OTCClient } from '@/types/otc';
-import type { BinanceForwardStatusData, BinanceQuoteData } from '@/types/binance';
+import type { BinanceQuoteData } from '@/types/binance';
 
 export interface BinanceWithdrawalConfirmData {
   coin: string;
@@ -59,11 +58,6 @@ interface BinanceWithdrawalModalProps {
   otcUsdAvailable?: number | null;
   otcUsdReserved?: number | null;
   otcUsdBalance?: number | null;
-  /** Após saque criado — exibe stepper de repasse */
-  showProgress?: boolean;
-  forwardStatus?: BinanceForwardStatusData | null;
-  withdrawId?: string | null;
-  isPollingForward?: boolean;
 }
 
 const NETWORKS = {
@@ -76,7 +70,7 @@ const NETWORKS = {
   ETH: [{ value: 'ETH', label: 'ETH' }],
 };
 
-type ModalStep = 'form' | 'confirm' | 'progress';
+type ModalStep = 'form' | 'confirm';
 
 export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   isOpen,
@@ -90,10 +84,6 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   otcUsdAvailable = null,
   otcUsdReserved = null,
   otcUsdBalance = null,
-  showProgress = false,
-  forwardStatus = null,
-  withdrawId = null,
-  isPollingForward = false,
 }) => {
   const [step, setStep] = useState<ModalStep>('form');
   const [coin, setCoin] = useState('USDT');
@@ -128,12 +118,6 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
       setManualTotpCode('');
     }
   }, [isOpen]);
-
-  useEffect(() => {
-    if (showProgress && isOpen) {
-      setStep('progress');
-    }
-  }, [showProgress, isOpen]);
 
   useEffect(() => {
     if (isOpen && !quote && onRequestQuote) {
@@ -218,16 +202,11 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
   const brlApproximate = calculateBrlApproximate();
 
   const handleClose = () => {
-    if (loading || isPollingForward) return;
+    if (loading) return;
     onClose();
   };
 
-  const title =
-    step === 'progress'
-      ? 'Acompanhando repasse'
-      : step === 'confirm'
-        ? 'Confirmar Saque'
-        : 'Solicitar Saque';
+  const title = step === 'confirm' ? 'Confirmar Saque' : 'Solicitar Saque';
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -238,11 +217,9 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
             {title}
           </DialogTitle>
           <DialogDescription className="text-sm">
-            {step === 'progress'
-              ? 'Fluxo em 2 etapas: Binance → wallet TCR → wallet do cliente'
-              : step === 'confirm'
-                ? 'Informe PIN e TOTP para autorizar o saque'
-                : 'Preencha os dados para solicitar um saque'}
+            {step === 'confirm'
+              ? 'Informe PIN e TOTP para autorizar o saque'
+              : 'Preencha os dados para solicitar um saque'}
           </DialogDescription>
         </DialogHeader>
 
@@ -453,28 +430,6 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
           </div>
         )}
 
-        {step === 'progress' && (
-          <div className="space-y-3">
-            {withdrawId && (
-              <p className="text-xs text-muted-foreground">
-                ID Binance: <span className="font-mono">{withdrawId}</span>
-              </p>
-            )}
-            <BinanceWithdrawalForwardProgress
-              forwardStatus={forwardStatus?.forward_status ?? 'aguardando_escrow'}
-              otcHoldStatus={forwardStatus?.otc_hold_status}
-              lastError={forwardStatus?.last_error}
-              txidRecebimento={forwardStatus?.txid_recebimento}
-              txidReenvioCliente={forwardStatus?.txid_reenvio_cliente}
-            />
-            {isPollingForward && (
-              <p className="text-xs text-center text-muted-foreground animate-pulse">
-                Atualizando status a cada ~7 segundos…
-              </p>
-            )}
-          </div>
-        )}
-
         <DialogFooter className="gap-2">
           {step === 'form' && (
             <>
@@ -514,15 +469,6 @@ export const BinanceWithdrawalModal: React.FC<BinanceWithdrawalModalProps> = ({
                 )}
               </Button>
             </>
-          )}
-          {step === 'progress' && (
-            <Button
-              variant="outline"
-              onClick={handleClose}
-              disabled={isPollingForward}
-            >
-              {isPollingForward ? 'Aguardando repasse…' : 'Fechar'}
-            </Button>
           )}
         </DialogFooter>
       </DialogContent>

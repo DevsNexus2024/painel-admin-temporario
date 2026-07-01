@@ -26,6 +26,10 @@ import ReconciliacaoModal from '@/components/otc/ReconciliacaoModal';
 import { usePermissions } from '@/hooks/useAuth';
 import { OTCClient } from '@/types/otc';
 import { downloadAdminClientStatementXlsx } from '@/utils/adminClientStatementExcelExport';
+import { useBinanceWithdrawal } from '@/hooks/useBinanceWithdrawal';
+import { BinanceForwardTrackingModal } from '@/components/otc/BinanceForwardTrackingModal';
+import { consultarForwardStatusBinance } from '@/services/binance';
+import { extractWithdrawIdFromText, isTerminalForwardStatus } from '@/utils/binanceWithdrawal';
 
 interface AdminClientStatementProps {}
 
@@ -237,6 +241,43 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
     error,
     refetch
   } = useOTCStatement(clientId ? parseInt(clientId) : 0, filters);
+
+  // Acompanhamento de repasse Binance (reabrir stepper a partir de um saque)
+  const {
+    acompanharRepasse,
+    pararAcompanhamento,
+    forwardStatus,
+    isPollingForward,
+  } = useBinanceWithdrawal();
+  const [trackingWithdrawId, setTrackingWithdrawId] = useState<string | null>(null);
+  const [showTrackingModal, setShowTrackingModal] = useState(false);
+
+  const handleTrackWithdrawal = async (withdrawId: string) => {
+    if (!withdrawId) return;
+
+    const response = await consultarForwardStatusBinance(withdrawId);
+    if (!response?.success || !response.data) {
+      toast.error('Este saque não está na fila de repasse (legado ou saque em 1 etapa).');
+      return;
+    }
+
+    setTrackingWithdrawId(withdrawId);
+    setShowTrackingModal(true);
+
+    if (!isTerminalForwardStatus(response.data.forward_status)) {
+      void acompanharRepasse(withdrawId);
+    }
+  };
+
+  const handleContinueTrackingInBackground = () => {
+    setShowTrackingModal(false);
+  };
+
+  const handleDismissTracking = () => {
+    setShowTrackingModal(false);
+    setTrackingWithdrawId(null);
+    pararAcompanhamento();
+  };
 
   // ✅ MAPEAR TRANSAÇÕES COM HISTÓRICO DE SALDO (mesmo que ClientStatement)
   // Combinar dados do histórico com as transações para ter saldo anterior/posterior
@@ -1048,8 +1089,21 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
       (transaction.type === 'manual_adjustment' && transaction.amount > 0)
     );
 
+    // Saque Binance em 2 etapas: detectar withdrawId para permitir acompanhar o repasse
+    const trackableWithdrawId =
+      extractWithdrawIdFromText(transaction.description) ??
+      extractWithdrawIdFromText(transaction.notes);
+
     return (
-      <TableRow key={transaction.id}>
+      <TableRow
+        key={transaction.id}
+        className={trackableWithdrawId ? 'cursor-pointer hover:bg-muted/50' : undefined}
+        onClick={
+          trackableWithdrawId
+            ? () => void handleTrackWithdrawal(trackableWithdrawId)
+            : undefined
+        }
+      >
         <TableCell>
           <div className="flex items-center gap-2">
             {getTransactionIcon(transaction.type)}
@@ -1302,12 +1356,8 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
                   size="sm"
                   variant="outline"
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                  onClick={() => {
-                    // console.log('[ADMIN-STATEMENT] Tentativa de estorno:', {
-                    //   transactionId: transaction.id,
-                    //   type: transaction.type,
-                    //   manual_operation: transaction.manual_operation
-                    // });
+                  onClick={(e) => {
+                    e.stopPropagation();
                     if (transaction.manual_operation?.id) {
                       openReversalModal(transaction);
                     } else {
@@ -1994,6 +2044,16 @@ const AdminClientStatement: React.FC<AdminClientStatementProps> = () => {
               } as OTCClient)
             : null
         }
+      />
+
+      {/* Acompanhamento do repasse (reaberto a partir de um saque) */}
+      <BinanceForwardTrackingModal
+        isOpen={showTrackingModal}
+        withdrawId={trackingWithdrawId}
+        forwardStatus={forwardStatus}
+        isPollingForward={isPollingForward}
+        onContinueInBackground={handleContinueTrackingInBackground}
+        onDismiss={handleDismissTracking}
       />
     </div>
   );
