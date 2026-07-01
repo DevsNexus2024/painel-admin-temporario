@@ -1,7 +1,7 @@
 /**
  * Hook para fila de repasse Binance (admin) — fetch, map por withdrawId e cancelamento.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   cancelarForwardQueueBinance,
@@ -11,7 +11,7 @@ import type { BinanceForwardQueueItem } from '@/types/binance';
 
 interface UseBinanceForwardQueueOptions {
   otcClientId?: number;
-  /** Quando false, não faz fetch (ex.: operador não-admin). */
+  /** Quando false, não faz fetch (ex.: operador não-admin ou aba inativa). */
   enabled?: boolean;
   onCancelled?: () => void;
 }
@@ -27,6 +27,9 @@ export function useBinanceForwardQueue({
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
 
+  const onCancelledRef = useRef(onCancelled);
+  onCancelledRef.current = onCancelled;
+
   const load = useCallback(async () => {
     if (!enabled) return;
     setLoading(true);
@@ -41,9 +44,29 @@ export function useBinanceForwardQueue({
     }
   }, [enabled, otcClientId]);
 
+  // Fetch inicial e quando enabled/cliente mudam — deps estáveis (sem callbacks).
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!enabled) return;
+
+    let cancelled = false;
+    setLoading(true);
+
+    void (async () => {
+      try {
+        const data = await listarForwardQueueBinance({
+          otc_client_id: otcClientId,
+          limit: 50,
+        });
+        if (!cancelled) setItems(data);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, otcClientId]);
 
   const queueByWithdrawId = useMemo(() => {
     const map = new Map<string, BinanceForwardQueueItem>();
@@ -65,14 +88,14 @@ export function useBinanceForwardQueue({
       setCancelTarget(null);
       setCancelReason('');
       await load();
-      onCancelled?.();
+      onCancelledRef.current?.();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Falha ao cancelar item da fila';
       toast.error(message);
     } finally {
       setCancelling(false);
     }
-  }, [cancelTarget, cancelReason, load, onCancelled]);
+  }, [cancelTarget, cancelReason, load]);
 
   const openCancelDialog = useCallback((item: BinanceForwardQueueItem) => {
     setCancelTarget(item);

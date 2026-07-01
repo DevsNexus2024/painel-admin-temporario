@@ -132,6 +132,7 @@ const OTCNegociar: React.FC = () => {
   // Hook para autenticação (pegar email do usuário logado)
   const { user } = useAuth();
   const { isAdmin } = usePermissions();
+  const userIsAdmin = isAdmin();
 
   const [quantity, setQuantity] = useState('');
   const [total, setTotal] = useState('0,00');
@@ -217,6 +218,11 @@ const OTCNegociar: React.FC = () => {
     await carregarHistoricoSaques('USDT', undefined, startTime, endTime);
   }, [carregarHistoricoSaques]);
 
+  const handleForwardQueueCancelled = useCallback(() => {
+    void refetchOtcClientBalance();
+    void reloadWithdrawalsData();
+  }, [refetchOtcClientBalance, reloadWithdrawalsData]);
+
   const {
     items: forwardQueueItems,
     loading: forwardQueueLoading,
@@ -231,11 +237,8 @@ const OTCNegociar: React.FC = () => {
     closeCancelDialog: closeForwardCancelDialog,
   } = useBinanceForwardQueue({
     otcClientId: selectedClientIdNum || undefined,
-    enabled: isAdmin(),
-    onCancelled: () => {
-      void refetchOtcClientBalance();
-      void reloadWithdrawalsData();
-    },
+    enabled: userIsAdmin && activeTab === 'withdrawals',
+    onCancelled: handleForwardQueueCancelled,
   });
 
   // Carregar saldos e histórico ao montar o componente
@@ -1277,7 +1280,7 @@ const OTCNegociar: React.FC = () => {
   const saquesConvertidos = converterSaques(operationsArray);
 
   const mergedWithdrawals = useMemo((): SaqueRow[] => {
-    if (!isAdmin()) return saquesConvertidos;
+    if (!userIsAdmin) return saquesConvertidos;
 
     const historyIds = new Set<string>();
     const historyRows: SaqueRow[] = saquesConvertidos.map((saque) => {
@@ -1310,7 +1313,7 @@ const OTCNegociar: React.FC = () => {
       }));
 
     return [...orphanRows, ...historyRows];
-  }, [saquesConvertidos, queueByWithdrawId, forwardQueueItems, clients, isAdmin]);
+  }, [saquesConvertidos, queueByWithdrawId, forwardQueueItems, clients, userIsAdmin]);
   
   // Paginação Saques
   const filteredWithdrawals = mergedWithdrawals.filter((s) => 
@@ -1333,12 +1336,6 @@ const OTCNegociar: React.FC = () => {
     setCurrentPage(1);
     setCurrentPageWithdrawals(1);
   }, [searchQuery, activeTab]);
-
-  useEffect(() => {
-    if (activeTab === 'withdrawals' && isAdmin()) {
-      void loadForwardQueue();
-    }
-  }, [activeTab, loadForwardQueue, isAdmin]);
 
   return (
     <div className="p-4 sm:p-6 space-y-4 bg-gradient-to-br from-background via-background to-muted/20 min-h-screen">
@@ -1366,7 +1363,7 @@ const OTCNegociar: React.FC = () => {
             carregarSaldos();
             carregarOrdens('USDTBRL', 500);
             carregarTransacoesSalvas();
-            if (isAdmin()) {
+            if (userIsAdmin) {
               void loadForwardQueue();
               void reloadWithdrawalsData();
             }
@@ -2051,7 +2048,7 @@ const OTCNegociar: React.FC = () => {
             
             {/* Aba 2: Saques USDT */}
             <TabsContent value="withdrawals" className="mt-0">
-              {historicoSaquesLoading || (isAdmin() && forwardQueueLoading && mergedWithdrawals.length === 0) ? (
+              {historicoSaquesLoading || (userIsAdmin && forwardQueueLoading && mergedWithdrawals.length === 0) ? (
                 <div className="flex items-center justify-center py-12 px-6">
                   <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                 </div>
@@ -2073,7 +2070,7 @@ const OTCNegociar: React.FC = () => {
                           <TableHead className="text-xs px-4">Rede</TableHead>
                           <TableHead className="text-xs px-4">Cliente</TableHead>
                           <TableHead className="text-xs px-4">Data</TableHead>
-                          {isAdmin() && (
+                          {userIsAdmin && (
                             <>
                               <TableHead className="text-xs px-4">Repasse</TableHead>
                               <TableHead className="text-xs px-4 w-40">Ações</TableHead>
@@ -2142,7 +2139,7 @@ const OTCNegociar: React.FC = () => {
                             <TableCell className="text-xs text-muted-foreground whitespace-nowrap px-4">
                               {saque.displayDate}
                             </TableCell>
-                            {isAdmin() && (
+                            {userIsAdmin && (
                               <>
                                 <TableCell className="px-4">
                                   {queueItem ? (
