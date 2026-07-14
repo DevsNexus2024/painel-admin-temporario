@@ -138,6 +138,7 @@ export default function MainLayout() {
       canShow("/analise-usuario/32") ||
       canShow("/brasilcash-tcr") ||
       canShow("/belmontx-tcr") ||
+      canShow("/ntx-tcr") ||
       canShow("/auditoria-depositos");
 
     const showGrupoOtc =
@@ -394,6 +395,16 @@ export default function MainLayout() {
                                           to="/belmontx-tcr"
                                           icon={<CreditCard className="h-4 w-4" />}
                                           label="BelmontX <> TCR"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+
+                                    {/* ✅ MENU ATIVO */}
+                                    {canShow("/ntx-tcr") && (
+                                      <SidebarLink
+                                          to="/ntx-tcr"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="NTX <> TCR"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}

@@ -27,6 +27,7 @@ import BrasilCashTcrPage from "./pages/BrasilCashTcrPage";
 import BrasilCashOtcPage from "./pages/BrasilCashOtcPage";
 import BelmontXOtcPage from "./pages/BelmontXOtcPage";
 import BelmontXTcrPage from "./pages/BelmontXTcrPage";
+import NtxTcrPage from "./pages/NtxTcrPage";
 import SupportPage from "./pages/SupportPage";
 import ContasOrganizacoesLayout from "./pages/ContasOrganizacoes/ContasOrganizacoesLayout";
 import OrganizacaoDetailsPage from "./pages/ContasOrganizacoes/OrganizacaoDetailsPage";
@@ -175,6 +176,7 @@ const App = () => (
                   <Route path="/brasilcash-otc" element={<BrasilCashOtcPage />} />
                   <Route path="/belmontx-otc" element={<BelmontXOtcPage />} />
                   <Route path="/belmontx-tcr" element={<BelmontXTcrPage />} />
+                  <Route path="/ntx-tcr" element={<NtxTcrPage />} />
                   <Route path="/auditoria-depositos" element={<AuditoriaDepositosPage />} />
                   <Route path="/dashboard/cash-closure" element={<CashClosureDashboard />} />
                   <Route path="/contas-organizacoes" element={<ContasOrganizacoesLayout />} />
