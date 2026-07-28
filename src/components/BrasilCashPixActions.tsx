@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import TotpField from "@/components/totp/TotpField";
 import { fetchWithTotp } from "@/services/totpBridge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -114,10 +115,26 @@ const qrStaticSchema = z.object({
   description: z.string().optional(),
 });
 
+// Mesmo contrato da tela OTC: valor só é enviado quando preenchido (QR estático
+// sem valor embutido); QR dinâmico já carrega o valor no EMV.
+const qrPaySchema = z.object({
+  qr_code: z.string().min(1, "Cole o payload do QR Code PIX (EMV)"),
+  external_id: z.string().optional(),
+  amount: z.string().optional(),
+}).refine(
+  (data) => {
+    if (!data.amount || data.amount.trim() === "") return true;
+    const val = parseFloat(data.amount.replace(",", "."));
+    return !isNaN(val) && val > 0;
+  },
+  { message: "Valor deve ser maior que zero", path: ["amount"] }
+);
+
 type PixSendData = z.infer<typeof pixSendSchema>;
 type PixSendDataTcr = z.infer<typeof pixSendSchemaTcr>;
 type QRDynamicData = z.infer<typeof qrDynamicSchema>;
 type QRStaticData = z.infer<typeof qrStaticSchema>;
+type QrPayData = z.infer<typeof qrPaySchema>;
 
 // Conta BrasilCash da tela TCR. Enviada como X-Account-Id / x-otc-id para que o
 // guard de pix-out enxergue a permissão por conta (BRASILCASH_ACCOUNT) e o backend
@@ -140,6 +157,7 @@ export default function BrasilCashPixActions({ tenantId }: BrasilCashPixActionsP
   const [isLoading, setIsLoading] = useState(false);
   const [pixResult, setPixResult] = useState<any>(null);
   const [qrResult, setQrResult] = useState<any>(null);
+  const [qrPayResult, setQrPayResult] = useState<any>(null);
 
   // Chave PIX pré-preenchida apenas para TCR
   const defaultPixKey = isTcrPage ? "453f4628-04ea-4582-a371-db9639ba693d" : "";
@@ -174,6 +192,15 @@ export default function BrasilCashPixActions({ tenantId }: BrasilCashPixActionsP
       keyType: undefined,
       pixKey: "",
       description: "",
+    },
+  });
+
+  const qrPayForm = useForm<QrPayData>({
+    resolver: zodResolver(qrPaySchema),
+    defaultValues: {
+      qr_code: "",
+      external_id: "",
+      amount: "",
     },
   });
 
@@ -430,6 +457,78 @@ export default function BrasilCashPixActions({ tenantId }: BrasilCashPixActionsP
     }
   };
 
+  // Pagar QR Code (EMV copia-e-cola) — mesmo endpoint da tela OTC, debitando a
+  // conta da tela via X-Account-Id / x-otc-id (sem os headers o guard de pix-out
+  // não resolve a permissão por conta e bloqueia com 403).
+  const onPayQrCode = async (data: QrPayData) => {
+    try {
+      setIsLoading(true);
+      setQrPayResult(null);
+
+      const token = sessionStorage.getItem('jwt_token') || localStorage.getItem('jwt_token') ||
+        sessionStorage.getItem('auth_token') || localStorage.getItem('auth_token');
+      if (!token) throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+
+      const body: { qr_code: string; amount?: number; external_id?: string } = {
+        qr_code: data.qr_code.trim(),
+      };
+      if (data.amount?.trim()) {
+        const value = parseFloat(data.amount.replace(",", "."));
+        if (!isNaN(value) && value > 0) {
+          body.amount = Math.round(value * 100); // reais -> centavos
+        }
+      }
+      if (data.external_id?.trim()) {
+        body.external_id = data.external_id.trim();
+      }
+
+      const response = await fetchWithTotp(
+        `${API_BASE_URL}/api/brasilcash/pix/cashout/payments/qrcode/simple`,
+        {
+          method: "POST",
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            ...(isTcrPage ? { 'x-otc-id': TCR_OTC_ID, 'X-Account-Id': TCR_ACCOUNT_ID } : {}),
+          },
+          body: JSON.stringify(body),
+        }
+      );
+
+      const responseData = await response.json();
+
+      if (response.ok) {
+        setQrPayResult({
+          success: true,
+          pix_id: responseData.pix_id || responseData.pixId,
+          endToEndId: responseData.endToEndId || responseData.end_to_end_id,
+          amount: responseData.amount,
+          status: responseData.status,
+          external_id: responseData.external_id || responseData.externalId,
+          message: responseData.message || "Pagamento por QR Code realizado!",
+        });
+        toast.success("Pagamento por QR Code realizado!", {
+          description: `Conta ${tenantName}${data.external_id?.trim() ? ` • ${data.external_id.trim()}` : ""}`,
+          duration: 4000,
+        });
+        qrPayForm.reset();
+      } else {
+        const errorMessage =
+          responseData.error?.message ||
+          responseData.message ||
+          "Erro ao pagar QR Code";
+        setQrPayResult({ success: false, message: errorMessage });
+        toast.error("Erro ao pagar QR Code", { description: errorMessage, duration: 8000 });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+      setQrPayResult({ success: false, message: errorMessage });
+      toast.error("Erro ao pagar QR Code", { description: errorMessage, duration: 8000 });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Utilitários
   const handleCopyQR = () => {
     if (qrResult?.qrCode) {
@@ -468,10 +567,14 @@ export default function BrasilCashPixActions({ tenantId }: BrasilCashPixActionsP
       </div>
 
       <Tabs defaultValue="send" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="send" className="flex items-center gap-2">
             <SendHorizontal className="h-4 w-4" />
             Enviar PIX
+          </TabsTrigger>
+          <TabsTrigger value="qr-pay" className="flex items-center gap-2">
+            <QrCode className="h-4 w-4" />
+            Pagar QR Code
           </TabsTrigger>
           <TabsTrigger value="qr-dynamic" className="flex items-center gap-2">
             <QrCode className="h-4 w-4" />
@@ -748,6 +851,152 @@ export default function BrasilCashPixActions({ tenantId }: BrasilCashPixActionsP
                     </div>
                   </CardContent>
                 </Card>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab: Pagar QR Code */}
+        <TabsContent value="qr-pay">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <QrCode className="h-5 w-5" />
+                Pagar QR Code PIX
+              </CardTitle>
+              <CardDescription>
+                Pague um PIX a partir do payload do QR Code (EMV). Debita a conta {tenantName} (ID: {detectedTenantId}).
+                Valor e ID externo são opcionais (enviar apenas quando fizer sentido).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Form {...qrPayForm}>
+                <form onSubmit={qrPayForm.handleSubmit(onPayQrCode)} className="space-y-4">
+                  <FormField
+                    control={qrPayForm.control}
+                    name="qr_code"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Payload do QR Code (EMV)</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="00020126890014BR.GOV.BCB.PIX..."
+                            className="font-mono text-sm min-h-[120px]"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={qrPayForm.control}
+                    name="external_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ID Externo (Opcional)</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Ex: ordem-12345 (rastreamento)"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={qrPayForm.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Valor (R$) — Opcional</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            placeholder="0,00 (ex.: QR estático sem valor)"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <TotpField className="mb-2" />
+                  <Button type="submit" disabled={isLoading} className="w-full">
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processando...
+                      </>
+                    ) : (
+                      <>
+                        <QrCode className="mr-2 h-4 w-4" />
+                        Pagar QR Code
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </Form>
+
+              {qrPayResult && (
+                <div
+                  className={`mt-6 p-4 rounded-lg border ${
+                    qrPayResult.success
+                      ? "bg-green-50 border-green-200"
+                      : "bg-red-50 border-red-200"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    {qrPayResult.success ? (
+                      <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                    )}
+                    <div className="flex-1">
+                      <p
+                        className={`font-medium ${
+                          qrPayResult.success ? "text-green-900" : "text-red-900"
+                        }`}
+                      >
+                        {qrPayResult.message}
+                      </p>
+                      {qrPayResult.success && (
+                        <div className="mt-2 space-y-1 text-sm">
+                          {qrPayResult.endToEndId && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">EndToEndId:</span>
+                              <code className="text-xs">{qrPayResult.endToEndId}</code>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(qrPayResult.endToEndId);
+                                  toast.success("EndToEndId copiado!");
+                                }}
+                                className="h-6 w-6 p-0"
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
+                          {qrPayResult.amount != null && (
+                            <div>
+                              <span className="text-muted-foreground">Valor:</span>{" "}
+                              R$ {(qrPayResult.amount / 100).toFixed(2)}
+                            </div>
+                          )}
+                          {qrPayResult.external_id && (
+                            <div>
+                              <span className="text-muted-foreground">External ID:</span>{" "}
+                              <code className="text-xs">{qrPayResult.external_id}</code>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
