@@ -653,8 +653,7 @@ function PixProgramadoQRComponent() {
 }
 
 // Componente temporário para Ações PIX (replicando layout BMP 531)
-// Chave PIX pré-definida para TCR
-const TCR_DEFAULT_PIX_KEY = '453f4628-04ea-4582-a371-db9639ba693d';
+const TCR_DEFAULT_PIX_KEY = '';
 
 // Componente PIX Normal para TCR
 function PixNormalComponentTCR() {

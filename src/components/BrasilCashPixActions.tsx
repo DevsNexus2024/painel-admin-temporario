@@ -159,8 +159,7 @@ export default function BrasilCashPixActions({ tenantId }: BrasilCashPixActionsP
   const [qrResult, setQrResult] = useState<any>(null);
   const [qrPayResult, setQrPayResult] = useState<any>(null);
 
-  // Chave PIX pré-preenchida apenas para TCR
-  const defaultPixKey = isTcrPage ? "453f4628-04ea-4582-a371-db9639ba693d" : "";
+  const defaultPixKey = "";
 
   // Forms
   const sendForm = useForm<PixSendData | PixSendDataTcr>({
