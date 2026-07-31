@@ -27,9 +27,15 @@ interface CompensationModalInteligenteProps {
   extractRecord: MovimentoExtrato | null;
   /** M4: provider do PIX (p/ Devolver/Bloquear). 'corpx_v2' | 'brasilcash'. */
   provider?: 'corpx_v2' | 'brasilcash';
+  /**
+   * Gate das ações PIX (Devolver/Bloquear). Providers sem elas (NTX/FyHub) passam
+   * false — senão o bloco renderiza por extractRecord.code e o Devolver postaria
+   * no provider ERRADO (default 'corpx_v2').
+   */
+  allowPixActions?: boolean;
 }
 
-export default function CompensationModalInteligente({ isOpen, onClose, extractRecord, provider = 'corpx_v2' }: CompensationModalInteligenteProps) {
+export default function CompensationModalInteligente({ isOpen, onClose, extractRecord, provider = 'corpx_v2', allowPixActions = true }: CompensationModalInteligenteProps) {
   const navigate = useNavigate();
   const [formData, setFormData] = useState<Partial<CompensationData>>({});
   const [quantiaInput, setQuantiaInput] = useState<string>('');
@@ -1220,7 +1226,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
         </div>
 
         {/* M4: Devolução de PIX + Bloqueio cautelar (ações sobre o PIX original) */}
-        {extractRecord?.code && (
+        {allowPixActions && extractRecord?.code && (
           <div className="mt-3 border-t border-border pt-3">
             <p className="text-xs text-muted-foreground mb-2">Ações sobre este PIX</p>
             <RowPixActions

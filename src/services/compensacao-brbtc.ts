@@ -125,17 +125,23 @@ export const extrairIdUsuario = (extractRecord: MovimentoExtrato): number => {
  */
 export const determinarProvider = (extractRecord: MovimentoExtrato): string => {
   if (!extractRecord) return 'unknown';
-  
+
+  // Provider explícito vence a heurística — obrigatório pra NTX, cujo externalId
+  // (caas436344xU{id}) colidiria com o check do BMP-531 abaixo
+  if (extractRecord._providerCompensacao) {
+    return extractRecord._providerCompensacao;
+  }
+
   // Verificar se é Bitso
   if (extractRecord.bitsoData) {
     return 'bitso';
   }
-  
+
   // Verificar se é BMP-531 (baseado na estrutura)
   if (extractRecord.descCliente?.includes('caas436344x')) {
     return 'bmp 531 tcr';
   }
-  
+
   // Para BMP genérico ou outros
   return 'bmp tcr';
 };

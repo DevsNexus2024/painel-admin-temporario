@@ -72,6 +72,11 @@ export interface MovimentoExtrato {
   // 🔧 DADOS ORIGINAIS DO PROVIDER
   // Preserva objeto completo da API para uso em anti-duplicação e debug
   _original?: any;
+
+  // Provider EXPLÍCITO pro payload da compensação manual (ex.: 'ntx').
+  // Sem ele a compensação usa a heurística determinarProvider() — que colide com
+  // providers cujo externalId usa o padrão caas436344x (viraria 'bmp 531 tcr').
+  _providerCompensacao?: string;
 }
 
 export interface ExtratoResponse {
