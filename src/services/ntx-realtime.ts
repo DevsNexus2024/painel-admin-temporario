@@ -13,7 +13,15 @@
  */
 import { API_CONFIG } from '@/config/api';
 
-const NTX_BASE = `${API_CONFIG.BASE_URL}/api/ntxpay`;
+// As rotas /api/ntxpay vivem no backend V2 (api-bank-v2) — API_CONFIG.BASE_URL aponta
+// pro V1 e NÃO tem o módulo ntxpay. CORPX_V2_BASE_URL é a base v2 env-driven do painel
+// (default prod api-bank-v2); X_NTX_API_URL/X_BAAS_V2_API_URL permitem override local.
+const NTX_API_BASE =
+  (import.meta.env.X_NTX_API_URL as string) ||
+  (import.meta.env.X_BAAS_V2_API_URL as string) ||
+  API_CONFIG.CORPX_V2_BASE_URL;
+
+const NTX_BASE = `${NTX_API_BASE.endsWith('/') ? NTX_API_BASE.slice(0, -1) : NTX_API_BASE}/api/ntxpay`;
 
 // ===================== Tipos =====================
 
