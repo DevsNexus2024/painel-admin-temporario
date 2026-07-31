@@ -1,22 +1,22 @@
 import { useState, useMemo, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, X, RefreshCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle, Filter, Printer } from "lucide-react";
+import { Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, RefreshCcw, ChevronDown, ChevronUp, Copy, CheckCircle, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
+import ExtractFilterBar from "@/components/provider/ExtractFilterBar";
+import ExtractMetricsCards from "@/components/provider/ExtractMetricsCards";
+import PaginationFooter from "@/components/provider/PaginationFooter";
+import { PROVIDER_THEMES, providerCssVars } from "@/config/provider-theme";
 import { useNtxRealtime } from "@/hooks/useNtxRealtime";
 import { NtxRealtimeService, NTX_MAX_PAGE_SIZE, NTX_MAX_WINDOW_DAYS } from "@/services/ntx-realtime";
 import type { NtxTransactionDB, NtxStatementFilters } from "@/services/ntx-realtime";
 import { TCRVerificacaoService } from "@/services/tcrVerificacao";
+
+const NTX_THEME = PROVIDER_THEMES.ntx;
 
 /**
  * Extrato NTX Pay ↔ TCR — clone do ExtractTabBrasilCashTcr adaptado às restrições da NTX:
@@ -672,7 +672,7 @@ export default function ExtractTabNtxTcr() {
       overflow: hidden;
     }
     .header {
-      background: linear-gradient(135deg, #ff8c00, #e67e00);
+      background: ${NTX_THEME.accent};
       color: #fff;
       padding: 24px;
       text-align: center;
@@ -707,7 +707,7 @@ export default function ExtractTabNtxTcr() {
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.8px;
-      color: #ff8c00;
+      color: ${NTX_THEME.accent};
       margin-bottom: 10px;
     }
     .row { display: flex; justify-content: space-between; align-items: flex-start; padding: 5px 0; }
@@ -727,7 +727,7 @@ export default function ExtractTabNtxTcr() {
       max-width: 100%;
       margin: 16px auto;
       padding: 12px;
-      background: #ff8c00;
+      background: ${NTX_THEME.accent};
       color: #fff;
       border: none;
       border-radius: 8px;
@@ -735,7 +735,7 @@ export default function ExtractTabNtxTcr() {
       font-weight: 600;
       cursor: pointer;
     }
-    .print-btn:hover { background: #e67e00; }
+    .print-btn:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
@@ -803,7 +803,7 @@ export default function ExtractTabNtxTcr() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" style={providerCssVars(NTX_THEME)}>
       {/* Barra de ações */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="flex items-center gap-2">
@@ -854,301 +854,71 @@ export default function ExtractTabNtxTcr() {
       </div>
 
       {/* Métricas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <Card className="p-4 bg-background border border-[rgba(255,140,0,0.3)]">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Depósitos</p>
-            {metrics.loading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-[#FF8C00]" />
-            ) : (
-              <>
-                <p className="text-2xl font-bold text-[#FF8C00]">{metrics.totalDeposits}</p>
-                <p className="text-sm text-muted-foreground">
-                  {formatCurrency(metrics.depositAmount)}
-                </p>
-              </>
-            )}
-          </div>
-        </Card>
+      <ExtractMetricsCards
+        loading={metrics.loading}
+        metrics={[
+          { label: 'Total Depósitos', count: metrics.totalDeposits, amount: formatCurrency(metrics.depositAmount) },
+          { label: 'Total Saques', count: metrics.totalWithdrawals, amount: formatCurrency(metrics.withdrawalAmount) },
+          { label: 'Valor em Depósitos', amount: formatCurrency(metrics.depositAmount), tone: 'success' },
+          { label: 'Valor em Saques', amount: formatCurrency(metrics.withdrawalAmount) },
+        ]}
+      />
 
-        <Card className="p-4 bg-background border border-[rgba(255,140,0,0.3)]">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Saques</p>
-            {metrics.loading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-[#FF8C00]" />
-            ) : (
-              <>
-                <p className="text-2xl font-bold text-[#FF8C00]">{metrics.totalWithdrawals}</p>
-                <p className="text-sm text-muted-foreground">
-                  {formatCurrency(metrics.withdrawalAmount)}
-                </p>
-              </>
-            )}
-          </div>
-        </Card>
-
-        <Card className="p-4 bg-background border border-[rgba(255,140,0,0.3)]">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Valor em Depósitos</p>
-            {metrics.loading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-green-500" />
-            ) : (
-              <p className="text-2xl font-bold text-green-500">
-                {formatCurrency(metrics.depositAmount)}
-              </p>
-            )}
-          </div>
-        </Card>
-
-        <Card className="p-4 bg-background border border-[rgba(255,140,0,0.3)]">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Valor em Saques</p>
-            {metrics.loading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-[#FF8C00]" />
-            ) : (
-              <p className="text-2xl font-bold text-[#FF8C00]">
-                {formatCurrency(metrics.withdrawalAmount)}
-              </p>
-            )}
-          </div>
-        </Card>
-      </div>
-
-      {/* Filtros (sempre visíveis) */}
-      <Card className="p-4 lg:p-6 bg-background border border-[rgba(255,255,255,0.1)]">
-        <div className="space-y-3 lg:space-y-4">
-          {/* Linha 1: Busca, Operação, Status */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Buscar</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Nome, documento, ID..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Operação</label>
-              <Select value={typeFilter} onValueChange={(v: any) => setTypeFilter(v)}>
-                <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Todas</SelectItem>
-                  <SelectItem value="PAYMENT">Pix In (recebimento)</SelectItem>
-                  <SelectItem value="WITHDRAW">Pix Out (envio)</SelectItem>
-                  <SelectItem value="REFUND_OUT">Refund Out (estorno recebido)</SelectItem>
-                  <SelectItem value="REFUND_IN">Refund In (estorno enviado)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</label>
-              <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
-                <SelectTrigger className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Todos</SelectItem>
-                  <SelectItem value="CONFIRMED">Confirmado</SelectItem>
-                  <SelectItem value="PENDING">Pendente</SelectItem>
-                  <SelectItem value="ERROR">Erro</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Linha 1.5: End-to-End ID, External ID, Valor específico */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End-to-End ID</label>
-              <Input
-                placeholder="E18236120202511240407s0974cda408"
-                value={endToEndIdFilter}
-                onChange={(e) => setEndToEndIdFilter(e.target.value)}
-                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)] font-mono text-xs"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">External ID</label>
-              <Input
-                placeholder="caas436344xU1265"
-                value={externalIdFilter}
-                onChange={(e) => setExternalIdFilter(e.target.value)}
-                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)] font-mono text-xs"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor específico (R$)</label>
-              <Input
-                type="number"
-                placeholder="0.00"
-                value={specificAmount}
-                onChange={(e) => setSpecificAmount(e.target.value)}
-                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
-              />
-            </div>
-          </div>
-
-          {/* Linha 2: Data inicial, Data final, Valor mínimo, Valor máximo */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Data inicial</label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "h-10 w-full justify-start text-left font-normal bg-background border-2 transition-all",
-                      !dateRange.from && "text-muted-foreground",
-                      dateRange.from && "border-[rgba(255,140,0,0.6)]"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateRange.from ? (
-                      format(dateRange.from, "dd/MM/yyyy", { locale: ptBR })
-                    ) : (
-                      <span>Selecione</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dateRange.from}
-                    onSelect={(date) => {
-                      if (date) {
-                        setDateRange({ ...dateRange, from: date });
-                      }
-                    }}
-                    locale={ptBR}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Data final</label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "h-10 w-full justify-start text-left font-normal bg-background border-2 transition-all",
-                      !dateRange.to && "text-muted-foreground",
-                      dateRange.to && "border-[rgba(255,140,0,0.6)]"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateRange.to ? (
-                      format(dateRange.to, "dd/MM/yyyy", { locale: ptBR })
-                    ) : (
-                      <span>Selecione</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dateRange.to}
-                    onSelect={(date) => {
-                      if (date) {
-                        setDateRange({ ...dateRange, to: date });
-                      }
-                    }}
-                    locale={ptBR}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor mínimo</label>
-              <Input
-                type="number"
-                placeholder="0.00"
-                value={minAmount}
-                onChange={(e) => setMinAmount(e.target.value)}
-                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor máximo</label>
-              <Input
-                type="number"
-                placeholder="0.00"
-                value={maxAmount}
-                onChange={(e) => setMaxAmount(e.target.value)}
-                className="h-10 bg-background border-2 focus:border-[rgba(255,140,0,0.6)]"
-              />
-            </div>
-          </div>
-
-          {/* Linha 3: Checkbox e Botões de Ação */}
-          <div className="flex items-center justify-between pt-2">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="reversals"
-                  checked={showReversalsOnly}
-                  onCheckedChange={(checked) => setShowReversalsOnly(checked as boolean)}
-                  className="border-2"
-                />
-                <label htmlFor="reversals" className="text-sm font-medium cursor-pointer">
-                  Apenas Estornos
-                </label>
-              </div>
-
-              <span className="text-xs text-muted-foreground">
-                Busca e valores refinam a página carregada • janela máx. {NTX_MAX_WINDOW_DAYS} dias
-              </span>
-
-              {loading && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Aplicando filtros...
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-2 items-center flex-wrap">
-              <Button
-                onClick={handleAplicarFiltros}
-                className="h-10 bg-orange-600 hover:bg-orange-700 text-white transition-all duration-200 rounded-md px-3 lg:px-4"
-                disabled={loading}
-              >
-                <Filter className="h-4 w-4 mr-2" />
-                Aplicar Filtros
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleLimparFiltros}
-                className="h-10 bg-black border border-orange-500 text-white hover:bg-orange-500 hover:text-white transition-all duration-200 rounded-md px-3 lg:px-4"
-                disabled={loading}
-              >
-                <X className="h-4 w-4 mr-2" />
-                Limpar Filtros
-              </Button>
-            </div>
-          </div>
-        </div>
-      </Card>
+      {/* Filtros */}
+      <ExtractFilterBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        selects={[
+          {
+            label: 'Operação',
+            value: typeFilter,
+            onChange: (v: any) => setTypeFilter(v),
+            options: [
+              { value: 'ALL', label: 'Todas' },
+              { value: 'PAYMENT', label: 'Pix In (recebimento)' },
+              { value: 'WITHDRAW', label: 'Pix Out (envio)' },
+              { value: 'REFUND_OUT', label: 'Refund Out (estorno recebido)' },
+              { value: 'REFUND_IN', label: 'Refund In (estorno enviado)' },
+            ],
+          },
+          {
+            label: 'Status',
+            value: statusFilter,
+            onChange: (v: any) => setStatusFilter(v),
+            options: [
+              { value: 'ALL', label: 'Todos' },
+              { value: 'CONFIRMED', label: 'Confirmado' },
+              { value: 'PENDING', label: 'Pendente' },
+              { value: 'ERROR', label: 'Erro' },
+            ],
+          },
+        ]}
+        idFilters={[
+          { label: 'End-to-End ID', value: endToEndIdFilter, onChange: setEndToEndIdFilter, placeholder: 'E18236120202511240407s0974cda408', mono: true },
+          { label: 'External ID', value: externalIdFilter, onChange: setExternalIdFilter, placeholder: 'caas436344xU1265', mono: true },
+          { label: 'Valor específico (R$)', value: specificAmount, onChange: setSpecificAmount, placeholder: '0.00', type: 'number' },
+        ]}
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+        minAmount={minAmount}
+        onMinAmountChange={setMinAmount}
+        maxAmount={maxAmount}
+        onMaxAmountChange={setMaxAmount}
+        checkboxLabel="Apenas Estornos"
+        checkboxChecked={showReversalsOnly}
+        onCheckboxChange={setShowReversalsOnly}
+        hint={`Busca e valores refinam a página carregada • janela máx. ${NTX_MAX_WINDOW_DAYS} dias`}
+        loading={loading}
+        onApply={handleAplicarFiltros}
+        onClear={handleLimparFiltros}
+      />
 
       {/* Tabela */}
       <Card className="overflow-hidden">
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+            <Loader2 className="h-8 w-8 animate-spin text-[color:var(--provider-accent)]" />
           </div>
         ) : error ? (
           <div className="p-6 text-center">
@@ -1256,7 +1026,7 @@ export default function ExtractTabNtxTcr() {
                             variant="ghost"
                             size="sm"
                             onClick={(e) => generateReceipt(tx, e)}
-                            className="h-7 w-7 p-0 hover:bg-[rgba(255,140,0,0.15)] text-muted-foreground hover:text-[#ff8c00]"
+                            className="h-7 w-7 p-0 hover:bg-[color:var(--provider-hover)] text-muted-foreground hover:text-[color:var(--provider-accent)]"
                             title="Gerar comprovante"
                           >
                             <Printer className="h-3.5 w-3.5" />
@@ -1271,7 +1041,7 @@ export default function ExtractTabNtxTcr() {
                                 "h-7 px-2 text-xs transition-all",
                                 isRecordCompensated(tx)
                                   ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                                  : "bg-[rgba(255,140,0,0.1)] hover:bg-[rgba(255,140,0,0.2)] text-[#ff8c00] border-[rgba(255,140,0,0.4)] hover:border-[rgba(255,140,0,0.6)]"
+                                  : "bg-[color:var(--provider-soft)] hover:bg-[color:var(--provider-hover)] text-[color:var(--provider-accent)] border-[color:var(--provider-border)] hover:border-[color:var(--provider-accent)]"
                               )}
                               title={isRecordCompensated(tx) ? "Já compensado" : "Realizar compensação"}
                             >
@@ -1298,7 +1068,7 @@ export default function ExtractTabNtxTcr() {
                         <td colSpan={8} className="p-0">
                           <div className="p-6 space-y-4">
                             <div className="flex items-center justify-between mb-4">
-                              <h4 className="text-sm font-semibold text-orange-700">Detalhes da Transação</h4>
+                              <h4 className="text-sm font-semibold text-[color:var(--provider-accent)]">Detalhes da Transação</h4>
                               <Badge variant="outline" className="text-xs">ID: {tx.id}</Badge>
                             </div>
 
@@ -1349,7 +1119,7 @@ export default function ExtractTabNtxTcr() {
                                   <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">External ID</label>
                                     <div className="flex items-center gap-2 mt-1">
-                                      <p className="text-sm font-mono text-orange-600 font-semibold break-all">{tx.externalId}</p>
+                                      <p className="text-sm font-mono text-[color:var(--provider-accent)] font-semibold break-all">{tx.externalId}</p>
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -1381,7 +1151,7 @@ export default function ExtractTabNtxTcr() {
 
                               {/* Coluna 2: Contraparte */}
                               <div className="space-y-3">
-                                <h4 className="text-xs font-semibold text-orange-600 uppercase mb-2">Contraparte</h4>
+                                <h4 className="text-xs font-semibold text-[color:var(--provider-accent)] uppercase mb-2">Contraparte</h4>
 
                                 {tx.counterpartName && (
                                   <div>
@@ -1493,32 +1263,17 @@ export default function ExtractTabNtxTcr() {
             </div>
 
             {/* Paginação */}
-            <div className="flex items-center justify-between p-4 border-t bg-muted/20">
-              <div className="text-sm text-muted-foreground">
-                Mostrando {(pagination.current_page - 1) * pagination.size + 1} - {Math.min(pagination.current_page * pagination.size, pagination.total)} de {pagination.total}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePreviousPage}
-                  disabled={pagination.current_page <= 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span className="text-sm px-2">
-                  {pagination.current_page} / {pagination.total_pages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleNextPage}
-                  disabled={!pagination.has_next}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+            <PaginationFooter
+              from={(pagination.current_page - 1) * pagination.size + 1}
+              to={Math.min(pagination.current_page * pagination.size, pagination.total)}
+              total={pagination.total}
+              page={pagination.current_page}
+              totalPages={pagination.total_pages}
+              hasPrev={pagination.current_page > 1}
+              hasNext={pagination.has_next}
+              onPrev={handlePreviousPage}
+              onNext={handleNextPage}
+            />
           </>
         )}
       </Card>
