@@ -24,26 +24,35 @@ export interface NtxBalance {
 }
 
 export interface NtxTransactionDB {
+  id: string; // = transactionId (chave de linha/compensação no painel)
   transactionId: string;
   endToEndId: string;
   externalId: string;
   type: 'FUNDING' | 'WITHDRAWAL' | 'UNKNOWN';
-  status: string; // cru do provider (badge normaliza os comuns)
-  amount: string; // em reais (string p/ exibição)
+  status: string; // cru do provider — a NTX devolve TRADUZIDO ("Confirmado"/"Pendente")
+  amount: string; // originalAmount em reais (o webhook credita o BRUTO — compensação usa o mesmo)
+  feeAmount: string;
+  finalAmount: string;
   counterpartName: string;
-  counterpartDocument: string;
+  counterpartDocument: string; // MASCARADO no statement (completo só em /transaction/:id)
+  counterpartBankName: string;
+  counterpartBranch: string;
+  counterpartAccount: string;
+  counterpartIspb: string;
   description: string;
   createdAt: string;
+  processedAt: string;
+  isRefund: boolean;
   eventRaw: string;
   _original: Record<string, unknown>;
 }
 
 export interface NtxStatementFilters {
   page?: number;
-  size?: number;
-  status?: string;
-  type?: string;
-  startDate?: string; // ISO
+  size?: number; // máx 100 na NTX
+  status?: string; // enum CRU: PENDING | CONFIRMED | ERROR
+  type?: string; // enum CRU: PAYMENT | WITHDRAW | REFUND_IN | REFUND_OUT
+  startDate?: string; // ISO — janela máx 31 dias na NTX
   endDate?: string; // ISO
   externalId?: string;
   endToEndId?: string;
@@ -53,8 +62,16 @@ export interface NtxStatementResult {
   transactions: NtxTransactionDB[];
   currentPage: number;
   totalPages: number;
+  total: number;
+  hasNext: boolean;
   raw: any;
 }
+
+/** Limites/enums da API NTX (filtros aceitam só o enum CRU; a resposta volta traduzida). */
+export const NTX_MAX_PAGE_SIZE = 100;
+export const NTX_MAX_WINDOW_DAYS = 31;
+export const NTX_STATUS_FILTERS = ['PENDING', 'CONFIRMED', 'ERROR'] as const;
+export const NTX_TYPE_FILTERS = ['PAYMENT', 'WITHDRAW', 'REFUND_IN', 'REFUND_OUT'] as const;
 
 // ===================== Auth =====================
 
@@ -113,10 +130,14 @@ export async function getNtxStatement(filters: NtxStatementFilters = {}): Promis
   }
   const d = await res.json();
   const list = extractList(d);
+  // Envelope real (confirmado nos docs do W3Build): { data: [...], metadata: { page, size, total, totalPages, hasNext } }
+  const meta = d?.metadata ?? d ?? {};
   return {
     transactions: list.map(mapNtxToTransactionDB),
-    currentPage: toNum(d?.page ?? d?.currentPage ?? d?.number) ?? filters.page ?? 1,
-    totalPages: toNum(d?.totalPages ?? d?.total_pages ?? d?.pageCount) ?? 1,
+    currentPage: toNum(meta?.page ?? meta?.currentPage ?? meta?.number) ?? filters.page ?? 1,
+    totalPages: toNum(meta?.totalPages ?? meta?.total_pages ?? meta?.pageCount) ?? 1,
+    total: toNum(meta?.total) ?? list.length,
+    hasNext: Boolean(meta?.hasNext),
     raw: d,
   };
 }
@@ -132,17 +153,28 @@ function extractList(d: any): Record<string, unknown>[] {
 export function mapNtxToTransactionDB(t: any): NtxTransactionDB {
   const eventRaw = str(t?.event ?? t?.operationType ?? t?.type ?? t?.movementType);
   const counterpart = t?.counterpart ?? {};
+  const bank = counterpart?.bank ?? {};
+  const transactionId = str(t?.transactionId ?? t?.id);
   return {
-    transactionId: str(t?.transactionId ?? t?.id),
+    id: transactionId,
+    transactionId,
     endToEndId: str(t?.endToEndId ?? t?.e2eId),
     externalId: str(t?.externalId),
     type: direction(t, eventRaw),
     status: str(t?.status),
     amount: reais(t?.originalAmount ?? t?.finalAmount ?? t?.value ?? t?.amount),
+    feeAmount: reais(t?.feeAmount),
+    finalAmount: reais(t?.finalAmount ?? t?.originalAmount ?? t?.value ?? t?.amount),
     counterpartName: str(counterpart?.name ?? t?.counterpartName ?? t?.payerName),
     counterpartDocument: str(counterpart?.document ?? t?.counterpartDocument),
+    counterpartBankName: str(bank?.bankName ?? t?.counterpartAccountBankName),
+    counterpartBranch: str(bank?.accountBranch ?? t?.counterpartAccountBranch),
+    counterpartAccount: str(bank?.accountNumber ?? t?.counterpartAccountNumber),
+    counterpartIspb: str(bank?.bankISPB ?? t?.counterpartAccountIspb),
     description: str(t?.description ?? t?.errorMessage),
-    createdAt: str(t?.processingDate ?? t?.createdAt ?? t?.date),
+    createdAt: str(t?.createdAt ?? t?.processingDate ?? t?.date),
+    processedAt: str(t?.processedAt ?? t?.processingDate),
+    isRefund: /refund|estorno/i.test(eventRaw),
     eventRaw,
     _original: t ?? {},
   };
@@ -195,10 +227,21 @@ export function formatDateBR(iso: string): string {
 
 export function statusBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
   const s = status.toUpperCase();
-  if (['CONFIRMED', 'PAID', 'COMPLETE', 'SETTLED', 'PIX RECEBIDO', 'PAGO'].some((x) => s.includes(x))) return 'default';
+  if (['CONFIRMED', 'PAID', 'COMPLETE', 'SETTLED', 'PIX RECEBIDO', 'PAGO', 'CONFIRMADO'].some((x) => s.includes(x))) return 'default';
   if (['PENDING', 'PROCESSING', 'PENDENTE'].some((x) => s.includes(x))) return 'secondary';
   if (['ERROR', 'FAILED', 'REJECTED', 'FALHA', 'RECUSAD', 'ERRO'].some((x) => s.includes(x))) return 'destructive';
   return 'outline';
+}
+
+/** Badge no formato {variant, label} usado pelas tabelas do painel (label já vem em PT da NTX). */
+export function getStatusBadge(status: string): { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string } {
+  return { variant: statusBadgeVariant(status), label: status || '—' };
+}
+
+export function getTransactionTypeLabel(type: NtxTransactionDB['type']): string {
+  if (type === 'FUNDING') return 'Recebimento';
+  if (type === 'WITHDRAWAL') return 'Envio';
+  return 'Desconhecido';
 }
 
 export const NtxRealtimeService = {
@@ -208,6 +251,8 @@ export const NtxRealtimeService = {
   formatCurrencyBRL,
   formatDateBR,
   statusBadgeVariant,
+  getStatusBadge,
+  getTransactionTypeLabel,
 } as const;
 
 export default NtxRealtimeService;
