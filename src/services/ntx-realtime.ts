@@ -1,15 +1,18 @@
 /**
- * NTX Pay ↔ TCR — serviço de leitura (saldo + extrato) do painel.
+ * NTX Pay ↔ TCR — serviço de leitura do painel.
  *
- * Espelha o padrão do brasilcash-realtime, com duas diferenças de propósito:
- *  - base URL vem de API_CONFIG (não hardcoded);
- *  - valores em REAIS (a NTX NÃO é centavos — não dividir por 100).
+ * Extrato: lê o NOSSO banco (`ntx_transactions`, alimentada por webhook + sync)
+ * via `GET /api/ntxpay/transactions` — padrão BrasilCash/CorpX. Sem os caps da
+ * API live (100/página, janela 31 dias); doc da contraparte vem COMPLETO quando
+ * já enriquecido. Dados novos dependem do sync (cron 30/30min + D-1) — o botão
+ * Sincronizar da tela chama `POST /api/ntxpay/sync` (janela máx 31d, 3/min, 409
+ * se já houver um sync em execução).
  *
- * O extrato da NTX usa vocabulário TRADUZIDO (ex.: "Pix Recebido"/"Estorno") e a
- * shape exata dos itens só é confirmada numa bateria real (ver checkpoint da
- * M-ntxpay). Por isso o mapper é DEFENSIVO: extrai o que reconhece com fallbacks
- * e preserva `_original` pro detalhe. Ajustar os nomes de campo quando o extrato
- * real for coletado.
+ * Saldo: continua LIVE (`GET /api/ntxpay/balance`) — em REAIS, sem /100.
+ *
+ * Datas: a API devolve `processingDate` (tempo do PROVIDER) e `createdAt`
+ * (INSERT no nosso banco). O mapper expõe processingDate como `createdAt` da
+ * UI — tabela/CSV/compensação continuam mostrando o tempo real da transação.
  */
 import { API_CONFIG } from '@/config/api';
 
@@ -31,36 +34,65 @@ export interface NtxBalance {
   netBalance: number | null;
 }
 
+/** Item da resposta de `GET /api/ntxpay/transactions` (egress whitelist do backend). */
+export type NtxDbTransactionItem = {
+  id: string;
+  ntxTransactionId: string;
+  externalId: string | null;
+  endToEndId: string | null;
+  parentTransactionId: string | null;
+  eventType: string; // canônico: CashIn | CashOut | CashInReversal | CashOutReversal
+  movementType: string | null; // CREDIT | DEBIT
+  status: string; // canônico: PENDING | CONFIRMED | ERROR (cru se o sync persistiu desconhecido)
+  originalAmount: number; // REAIS
+  feeAmount: number;
+  finalAmount: number;
+  pixKey: string | null;
+  counterpartName: string | null;
+  counterpartDocument: string | null; // COMPLETO quando counterpartDocumentMasked=false
+  counterpartDocumentMasked: boolean;
+  counterpartBankIspb: string | null;
+  counterpartBankCode: string | null;
+  counterpartBankName: string | null;
+  counterpartAccountBranch: string | null;
+  counterpartAccountNumber: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  processingDate: string | null; // tempo do PROVIDER (ISO)
+  source: string; // WEBHOOK | SYNC
+  createdAt: string; // INSERT no nosso banco (ISO)
+};
+
 export interface NtxTransactionDB {
-  id: string; // = transactionId (chave de linha/compensação no painel)
+  id: string; // = ntxTransactionId (chave de linha/compensação no painel)
   transactionId: string;
   endToEndId: string;
   externalId: string;
   type: 'FUNDING' | 'WITHDRAWAL' | 'UNKNOWN';
-  status: string; // cru do provider — a NTX devolve TRADUZIDO ("Confirmado"/"Pendente")
+  status: string; // enum canônico do banco (label PT via getNtxStatusLabel)
   amount: string; // originalAmount em reais (o webhook credita o BRUTO — compensação usa o mesmo)
   feeAmount: string;
   finalAmount: string;
   counterpartName: string;
-  counterpartDocument: string; // MASCARADO no statement (completo só em /transaction/:id)
+  counterpartDocument: string; // completo quando enriquecido (counterpartDocumentMasked=false)
   counterpartBankName: string;
   counterpartBranch: string;
   counterpartAccount: string;
   counterpartIspb: string;
   description: string;
-  createdAt: string;
+  createdAt: string; // = processingDate (tempo do provider; fallback INSERT)
   processedAt: string;
   isRefund: boolean;
-  eventRaw: string;
+  eventRaw: string; // eventType canônico (label PT via getNtxEventLabel)
   _original: Record<string, unknown>;
 }
 
 export interface NtxStatementFilters {
   page?: number;
-  size?: number; // máx 100 na NTX
+  size?: number; // leitura DB: até 2000
   status?: string; // enum CRU: PENDING | CONFIRMED | ERROR
   type?: string; // enum CRU: PAYMENT | WITHDRAW | REFUND_IN | REFUND_OUT
-  startDate?: string; // ISO — janela máx 31 dias na NTX
+  startDate?: string; // ISO — filtra processingDate; leitura SEM janela máxima
   endDate?: string; // ISO
   externalId?: string;
   endToEndId?: string;
@@ -75,8 +107,26 @@ export interface NtxStatementResult {
   raw: any;
 }
 
-/** Limites/enums da API NTX (filtros aceitam só o enum CRU; a resposta volta traduzida). */
-export const NTX_MAX_PAGE_SIZE = 100;
+/** Resultado do `POST /api/ntxpay/sync` (NtxSyncResult do W3Build). */
+export interface NtxSyncResult {
+  window: { startDate: string; endDate: string };
+  pagesFetched: number;
+  itemsSeen: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  webhookLost: number;
+  enriched: number;
+  balanceUpdated: boolean;
+  webhookLostSamples: unknown[];
+  anomalies: unknown[];
+}
+
+/** Página default da tela (o Select oferece 20/50/100). */
+export const NTX_DEFAULT_PAGE_SIZE = 100;
+/** Máximo aceito pela LEITURA DB (`size` do GET /transactions) — usado pelo export CSV. */
+export const NTX_MAX_PAGE_SIZE = 2000;
+/** Janela máxima do SYNC (POST /sync recusa >31d). A LEITURA não tem janela. */
 export const NTX_MAX_WINDOW_DAYS = 31;
 export const NTX_STATUS_FILTERS = ['PENDING', 'CONFIRMED', 'ERROR'] as const;
 export const NTX_TYPE_FILTERS = ['PAYMENT', 'WITHDRAW', 'REFUND_IN', 'REFUND_OUT'] as const;
@@ -101,7 +151,7 @@ function authHeaders(): Record<string, string> {
 
 // ===================== API =====================
 
-/** GET /api/ntxpay/balance → { grossBalance, blockedBalance, netBalance } (reais). */
+/** GET /api/ntxpay/balance → { grossBalance, blockedBalance, netBalance } (reais, LIVE). */
 export async function getNtxBalance(): Promise<NtxBalance> {
   const res = await fetch(`${NTX_BASE}/balance`, { method: 'GET', headers: authHeaders() });
   if (!res.ok) {
@@ -116,7 +166,7 @@ export async function getNtxBalance(): Promise<NtxBalance> {
   };
 }
 
-/** GET /api/ntxpay/statement — extrato paginado (janela máx 31 dias na NTX). */
+/** GET /api/ntxpay/transactions — extrato paginado do NOSSO banco (sem janela máxima). */
 export async function getNtxStatement(filters: NtxStatementFilters = {}): Promise<NtxStatementResult> {
   const params = new URLSearchParams();
   if (filters.page !== undefined) params.append('page', String(filters.page));
@@ -128,74 +178,90 @@ export async function getNtxStatement(filters: NtxStatementFilters = {}): Promis
   if (filters.externalId) params.append('externalId', filters.externalId);
   if (filters.endToEndId) params.append('endToEndId', filters.endToEndId);
 
-  const res = await fetch(`${NTX_BASE}/statement?${params.toString()}`, {
+  const res = await fetch(`${NTX_BASE}/transactions?${params.toString()}`, {
     method: 'GET',
     headers: authHeaders(),
   });
   if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error(
+        'Rota /api/ntxpay/transactions indisponível — o deploy do W3Build (extrato DB) ainda não foi feito neste backend.',
+      );
+    }
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.message || `Falha ao consultar extrato NTX (HTTP ${res.status})`);
   }
   const d = await res.json();
-  const list = extractList(d);
-  // Envelope real (confirmado nos docs do W3Build): { data: [...], metadata: { page, size, total, totalPages, hasNext } }
-  const meta = d?.metadata ?? d ?? {};
+  const list: NtxDbTransactionItem[] = Array.isArray(d?.data) ? d.data : [];
   return {
-    transactions: list.map(mapNtxToTransactionDB),
-    currentPage: toNum(meta?.page ?? meta?.currentPage ?? meta?.number) ?? filters.page ?? 1,
-    totalPages: toNum(meta?.totalPages ?? meta?.total_pages ?? meta?.pageCount) ?? 1,
-    total: toNum(meta?.total) ?? list.length,
-    hasNext: Boolean(meta?.hasNext),
+    transactions: list.map(mapDbRowToTransactionDB),
+    currentPage: toNum(d?.pagination?.current_page) ?? filters.page ?? 1,
+    totalPages: toNum(d?.pagination?.total_pages) ?? 1,
+    total: toNum(d?.pagination?.total) ?? list.length,
+    hasNext: Boolean(d?.pagination?.has_more),
     raw: d,
   };
 }
 
-/** Extrai a lista de transações de qualquer envelope comum da NTX (defensivo). */
-function extractList(d: any): Record<string, unknown>[] {
-  const candidate =
-    d?.content ?? d?.data ?? d?.transactions ?? d?.items ?? d?.results ?? (Array.isArray(d) ? d : null);
-  return Array.isArray(candidate) ? candidate : [];
+/**
+ * POST /api/ntxpay/sync — puxa a janela na API da NTX e grava no banco.
+ * Backend: lock distribuído (409 se ocupado), throttle 3/min (429), janela máx 31 dias (400).
+ */
+export async function syncNtxStatement(startDate: string, endDate: string): Promise<NtxSyncResult> {
+  const res = await fetch(`${NTX_BASE}/sync`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ startDate, endDate }),
+  });
+  if (res.status === 409) {
+    throw new Error('Já existe uma sincronização em andamento — aguarde ela terminar e tente de novo.');
+  }
+  if (res.status === 429) {
+    throw new Error('Muitas sincronizações seguidas (máx 3 por minuto) — aguarde um instante.');
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message || `Falha ao sincronizar extrato NTX (HTTP ${res.status})`);
+  }
+  return res.json();
 }
 
-/** Mapeia um item cru do extrato NTX pro shape do painel (defensivo). */
-export function mapNtxToTransactionDB(t: any): NtxTransactionDB {
-  const eventRaw = str(t?.event ?? t?.operationType ?? t?.type ?? t?.movementType);
-  const counterpart = t?.counterpart ?? {};
-  const bank = counterpart?.bank ?? {};
-  const transactionId = str(t?.transactionId ?? t?.id);
+/** Mapeia um item da leitura DB pro shape do painel (determinístico — sem fallback defensivo). */
+export function mapDbRowToTransactionDB(r: NtxDbTransactionItem): NtxTransactionDB {
+  const isRefund = r.eventType === 'CashInReversal' || r.eventType === 'CashOutReversal';
+  const type: NtxTransactionDB['type'] =
+    r.movementType === 'CREDIT'
+      ? 'FUNDING'
+      : r.movementType === 'DEBIT'
+        ? 'WITHDRAWAL'
+        : r.eventType === 'CashIn' || r.eventType === 'CashOutReversal'
+          ? 'FUNDING'
+          : r.eventType === 'CashOut' || r.eventType === 'CashInReversal'
+            ? 'WITHDRAWAL'
+            : 'UNKNOWN';
   return {
-    id: transactionId,
-    transactionId,
-    endToEndId: str(t?.endToEndId ?? t?.e2eId),
-    externalId: str(t?.externalId),
-    type: direction(t, eventRaw),
-    status: str(t?.status),
-    amount: reais(t?.originalAmount ?? t?.finalAmount ?? t?.value ?? t?.amount),
-    feeAmount: reais(t?.feeAmount),
-    finalAmount: reais(t?.finalAmount ?? t?.originalAmount ?? t?.value ?? t?.amount),
-    counterpartName: str(counterpart?.name ?? t?.counterpartName ?? t?.payerName),
-    counterpartDocument: str(counterpart?.document ?? t?.counterpartDocument),
-    counterpartBankName: str(bank?.bankName ?? t?.counterpartAccountBankName),
-    counterpartBranch: str(bank?.accountBranch ?? t?.counterpartAccountBranch),
-    counterpartAccount: str(bank?.accountNumber ?? t?.counterpartAccountNumber),
-    counterpartIspb: str(bank?.bankISPB ?? t?.counterpartAccountIspb),
-    description: str(t?.description ?? t?.errorMessage),
-    createdAt: str(t?.createdAt ?? t?.processingDate ?? t?.date),
-    processedAt: str(t?.processedAt ?? t?.processingDate),
-    isRefund: /refund|estorno/i.test(eventRaw),
-    eventRaw,
-    _original: t ?? {},
+    id: r.ntxTransactionId,
+    transactionId: r.ntxTransactionId,
+    endToEndId: r.endToEndId ?? '',
+    externalId: r.externalId ?? '',
+    type,
+    status: r.status,
+    amount: r.originalAmount.toFixed(2),
+    feeAmount: r.feeAmount.toFixed(2),
+    finalAmount: r.finalAmount.toFixed(2),
+    counterpartName: r.counterpartName ?? '',
+    counterpartDocument: r.counterpartDocument ?? '',
+    counterpartBankName: r.counterpartBankName ?? '',
+    counterpartBranch: r.counterpartAccountBranch ?? '',
+    counterpartAccount: r.counterpartAccountNumber ?? '',
+    counterpartIspb: r.counterpartBankIspb ?? '',
+    description: r.errorMessage ?? '',
+    createdAt: r.processingDate ?? r.createdAt,
+    processedAt: r.processingDate ?? '',
+    isRefund,
+    eventRaw: r.eventType,
+    _original: r,
   };
-}
-
-function direction(t: any, eventRaw: string): 'FUNDING' | 'WITHDRAWAL' | 'UNKNOWN' {
-  const mv = String(t?.movementType ?? '').toUpperCase();
-  if (mv === 'CREDIT') return 'FUNDING';
-  if (mv === 'DEBIT') return 'WITHDRAWAL';
-  const e = eventRaw.toLowerCase();
-  if (e.includes('cashin') || e.includes('recebid') || e.includes('recebimento')) return 'FUNDING';
-  if (e.includes('cashout') || e.includes('envio') || e.includes('pagamento') || e.includes('estorno')) return 'WITHDRAWAL';
-  return 'UNKNOWN';
 }
 
 // ===================== Helpers de exibição =====================
@@ -204,17 +270,6 @@ function toNum(v: unknown): number | null {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
-}
-
-function str(v: unknown): string {
-  if (v === null || v === undefined) return '';
-  return String(v);
-}
-
-/** Valor em reais → string com 2 casas (NTX já é reais; sem /100). */
-function reais(v: unknown): string {
-  const n = toNum(v);
-  return n === null ? '0.00' : n.toFixed(2);
 }
 
 export function formatCurrencyBRL(value: string | number | null): string {
@@ -233,6 +288,27 @@ export function formatDateBR(iso: string): string {
   });
 }
 
+/** Label PT do status canônico do banco (desconhecido sai cru — visível, não some). */
+export function getNtxStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    PENDING: 'Pendente',
+    CONFIRMED: 'Confirmado',
+    ERROR: 'Erro',
+  };
+  return map[status.toUpperCase()] ?? status ?? '—';
+}
+
+/** Label PT do eventType canônico do banco. */
+export function getNtxEventLabel(eventType: string): string {
+  const map: Record<string, string> = {
+    CashIn: 'Pix Recebido',
+    CashOut: 'Pix Enviado',
+    CashInReversal: 'Estorno de Recebimento',
+    CashOutReversal: 'Estorno de Envio',
+  };
+  return map[eventType] ?? eventType ?? '—';
+}
+
 export function statusBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
   const s = status.toUpperCase();
   if (['CONFIRMED', 'PAID', 'COMPLETE', 'SETTLED', 'PIX RECEBIDO', 'PAGO', 'CONFIRMADO'].some((x) => s.includes(x))) return 'default';
@@ -241,9 +317,9 @@ export function statusBadgeVariant(status: string): 'default' | 'secondary' | 'd
   return 'outline';
 }
 
-/** Badge no formato {variant, label} usado pelas tabelas do painel (label já vem em PT da NTX). */
+/** Badge no formato {variant, label} usado pelas tabelas do painel (label traduzido pra PT). */
 export function getStatusBadge(status: string): { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string } {
-  return { variant: statusBadgeVariant(status), label: status || '—' };
+  return { variant: statusBadgeVariant(status), label: getNtxStatusLabel(status) };
 }
 
 export function getTransactionTypeLabel(type: NtxTransactionDB['type']): string {
@@ -255,9 +331,12 @@ export function getTransactionTypeLabel(type: NtxTransactionDB['type']): string 
 export const NtxRealtimeService = {
   getNtxBalance,
   getNtxStatement,
-  mapNtxToTransactionDB,
+  syncNtxStatement,
+  mapDbRowToTransactionDB,
   formatCurrencyBRL,
   formatDateBR,
+  getNtxStatusLabel,
+  getNtxEventLabel,
   statusBadgeVariant,
   getStatusBadge,
   getTransactionTypeLabel,

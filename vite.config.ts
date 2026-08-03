@@ -45,8 +45,23 @@ export default defineConfig(({ mode }) => ({
     }
   },
   server: {
-    host: "::",
+    // localhost-only: com o proxy abaixo, expor em "::" daria à LAN um túnel CORS-free pro v2 de prod
+    host: "localhost",
     port: 8080,
+    // Dev-only (não afeta build/prod): CORS do v2 não permite localhost — o browser chama
+    // same-origin e o Vite encaminha server-side. Ative com X_BAAS_V2_API_URL=http://localhost:8080 no .env.
+    proxy: {
+      // Backend v2 (W3Build) — login/refresh/perfil
+      '/auth': {
+        target: 'https://api-bank-v2.gruponexus.com.br',
+        changeOrigin: true,
+      },
+      // Rotas NTX Pay (só existem no v2)
+      '/api/ntxpay': {
+        target: 'https://api-bank-v2.gruponexus.com.br',
+        changeOrigin: true,
+      },
+    },
   },
   plugins: [
     react(), // Plugin React necessário para processar JSX

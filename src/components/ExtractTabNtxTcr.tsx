@@ -3,7 +3,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, RefreshCcw, ChevronDown, ChevronUp, Copy, CheckCircle, Printer } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, RefreshCcw, RotateCcw, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle, Printer } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import CompensationModalInteligente from "@/components/CompensationModalInteligente";
@@ -12,18 +16,20 @@ import ExtractMetricsCards from "@/components/provider/ExtractMetricsCards";
 import PaginationFooter from "@/components/provider/PaginationFooter";
 import { PROVIDER_THEMES, providerCssVars } from "@/config/provider-theme";
 import { useNtxRealtime } from "@/hooks/useNtxRealtime";
-import { NtxRealtimeService, NTX_MAX_PAGE_SIZE, NTX_MAX_WINDOW_DAYS } from "@/services/ntx-realtime";
+import { NtxRealtimeService, NTX_DEFAULT_PAGE_SIZE, NTX_MAX_PAGE_SIZE, NTX_MAX_WINDOW_DAYS, syncNtxStatement } from "@/services/ntx-realtime";
 import type { NtxTransactionDB, NtxStatementFilters } from "@/services/ntx-realtime";
 import { TCRVerificacaoService } from "@/services/tcrVerificacao";
 
 const NTX_THEME = PROVIDER_THEMES.ntx;
 
 /**
- * Extrato NTX Pay ↔ TCR — clone do ExtractTabBrasilCashTcr adaptado às restrições da NTX:
- * - statement é PROXY LIVE da NTX (sem botão Sincronizar — sync alimenta tabelas que esta tela não lê);
- * - size máx 100/página e janela de datas máx 31 dias → paginação/filtros são server-side;
- *   busca e faixas de valor refinam só a página carregada;
- * - filtros aceitam enum CRU (PAYMENT/CONFIRMED/...) mas a resposta volta TRADUZIDA ("Pix in"/"Confirmado");
+ * Extrato NTX Pay ↔ TCR — padrão BrasilCash/CorpX (extrato do NOSSO banco):
+ * - lista lê `ntx_transactions` via GET /api/ntxpay/transactions (sem janela de 31 dias
+ *   nem cap de 100/página da API live); dados novos dependem do sync;
+ * - botão Sincronizar chama POST /api/ntxpay/sync (janela máx 31d, 3/min, 409 se ocupado);
+ * - enums canônicos do banco (CashIn/CONFIRMED/...) com label PT via getNtxEventLabel/getNtxStatusLabel;
+ * - datas exibidas = processingDate (tempo do provider; o mapper expõe como createdAt da UI);
+ * - busca e faixas de valor refinam só a página carregada (server-side: status/tipo/datas/ids);
  * - SEM ações PIX (decisão: Devolver/Bloquear não entram pra NTX) → allowPixActions={false} no modal;
  * - Compensar usa o backend provider-agnóstico com provider explícito 'ntx' (_providerCompensacao).
  */
@@ -34,10 +40,10 @@ export default function ExtractTabNtxTcr() {
   const [transactions, setTransactions] = useState<NtxTransactionDB[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recordsPerPage, setRecordsPerPage] = useState(NTX_MAX_PAGE_SIZE);
+  const [recordsPerPage, setRecordsPerPage] = useState(NTX_DEFAULT_PAGE_SIZE);
   const [pagination, setPagination] = useState({
     total: 0,
-    size: NTX_MAX_PAGE_SIZE,
+    size: NTX_DEFAULT_PAGE_SIZE,
     has_next: false,
     current_page: 1,
     total_pages: 1
@@ -60,6 +66,14 @@ export default function ExtractTabNtxTcr() {
   const [externalIdFilter, setExternalIdFilter] = useState<string>("");
   const [showReversalsOnly, setShowReversalsOnly] = useState(false);
 
+  // Estados do Sincronizar (POST /api/ntxpay/sync — janela máx 31 dias)
+  const [syncing, setSyncing] = useState(false);
+  const [syncDateRange, setSyncDateRange] = useState<{ from: Date; to: Date }>({
+    from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    to: new Date()
+  });
+  const [showSyncDatePicker, setShowSyncDatePicker] = useState(false);
+
   // Estados para funcionalidade de Compensação
   const [compensationModalOpen, setCompensationModalOpen] = useState(false);
   const [selectedCompensationRecord, setSelectedCompensationRecord] = useState<any>(null);
@@ -77,23 +91,12 @@ export default function ExtractTabNtxTcr() {
     loading: false
   });
 
-  // Mapeia o filtro de operação (enum cru da NTX) pro rótulo traduzido da resposta
-  const matchOperationType = (tx: NtxTransactionDB, filter: string): boolean => {
-    const e = tx.eventRaw.toLowerCase();
-    if (filter === 'PAYMENT') return e.includes('pix in');
-    if (filter === 'WITHDRAW') return e.includes('pix out');
-    if (filter === 'REFUND_IN') return e.includes('refund in');
-    if (filter === 'REFUND_OUT') return e.includes('refund out');
-    return true;
-  };
-
-  // Mapeia o filtro de status (enum cru) pra variante do badge (resposta vem traduzida)
-  const matchStatus = (tx: NtxTransactionDB, filter: string): boolean => {
-    const variant = NtxRealtimeService.statusBadgeVariant(tx.status);
-    if (filter === 'CONFIRMED') return variant === 'default';
-    if (filter === 'PENDING') return variant === 'secondary';
-    if (filter === 'ERROR') return variant === 'destructive';
-    return true;
+  // Filtro de operação (enum cru da UI) → eventType canônico do banco
+  const TYPE_TO_EVENT: Record<string, string> = {
+    PAYMENT: 'CashIn',
+    WITHDRAW: 'CashOut',
+    REFUND_IN: 'CashInReversal',
+    REFUND_OUT: 'CashOutReversal',
   };
 
   // Monta os filtros server-side (a NTX aceita status/type/datas/externalId/e2e na query)
@@ -167,25 +170,14 @@ export default function ExtractTabNtxTcr() {
     }
   };
 
-  // ✅ Aplicar filtros (com período específico para API)
+  // ✅ Aplicar filtros (com período específico para API — leitura DB, sem janela máxima)
   const handleAplicarFiltros = () => {
-    // ✅ Validar datas se ambas foram selecionadas (NTX limita a janela em 31 dias)
-    if (dateFrom && dateTo) {
-      if (dateFrom > dateTo) {
-        toast.error("Data inicial não pode ser maior que data final", {
-          description: "Verifique as datas selecionadas",
-          duration: 3000
-        });
-        return;
-      }
-      const windowDays = (dateTo.getTime() - dateFrom.getTime()) / (24 * 60 * 60 * 1000);
-      if (windowDays > NTX_MAX_WINDOW_DAYS) {
-        toast.error(`Janela máxima de ${NTX_MAX_WINDOW_DAYS} dias`, {
-          description: "A NTX rejeita períodos maiores que 31 dias — reduza o intervalo",
-          duration: 4000
-        });
-        return;
-      }
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      toast.error("Data inicial não pode ser maior que data final", {
+        description: "Verifique as datas selecionadas",
+        duration: 3000
+      });
+      return;
     }
 
     // ✅ Validar valores mínimo e máximo
@@ -235,19 +227,82 @@ export default function ExtractTabNtxTcr() {
     });
   };
 
+  // ✅ Sincronizar: puxa a janela na API da NTX e grava no banco que esta tela lê.
+  // Backend: lock (409), throttle 3/min (429), janela máx 31 dias (validada aqui antes).
+  const handleSyncExtrato = async () => {
+    if (!syncDateRange.from || !syncDateRange.to) {
+      toast.error('Selecione as datas', {
+        description: 'Selecione a data inicial e final para sincronização'
+      });
+      return;
+    }
+    if (syncDateRange.from > syncDateRange.to) {
+      toast.error('Data inicial não pode ser maior que data final');
+      return;
+    }
+    const windowDays = (syncDateRange.to.getTime() - syncDateRange.from.getTime()) / (24 * 60 * 60 * 1000);
+    if (windowDays > NTX_MAX_WINDOW_DAYS) {
+      toast.error(`O sync NTX aceita no máximo ${NTX_MAX_WINDOW_DAYS} dias`, {
+        description: 'Reduza o intervalo e sincronize em partes',
+        duration: 4000
+      });
+      return;
+    }
+
+    setSyncing(true);
+    setShowSyncDatePicker(false);
+
+    try {
+      // YYYY-MM-DD LOCAL (sem toISOString — evita shift de fuso na borda do dia)
+      const formatDateLocal = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const startDate = formatDateLocal(syncDateRange.from);
+      const endDate = formatDateLocal(syncDateRange.to);
+
+      const result = await syncNtxStatement(startDate, endDate);
+
+      toast.success('Extrato sincronizado!', {
+        description: `Período: ${startDate} a ${endDate} • Vistos: ${result.itemsSeen}, Criados: ${result.created}, Atualizados: ${result.updated}`
+      });
+      if (result.webhookLost > 0) {
+        toast.warning(`${result.webhookLost} transação(ões) recuperada(s) pelo sync`, {
+          description: 'Chegaram sem webhook — conferir DLQ/entrega na NTX',
+          duration: 5000
+        });
+      }
+
+      // Adota o range sincronizado como filtro e recarrega a lista
+      setDateFrom(syncDateRange.from);
+      setDateTo(syncDateRange.to);
+      setDateRange(syncDateRange);
+      await fetchTransactions(syncDateRange.from, syncDateRange.to, 1, false);
+    } catch (err: any) {
+      toast.error('Erro ao sincronizar extrato', {
+        description: err.message || 'Não foi possível sincronizar os dados'
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   // ✅ Refino client-side sobre a página carregada (busca/valores só existem aqui;
   // tipo/status/e2e/externalId refinam o que a API já filtrou)
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
 
-    // ✅ Filtro de operação
+    // ✅ Filtro de operação (eventType canônico do banco)
     if (typeFilter !== 'ALL') {
-      filtered = filtered.filter(tx => matchOperationType(tx, typeFilter));
+      filtered = filtered.filter(tx => tx.eventRaw === TYPE_TO_EVENT[typeFilter]);
     }
 
-    // ✅ Filtro de status
+    // ✅ Filtro de status (enum canônico do banco)
     if (statusFilter !== 'ALL') {
-      filtered = filtered.filter(tx => matchStatus(tx, statusFilter));
+      filtered = filtered.filter(tx => tx.status === statusFilter);
     }
 
     // ✅ Filtro de valor mínimo
@@ -375,11 +430,11 @@ export default function ExtractTabNtxTcr() {
     try {
       toast.info('Preparando exportação...', { description: 'Buscando todos os registros NTX da TCR' });
 
-      // ✅ Buscar TODAS as páginas com os filtros server-side atuais (size máx 100)
+      // ✅ Buscar TODAS as páginas com os filtros server-side atuais (leitura DB, size 2000)
       let allTransactions: NtxTransactionDB[] = [];
       let page = 1;
       let hasMore = true;
-      const MAX_PAGES = 300; // trava de segurança (30k linhas) — hasNext da API é quem encerra o loop
+      const MAX_PAGES = 50; // trava de segurança (100k linhas) — hasNext da API é quem encerra o loop
 
       while (hasMore && page <= MAX_PAGES) {
         const filters = buildApiFilters(dateFrom, dateTo, page, true, NTX_MAX_PAGE_SIZE);
@@ -399,11 +454,11 @@ export default function ExtractTabNtxTcr() {
       let transactionsToExport = allTransactions;
 
       if (typeFilter !== 'ALL') {
-        transactionsToExport = transactionsToExport.filter(tx => matchOperationType(tx, typeFilter));
+        transactionsToExport = transactionsToExport.filter(tx => tx.eventRaw === TYPE_TO_EVENT[typeFilter]);
       }
 
       if (statusFilter !== 'ALL') {
-        transactionsToExport = transactionsToExport.filter(tx => matchStatus(tx, statusFilter));
+        transactionsToExport = transactionsToExport.filter(tx => tx.status === statusFilter);
       }
 
       if (specificAmount) {
@@ -453,8 +508,8 @@ export default function ExtractTabNtxTcr() {
       const rows = transactionsToExport.map((t: NtxTransactionDB) => [
         formatDate(t.createdAt),
         NtxRealtimeService.getTransactionTypeLabel(t.type),
-        t.eventRaw,
-        t.status,
+        NtxRealtimeService.getNtxEventLabel(t.eventRaw),
+        NtxRealtimeService.getNtxStatusLabel(t.status),
         t.amount,
         t.feeAmount,
         t.finalAmount,
@@ -618,7 +673,7 @@ export default function ExtractTabNtxTcr() {
     event.stopPropagation();
 
     const tipoLabel = tx.type === 'FUNDING' ? 'Recebimento PIX' : 'Envio PIX';
-    const statusLabel = tx.status || '-';
+    const statusLabel = NtxRealtimeService.getNtxStatusLabel(tx.status) || '-';
     const valorFormatado = formatCurrency(tx.amount);
     const dataFormatada = formatDate(tx.createdAt);
 
@@ -775,7 +830,7 @@ export default function ExtractTabNtxTcr() {
       <div class="row"><span class="label">End-to-End ID</span><span class="value mono">${tx.endToEndId || '-'}</span></div>
       <div class="row"><span class="label">Transaction ID</span><span class="value mono">${tx.transactionId || '-'}</span></div>
       ${tx.externalId ? `<div class="row"><span class="label">External ID</span><span class="value mono">${tx.externalId}</span></div>` : ''}
-      <div class="row"><span class="label">Operação</span><span class="value">${tx.eventRaw || '-'}</span></div>
+      <div class="row"><span class="label">Operação</span><span class="value">${NtxRealtimeService.getNtxEventLabel(tx.eventRaw) || '-'}</span></div>
       ${parseFloat(tx.feeAmount) > 0 ? `<div class="row"><span class="label">Taxa</span><span class="value">${formatCurrency(tx.feeAmount)}</span></div>` : ''}
       ${tx.description ? `<div class="row"><span class="label">Descrição</span><span class="value">${tx.description}</span></div>` : ''}
     </div>
@@ -850,6 +905,100 @@ export default function ExtractTabNtxTcr() {
             <Download className="h-4 w-4 mr-2" />
             Exportar
           </Button>
+          <Popover open={showSyncDatePicker} onOpenChange={setShowSyncDatePicker}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={syncing}
+              >
+                <CalendarIcon className="h-3.5 w-3.5 mr-1.5" />
+                <span className="text-xs">
+                  {syncDateRange.from && syncDateRange.to
+                    ? `${format(syncDateRange.from, "dd/MM", { locale: ptBR })} - ${format(syncDateRange.to, "dd/MM", { locale: ptBR })}`
+                    : "Período"}
+                </span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-3 shadow-lg" align="end">
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-muted-foreground uppercase">De</label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-full text-xs justify-start font-normal"
+                        >
+                          <CalendarIcon className="h-3 w-3 mr-1" />
+                          {syncDateRange.from ? format(syncDateRange.from, "dd/MM/yyyy", { locale: ptBR }) : "Selecione"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={syncDateRange.from}
+                          onSelect={(date) => {
+                            if (date) {
+                              setSyncDateRange({ ...syncDateRange, from: date });
+                            }
+                          }}
+                          locale={ptBR}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-muted-foreground uppercase">Até</label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-full text-xs justify-start font-normal"
+                        >
+                          <CalendarIcon className="h-3 w-3 mr-1" />
+                          {syncDateRange.to ? format(syncDateRange.to, "dd/MM/yyyy", { locale: ptBR }) : "Selecione"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={syncDateRange.to}
+                          onSelect={(date) => {
+                            if (date) {
+                              setSyncDateRange({ ...syncDateRange, to: date });
+                            }
+                          }}
+                          locale={ptBR}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleSyncExtrato}
+                  disabled={syncing || !syncDateRange.from || !syncDateRange.to}
+                  className="w-full h-8 text-xs"
+                >
+                  {syncing ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                      Sincronizando...
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="h-3 w-3 mr-1.5" />
+                      Sincronizar
+                    </>
+                  )}
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
@@ -907,7 +1056,7 @@ export default function ExtractTabNtxTcr() {
         checkboxLabel="Apenas Estornos"
         checkboxChecked={showReversalsOnly}
         onCheckboxChange={setShowReversalsOnly}
-        hint={`Busca e valores refinam a página carregada • janela máx. ${NTX_MAX_WINDOW_DAYS} dias`}
+        hint="Busca e valores refinam a página carregada • dados do banco local — use Sincronizar p/ atualizar"
         loading={loading}
         onApply={handleAplicarFiltros}
         onClear={handleLimparFiltros}
@@ -1138,7 +1287,7 @@ export default function ExtractTabNtxTcr() {
 
                                 <div>
                                   <label className="text-xs font-medium text-muted-foreground uppercase">Operação</label>
-                                  <p className="text-sm mt-1">{tx.eventRaw || '-'}</p>
+                                  <p className="text-sm mt-1">{NtxRealtimeService.getNtxEventLabel(tx.eventRaw) || '-'}</p>
                                 </div>
 
                                 {String(tx._original?.movementType || '') && (
