@@ -89,6 +89,11 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
     limit: filters.limit
   });
 
+  // Quanto os clientes estão nos devendo: soma dos saldos BRL negativos
+  // (a API devolve a lista completa; a paginação é só de exibição)
+  const clientesDevedores = clients.filter((c) => Number(c.current_balance) < 0);
+  const totalDevedor = clientesDevedores.reduce((acc, c) => acc + Number(c.current_balance), 0);
+
   // Atualizar filtros
   const updateFilters = (newFilters: Partial<OTCFilters>) => {
     setFilters(prev => ({
@@ -201,11 +206,13 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
 
         {/* Estatísticas rápidas */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="text-center p-3 bg-blue-50 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600">
-              {statistics.total_clientes}
+          <div className="text-center p-3 bg-red-50 rounded-lg">
+            <div className="text-2xl font-bold text-red-600">
+              {otcService.formatCurrency(Math.abs(totalDevedor))}
             </div>
-            <div className="text-sm text-blue-600">Total</div>
+            <div className="text-sm text-red-600">
+              Devendo ({clientesDevedores.length} {clientesDevedores.length === 1 ? 'cliente' : 'clientes'})
+            </div>
           </div>
           <div className="text-center p-3 bg-green-50 rounded-lg">
             <div className="text-2xl font-bold text-green-600">
