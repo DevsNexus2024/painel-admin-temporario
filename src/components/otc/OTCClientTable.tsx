@@ -27,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useOTCClients } from '@/hooks/useOTCClients';
 import { usePermissions } from '@/hooks/useAuth';
 import { otcService } from '@/services/otc';
@@ -93,6 +94,11 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
   // (a API devolve a lista completa; a paginação é só de exibição)
   const clientesDevedores = clients.filter((c) => Number(c.current_balance) < 0);
   const totalDevedor = clientesDevedores.reduce((acc, c) => acc + Number(c.current_balance), 0);
+  const [devedoresModalOpen, setDevedoresModalOpen] = useState(false);
+  // Mais devedor primeiro (saldo mais negativo)
+  const devedoresOrdenados = [...clientesDevedores].sort(
+    (a, b) => Number(a.current_balance) - Number(b.current_balance)
+  );
 
   // Atualizar filtros
   const updateFilters = (newFilters: Partial<OTCFilters>) => {
@@ -206,14 +212,19 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
 
         {/* Estatísticas rápidas */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="text-center p-3 bg-red-50 rounded-lg">
+          <button
+            type="button"
+            onClick={() => setDevedoresModalOpen(true)}
+            className="text-center p-3 bg-red-50 rounded-lg hover:bg-red-100 transition-colors cursor-pointer"
+            title="Ver quanto cada cliente está devendo"
+          >
             <div className="text-2xl font-bold text-red-600">
               {otcService.formatCurrency(Math.abs(totalDevedor))}
             </div>
             <div className="text-sm text-red-600">
               Devendo ({clientesDevedores.length} {clientesDevedores.length === 1 ? 'cliente' : 'clientes'})
             </div>
-          </div>
+          </button>
           <div className="text-center p-3 bg-green-50 rounded-lg">
             <div className="text-2xl font-bold text-green-600">
               {statistics.clientes_ativos}
@@ -454,6 +465,45 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
           </>
         )}
       </CardContent>
+
+      {/* Modal de clientes devedores (saldo BRL negativo) */}
+      <Dialog open={devedoresModalOpen} onOpenChange={setDevedoresModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Clientes devedores</DialogTitle>
+            <DialogDescription>
+              {clientesDevedores.length === 0
+                ? 'Nenhum cliente com saldo BRL negativo no momento.'
+                : `${clientesDevedores.length} ${clientesDevedores.length === 1 ? 'cliente deve' : 'clientes devem'} ${otcService.formatCurrency(Math.abs(totalDevedor))} no total`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {clientesDevedores.length > 0 && (
+            <div className="max-h-96 overflow-y-auto divide-y">
+              {devedoresOrdenados.map((client) => (
+                <button
+                  key={client.id}
+                  type="button"
+                  onClick={() => {
+                    setDevedoresModalOpen(false);
+                    onViewStatement?.(client);
+                  }}
+                  className="w-full flex items-center justify-between gap-4 py-2 px-1 text-left hover:bg-muted/50 rounded"
+                  title="Ver extrato do cliente"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{client.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{client.document}</div>
+                  </div>
+                  <div className="font-semibold text-red-600 whitespace-nowrap">
+                    {otcService.formatCurrency(Math.abs(Number(client.current_balance)))}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };
