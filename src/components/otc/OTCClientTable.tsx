@@ -100,6 +100,21 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
     (a, b) => Number(a.current_balance) - Number(b.current_balance)
   );
 
+  // Saldo BRL dos clientes: soma dos saldos positivos, sem o cliente 83
+  // (mesma exclusão do total_saldo no backend — EDITION LIMITED não entra nos cards)
+  const SALDO_EXCLUDED_IDS = [83];
+  const clientesComSaldo = clients.filter(
+    (c) => Number(c.current_balance) > 0 && !SALDO_EXCLUDED_IDS.includes(c.id)
+  );
+  const totalSaldoClientes = clientesComSaldo.reduce((acc, c) => acc + Number(c.current_balance), 0);
+  const [saldoModalOpen, setSaldoModalOpen] = useState(false);
+  // Maior saldo primeiro
+  const comSaldoOrdenados = [...clientesComSaldo].sort(
+    (a, b) => Number(b.current_balance) - Number(a.current_balance)
+  );
+  // Saldo Total líquido = saldo dos clientes − o que estão devendo (totalDevedor já é negativo)
+  const saldoTotalLiquido = totalSaldoClientes + totalDevedor;
+
   // Atualizar filtros
   const updateFilters = (newFilters: Partial<OTCFilters>) => {
     setFilters(prev => ({
@@ -225,17 +240,24 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
               Devendo ({clientesDevedores.length} {clientesDevedores.length === 1 ? 'cliente' : 'clientes'})
             </div>
           </button>
-          <div className="text-center p-3 bg-green-50 rounded-lg">
+          <button
+            type="button"
+            onClick={() => setSaldoModalOpen(true)}
+            className="text-center p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors cursor-pointer"
+            title="Ver o saldo de cada cliente"
+          >
             <div className="text-2xl font-bold text-green-600">
-              {statistics.clientes_ativos}
+              {otcService.formatCurrency(totalSaldoClientes)}
             </div>
-            <div className="text-sm text-green-600">Ativos</div>
-          </div>
+            <div className="text-sm text-green-600">
+              Saldo BRL Clientes ({clientesComSaldo.length})
+            </div>
+          </button>
           <div className="text-center p-3 bg-yellow-50 rounded-lg">
             <div className="text-2xl font-bold text-yellow-600">
-              {otcService.formatCurrency(statistics.total_saldo)}
+              {otcService.formatCurrency(saldoTotalLiquido)}
             </div>
-            <div className="text-sm text-yellow-600">Saldo Total</div>
+            <div className="text-sm text-yellow-600">Saldo Total (saldo − devendo)</div>
           </div>
           <div className="text-center p-3 bg-purple-50 rounded-lg">
             <div className="text-2xl font-bold text-purple-600">
@@ -497,6 +519,45 @@ const OTCClientTable: React.FC<OTCClientTableProps> = ({
                   </div>
                   <div className="font-semibold text-red-600 whitespace-nowrap">
                     {otcService.formatCurrency(Math.abs(Number(client.current_balance)))}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de clientes com saldo BRL positivo (sem o cliente 83) */}
+      <Dialog open={saldoModalOpen} onOpenChange={setSaldoModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Saldo BRL dos clientes</DialogTitle>
+            <DialogDescription>
+              {clientesComSaldo.length === 0
+                ? 'Nenhum cliente com saldo BRL positivo no momento.'
+                : `${clientesComSaldo.length} ${clientesComSaldo.length === 1 ? 'cliente tem' : 'clientes têm'} ${otcService.formatCurrency(totalSaldoClientes)} no total (cliente 83 fora da conta)`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {clientesComSaldo.length > 0 && (
+            <div className="max-h-96 overflow-y-auto divide-y">
+              {comSaldoOrdenados.map((client) => (
+                <button
+                  key={client.id}
+                  type="button"
+                  onClick={() => {
+                    setSaldoModalOpen(false);
+                    onViewStatement?.(client);
+                  }}
+                  className="w-full flex items-center justify-between gap-4 py-2 px-1 text-left hover:bg-muted/50 rounded"
+                  title="Ver extrato do cliente"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{client.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{client.document}</div>
+                  </div>
+                  <div className="font-semibold text-green-600 whitespace-nowrap">
+                    {otcService.formatCurrency(Number(client.current_balance))}
                   </div>
                 </button>
               ))}
