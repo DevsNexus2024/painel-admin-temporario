@@ -54,13 +54,15 @@ export interface ContaDedicada {
  * as duas é feita SÓ pelo `brasilcash_account_id`, e mandar `x-otc-id` aqui
  * devolveria lista vazia em silêncio.
  *
- * `nomeExibicao` vazio de propósito: o nome do cliente dono do saldo não foi
- * confirmado. Enquanto estiver vazio a tela usa rótulo neutro — nunca o titular.
+ * `nomeExibicao` é o CLIENTE (NEW ZONE) — dono do saldo no ledger da TCR e quem o
+ * suporte atende. `titular` é a empresa no nome da conta bancária (TTF). São
+ * entidades DIFERENTES e a tela precisa manter as duas visíveis e separadas:
+ * confundi-las faz o suporte atribuir o dinheiro à pessoa errada.
  */
 export const CONTA_DEDICADA_BRASILCASH: ContaDedicada = {
   referenciaConta: 'f651bc06-563c-4b4b-9ab0-1f44d4259b4e',
   otcId: '',
-  nomeExibicao: '',
+  nomeExibicao: 'NEW ZONE',
   titular: { razaoSocial: 'TTF SERVIÇOS DIGITAIS LTDA', numeroConta: '2563738', agencia: '1' },
   vinculadoEm: '2026-08-23',
 };

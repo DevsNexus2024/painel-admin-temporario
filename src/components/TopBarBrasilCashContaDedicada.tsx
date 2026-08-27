@@ -114,6 +114,11 @@ export default function TopBarBrasilCashContaDedicada() {
                       "titular" explicitamente evita que o suporte atribua o
                       dinheiro à empresa que aparece no nome da conta bancária. */}
                   <span>
+                    Cliente:{' '}
+                    <span className="font-medium text-foreground">{rotuloConta(CONTA)}</span>
+                  </span>
+                  <span>•</span>
+                  <span>
                     Titular da conta bancária:{' '}
                     <span className="font-medium">{CONTA.titular.razaoSocial}</span>
                   </span>
