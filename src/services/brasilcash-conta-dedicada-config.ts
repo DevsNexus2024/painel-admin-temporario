@@ -29,29 +29,71 @@ export interface ContaDedicada {
    * devolve extrato vazio em silêncio, que é pior do que erro.
    */
   otcId: string;
-  /** Nome da conta para exibição no cabeçalho e no menu. */
+  /**
+   * Nome do CLIENTE dono do saldo — é ele que o suporte atende.
+   *
+   * ⚠️ NÃO é o titular bancário: nesta conta as duas pessoas são diferentes por
+   * desenho (sub-conta da TTF vinculada a um cliente). Vazio = rótulo neutro;
+   * o titular NUNCA entra aqui, senão a tela sugere que ele é o dono do dinheiro.
+   */
   nomeExibicao: string;
+  /** Titular BANCÁRIO da conta. Dado da conta, não dono do saldo. */
+  titular: { razaoSocial: string; numeroConta: string; agencia: string };
+  /**
+   * Data do vínculo conta→cliente (YYYY-MM-DD). Movimento anterior a ela existiu
+   * na conta mas NÃO é do cliente. Vazio desliga a marcação.
+   */
+  vinculadoEm: string;
 }
 
 /**
- * ⚠️ PREENCHER: a conta dedicada do cliente.
+ * Conta dedicada do cliente — BrasilCash 2563738 (linha id=9 de brasilcash_accounts).
  *
- * Enquanto `referenciaConta` estiver vazio a tela NÃO consulta nada e mostra
- * falha explícita — de propósito. Um valor-padrão aqui faria a tela exibir o
- * extrato de outra conta como se fosse o do cliente.
+ * `otcId` VAZIO é medido, não chutado: no dump de 2026-08-04 a linha desta conta
+ * traz `otc_id='DEFAULT'`, o mesmo balde da conta da TCR. Logo a separação entre
+ * as duas é feita SÓ pelo `brasilcash_account_id`, e mandar `x-otc-id` aqui
+ * devolveria lista vazia em silêncio.
+ *
+ * `nomeExibicao` vazio de propósito: o nome do cliente dono do saldo não foi
+ * confirmado. Enquanto estiver vazio a tela usa rótulo neutro — nunca o titular.
  */
 export const CONTA_DEDICADA_BRASILCASH: ContaDedicada = {
-  referenciaConta: '',
+  referenciaConta: 'f651bc06-563c-4b4b-9ab0-1f44d4259b4e',
   otcId: '',
   nomeExibicao: '',
+  titular: { razaoSocial: 'TTF SERVIÇOS DIGITAIS LTDA', numeroConta: '2563738', agencia: '1' },
+  vinculadoEm: '2026-08-23',
 };
 
-/** Rótulo seguro para exibir enquanto o nome não foi preenchido. */
+/**
+ * Rótulo da tela. Identifica o CLIENTE.
+ *
+ * Nunca cai no titular bancário: nesta conta ele não é o dono do saldo, e
+ * exibi-lo como título da tela faria o suporte atribuir o dinheiro à pessoa errada.
+ */
 export function rotuloConta(conta: ContaDedicada): string {
   const nome = conta.nomeExibicao.trim();
   if (nome) return nome;
   const ref = conta.referenciaConta.trim();
-  return ref ? `Conta ${ref}` : 'Conta não configurada';
+  return ref ? 'Conta dedicada (cliente não identificado)' : 'Conta não configurada';
+}
+
+/**
+ * A transação é anterior ao vínculo conta→cliente?
+ *
+ * Compara só a parte YYYY-MM-DD, em texto. PORQUÊ não fazer aritmética de data:
+ * o backend grava `created_at` com deslocamentos manuais de fuso
+ * (`DATE_SUB(NOW(), INTERVAL 4 HOUR)`) e o front trata o sufixo 'Z' como hora
+ * local. Comparar instantes aqui daria uma precisão que o dado não tem.
+ *
+ * O próprio dia do vínculo conta como NÃO anterior — é a fronteira ambígua, e
+ * marcar a favor do cliente evita acusar de alheio o que talvez seja dele.
+ */
+export function ehAnteriorAoVinculo(dataISO: string, vinculadoEm: string): boolean {
+  const corte = (vinculadoEm ?? '').trim();
+  const data = (dataISO ?? '').trim();
+  if (corte.length < 10 || data.length < 10) return false;
+  return data.slice(0, 10) < corte.slice(0, 10);
 }
 
 /** Erro de configuração ausente. Existe para o chamador não confundir com erro de rede. */

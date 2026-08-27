@@ -19,6 +19,7 @@ import {
   CONTA_DEDICADA_BRASILCASH,
   contaEstaConfigurada,
   rotuloConta,
+  ehAnteriorAoVinculo,
   buscarTransacoesContaDedicada,
   type FiltrosExtrato,
 } from "@/services/brasilcash-conta-dedicada";
@@ -1381,6 +1382,19 @@ export default function ExtractTabBrasilCashContaDedicada() {
                           <div>
                             <div className="text-sm">{formatDate(tx.createdAt).split(' ')[0]}</div>
                             <div className="text-xs text-muted-foreground">{formatDate(tx.createdAt).split(' ')[1]}</div>
+                            {/* MARCA, não filtra: a linha continua visível. Esta conta
+                                operava antes de ser vinculada ao cliente; movimento
+                                anterior ao vínculo não é dele, e tem o botão Compensar
+                                ao lado. Esconder seria decisão de produto, não minha. */}
+                            {ehAnteriorAoVinculo(tx.createdAt, CONTA.vinculadoEm) && (
+                              <Badge
+                                variant="outline"
+                                className="mt-1 text-[10px] border-amber-500/60 text-amber-600 dark:text-amber-500"
+                                title={`Anterior ao vínculo da conta com o cliente (${CONTA.vinculadoEm}). Provavelmente não é do cliente — confirme antes de compensar.`}
+                              >
+                                anterior ao vínculo
+                              </Badge>
+                            )}
                           </div>
                         </div>
                       </td>

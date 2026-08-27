@@ -19,6 +19,7 @@ import {
   montarRequisicaoExtrato,
   obterSaldoContaDedicada,
   rotuloConta,
+  ehAnteriorAoVinculo,
   ContaNaoConfiguradaError,
   type ContaDedicada,
   type FiltrosExtrato,
@@ -84,6 +85,7 @@ export {
   contaEstaConfigurada,
   obterSaldoContaDedicada,
   rotuloConta,
+  ehAnteriorAoVinculo,
   ContaNaoConfiguradaError,
   mapBrasilCashToTransactionDB,
 };

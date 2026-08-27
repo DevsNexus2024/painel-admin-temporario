@@ -109,12 +109,22 @@ export default function TopBarBrasilCashContaDedicada() {
             <div className="flex flex-col gap-1">
               <p className="text-muted-foreground text-sm">Extrato da conta dedicada</p>
               {configurada && (
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="font-mono text-[10px]">Conta: {CONTA.referenciaConta}</span>
-                  {CONTA.otcId && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  {/* Titular é DADO DA CONTA. O dono do saldo é o cliente — dizer
+                      "titular" explicitamente evita que o suporte atribua o
+                      dinheiro à empresa que aparece no nome da conta bancária. */}
+                  <span>
+                    Titular da conta bancária:{' '}
+                    <span className="font-medium">{CONTA.titular.razaoSocial}</span>
+                  </span>
+                  <span>•</span>
+                  <span>
+                    Conta {CONTA.titular.numeroConta} / Ag. {CONTA.titular.agencia}
+                  </span>
+                  {CONTA.vinculadoEm && (
                     <>
                       <span>•</span>
-                      <span className="font-mono text-[10px]">OTC: {CONTA.otcId}</span>
+                      <span>Vinculada ao cliente em {CONTA.vinculadoEm}</span>
                     </>
                   )}
                 </div>
