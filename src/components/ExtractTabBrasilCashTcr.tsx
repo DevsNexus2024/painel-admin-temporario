@@ -602,17 +602,33 @@ export default function ExtractTabBrasilCashTcr() {
       return;
     }
     
+    // ✅ Transferência interna BrasilCash (P2P) não tem E2E — a sync grava end_to_end_id NULL
+    // (o trace_id da API é um hex compartilhado pelas duas pernas, não um E2E). Mesmo tratamento
+    // do CorpX para "transferência entre contas": usa o pix_id (transactionId, único por perna)
+    // como id_transacao da compensação. O `id` do registro vira o id da linha para que a
+    // validação do serviço (id_transacao !== id) continue barrando só registro sem identificador.
+    const isInternalTransferWithoutE2E =
+      !transaction.endToEndId && transaction.method === 'P2P' && !!transaction.transactionId;
+    const idTransacaoCompensacao = transaction.endToEndId || (isInternalTransferWithoutE2E ? transaction.transactionId : '');
+
+    if (isInternalTransferWithoutE2E) {
+      toast.info('Transferência interna (P2P) detectada', {
+        description: 'Sem E2E: a compensação usará o ID da transação BrasilCash como referência',
+        duration: 3000
+      });
+    }
+
     // ✅ Converter para formato MovimentoExtrato esperado pelo modal (IGUAL CorpX TCR)
     let extractRecord: any = {
-      id: transaction.transactionId,
+      id: isInternalTransferWithoutE2E ? String(transaction.id) : transaction.transactionId,
       dateTime: transaction.createdAt,
       value: parseFloat(transaction.amount),
       type: transaction.type === 'FUNDING' ? 'CRÉDITO' : 'DÉBITO',
-      client: transaction.type === 'FUNDING' 
+      client: transaction.type === 'FUNDING'
         ? (transaction.payerName || 'N/A')  // Quem enviou (para depósitos)
         : (transaction.payeeName || 'N/A'),  // Quem recebeu (para saques)
       document: transaction.payerTaxId || '',
-      code: transaction.endToEndId,
+      code: idTransacaoCompensacao,
       descCliente: `BrasilCash TCR - ${transaction.type === 'FUNDING' 
         ? (transaction.payerName || 'N/A')
         : (transaction.payeeName || 'N/A')}`,
@@ -1929,6 +1945,8 @@ export default function ExtractTabBrasilCashTcr() {
         onClose={handleCloseCompensationModal}
         extractRecord={selectedCompensationRecord}
         provider="brasilcash"
+        // Devolução/bloqueio de PIX só fazem sentido com E2E real — P2P interna usa pix_id como code
+        allowPixActions={!!selectedCompensationRecord?._original?.endToEndId}
       />
     </div>
   );
