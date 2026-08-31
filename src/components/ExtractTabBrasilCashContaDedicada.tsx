@@ -20,6 +20,7 @@ import {
   contaEstaConfigurada,
   rotuloConta,
   ehAnteriorAoVinculo,
+  montarIdentificacaoCompensacao,
   buscarTransacoesContaDedicada,
   type FiltrosExtrato,
 } from "@/services/brasilcash-conta-dedicada";
@@ -610,17 +611,30 @@ export default function ExtractTabBrasilCashContaDedicada() {
       return;
     }
     
+    // ✅ Transferência interna BrasilCash (P2P) não tem E2E — port do fix 364c7a6 da tela TCR.
+    // Aqui pesa mais que lá: esta conta recebe de muitos terceiros, então P2P é rotina.
+    // A regra vive em `montarIdentificacaoCompensacao` (módulo sem imports) para poder
+    // ser verificada isolada — este projeto não tem runner de teste.
+    const identificacao = montarIdentificacaoCompensacao(transaction);
+
+    if (identificacao.transferenciaInternaSemE2E) {
+      toast.info('Transferência interna (P2P) detectada', {
+        description: 'Sem E2E: a compensação usará o ID da transação BrasilCash como referência',
+        duration: 3000
+      });
+    }
+
     // ✅ Converter para formato MovimentoExtrato esperado pelo modal (IGUAL CorpX TCR)
     let extractRecord: any = {
-      id: transaction.transactionId,
+      id: identificacao.id,
       dateTime: transaction.createdAt,
       value: parseFloat(transaction.amount),
       type: transaction.type === 'FUNDING' ? 'CRÉDITO' : 'DÉBITO',
-      client: transaction.type === 'FUNDING' 
+      client: transaction.type === 'FUNDING'
         ? (transaction.payerName || 'N/A')  // Quem enviou (para depósitos)
         : (transaction.payeeName || 'N/A'),  // Quem recebeu (para saques)
       document: transaction.payerTaxId || '',
-      code: transaction.endToEndId,
+      code: identificacao.code,
       descCliente: `BrasilCash TCR - ${transaction.type === 'FUNDING' 
         ? (transaction.payerName || 'N/A')
         : (transaction.payeeName || 'N/A')}`,
@@ -1826,6 +1840,14 @@ export default function ExtractTabBrasilCashContaDedicada() {
         extractRecord={selectedCompensationRecord}
         provider="brasilcash"
         rotuloConta={rotuloConta(CONTA)}
+        // Devolução/bloqueio de PIX só fazem sentido com E2E real — P2P interna usa pix_id
+        // como code. Reusa a MESMA função da montagem do registro: duas expressões
+        // separadas para a mesma regra é como elas divergem com o tempo.
+        allowPixActions={
+          selectedCompensationRecord?._original
+            ? montarIdentificacaoCompensacao(selectedCompensationRecord._original).permitirAcoesPix
+            : false
+        }
       />
     </div>
   );

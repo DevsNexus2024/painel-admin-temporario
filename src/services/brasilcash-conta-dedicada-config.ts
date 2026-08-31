@@ -206,3 +206,64 @@ export function obterSaldoContaDedicada(conta: ContaDedicada): ResultadoSaldo {
     motivo: 'Não foi possível obter o saldo desta conta.',
   };
 }
+
+/** Campos da transação usados para identificar a compensação. */
+export interface TransacaoParaCompensacao {
+  /** `id` da linha em brasilcash_transactions. */
+  id: number | string;
+  /** `pix_id` — único por perna da transferência. */
+  transactionId: string;
+  /** `end_to_end_id`; string vazia quando o banco gravou NULL. */
+  endToEndId: string;
+  /**
+   * Tipo cru da BrasilCash ('dict', 'manual', 'staticQrcode', 'P2P'…).
+   *
+   * ⚠️ Chama-se `method` por causa do mapper compartilhado
+   * (`brasilcash-realtime.ts:367`, `method: tx.type || 'pix'`), que joga o campo
+   * `type` da API neste nome. NÃO é cashin/cashout — isso é o campo `type`.
+   */
+  method: string;
+}
+
+export interface IdentificacaoCompensacao {
+  /** Vai no campo `id` do MovimentoExtrato. */
+  id: string;
+  /** Vai no campo `code` — vira `id_transacao` na compensação. */
+  code: string;
+  /** Transferência interna BrasilCash sem E2E. */
+  transferenciaInternaSemE2E: boolean;
+  /** Libera Devolver/Bloquear PIX no modal. */
+  permitirAcoesPix: boolean;
+}
+
+/**
+ * Identificação da compensação — port do fix `364c7a6` da tela TCR.
+ *
+ * Transferência interna (P2P) NÃO tem E2E: a sync grava `end_to_end_id` NULL,
+ * porque o `trace_id` da API é um hex compartilhado pelas duas pernas, não um
+ * E2E. Sem tratamento, a compensação manual dessas linhas é barrada antes de
+ * chamar a API. Usa-se então o `pix_id` (único por perna) como `id_transacao`, e
+ * o `id` da linha como `id` do registro — assim a validação do serviço
+ * (`id_transacao !== id`) segue barrando só registro sem identificador.
+ *
+ * PORQUÊ isto importa MAIS nesta tela do que na TCR: a conta desta tela recebe
+ * de muitos terceiros, então transferência interna é caso corriqueiro aqui.
+ *
+ * Devolver/bloquear PIX só fazem sentido com E2E real — sem ele, o `code` é um
+ * pix_id e as ações postariam um identificador que o PIX não reconhece.
+ */
+export function montarIdentificacaoCompensacao(
+  tx: TransacaoParaCompensacao,
+): IdentificacaoCompensacao {
+  const e2e = (tx.endToEndId ?? '').trim();
+  const pixId = (tx.transactionId ?? '').trim();
+
+  const transferenciaInternaSemE2E = !e2e && tx.method === 'P2P' && !!pixId;
+
+  return {
+    id: transferenciaInternaSemE2E ? String(tx.id) : tx.transactionId,
+    code: e2e || (transferenciaInternaSemE2E ? pixId : ''),
+    transferenciaInternaSemE2E,
+    permitirAcoesPix: !!e2e,
+  };
+}
