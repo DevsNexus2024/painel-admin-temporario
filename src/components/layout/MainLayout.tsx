@@ -390,6 +390,16 @@ export default function MainLayout() {
                                     )}
                                     
                                     {/* ✅ MENU ATIVO */}
+                                    {canShow("/brasilcash-conta-dedicada") && (
+                                      <SidebarLink
+                                          to="/brasilcash-conta-dedicada"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="BrasilCash <> Conta Dedicada"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+
+                                    {/* ✅ MENU ATIVO */}
                                     {canShow("/belmontx-tcr") && (
                                       <SidebarLink
                                           to="/belmontx-tcr"

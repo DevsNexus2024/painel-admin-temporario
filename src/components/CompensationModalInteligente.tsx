@@ -33,9 +33,15 @@ interface CompensationModalInteligenteProps {
    * no provider ERRADO (default 'corpx_v2').
    */
   allowPixActions?: boolean;
+  /**
+   * Rótulo da conta no título do modal. O default 'BMP-531' é o texto histórico —
+   * mantido para não alterar nenhuma das telas que já usam este modal. Telas de
+   * conta dedicada passam o nome da conta real.
+   */
+  rotuloConta?: string;
 }
 
-export default function CompensationModalInteligente({ isOpen, onClose, extractRecord, provider = 'corpx_v2', allowPixActions = true }: CompensationModalInteligenteProps) {
+export default function CompensationModalInteligente({ isOpen, onClose, extractRecord, provider = 'corpx_v2', allowPixActions = true, rotuloConta = 'BMP-531' }: CompensationModalInteligenteProps) {
   const navigate = useNavigate();
   const [formData, setFormData] = useState<Partial<CompensationData>>({});
   const [quantiaInput, setQuantiaInput] = useState<string>('');
@@ -670,7 +676,7 @@ export default function CompensationModalInteligente({ isOpen, onClose, extractR
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Brain className="h-5 w-5 text-primary" />
-            Sistema Inteligente de Compensação - BMP-531
+            Sistema Inteligente de Compensação - {rotuloConta}
           </DialogTitle>
           <DialogDescription>
             {versaoSimplificada 
