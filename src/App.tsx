@@ -26,6 +26,7 @@ import BitsoApiPage from "./pages/BitsoApiPage";
 import BrasilCashTcrPage from "./pages/BrasilCashTcrPage";
 import BrasilCashOtcPage from "./pages/BrasilCashOtcPage";
 import BrasilCashContaDedicadaPage from "./pages/BrasilCashContaDedicadaPage";
+import CorpXContaDedicadaPage from "./pages/CorpXContaDedicadaPage";
 import BelmontXOtcPage from "./pages/BelmontXOtcPage";
 import BelmontXTcrPage from "./pages/BelmontXTcrPage";
 import NtxTcrPage from "./pages/NtxTcrPage";
@@ -176,6 +177,7 @@ const App = () => (
                   <Route path="/brasilcash-tcr" element={<BrasilCashTcrPage />} />
                   <Route path="/brasilcash-otc" element={<BrasilCashOtcPage />} />
                   <Route path="/brasilcash-conta-dedicada" element={<BrasilCashContaDedicadaPage />} />
+                  <Route path="/corpx-conta-dedicada" element={<CorpXContaDedicadaPage />} />
                   <Route path="/belmontx-otc" element={<BelmontXOtcPage />} />
                   <Route path="/belmontx-tcr" element={<BelmontXTcrPage />} />
                   <Route path="/ntx-tcr" element={<NtxTcrPage />} />
