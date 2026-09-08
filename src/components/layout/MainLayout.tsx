@@ -139,6 +139,7 @@ export default function MainLayout() {
       canShow("/brasilcash-tcr") ||
       canShow("/belmontx-tcr") ||
       canShow("/ntx-tcr") ||
+      canShow("/corpx-conta-dedicada") ||
       canShow("/auditoria-depositos");
 
     const showGrupoOtc =
@@ -395,6 +396,16 @@ export default function MainLayout() {
                                           to="/brasilcash-conta-dedicada"
                                           icon={<CreditCard className="h-4 w-4" />}
                                           label="BrasilCash <> Conta Dedicada"
+                                          isCollapsed={isCollapsed}
+                                      />
+                                    )}
+
+                                    {/* ✅ MENU ATIVO */}
+                                    {canShow("/corpx-conta-dedicada") && (
+                                      <SidebarLink
+                                          to="/corpx-conta-dedicada"
+                                          icon={<CreditCard className="h-4 w-4" />}
+                                          label="CorpX <> Conta Dedicada"
                                           isCollapsed={isCollapsed}
                                       />
                                     )}

@@ -1,0 +1,484 @@
+/**
+ * Configuração da conta CorpX DEDICADA do Edition (tela /corpx-conta-dedicada).
+ *
+ * PORQUÊ este arquivo não importa nada: as funções abaixo carregam a regra de
+ * dinheiro da tela — qual conta é consultada — e precisam ser verificáveis
+ * isoladamente. O projeto não tem runner de teste, então o único jeito de provar
+ * a regra sem adicionar dependência é compilar ESTE arquivo sozinho e exercitá-lo
+ * (ver `corpx-conta-dedicada-config.test-verificador.ts`). Não adicione import aqui.
+ */
+
+/**
+ * Conta dedicada endereçada pela tela.
+ *
+ * ⚠️ ESTA CONTA TEM QUATRO IDENTIFICADORES. Eles aparecem juntos na documentação
+ * e no código, e são intercambiáveis para um humano — não para o backend. Cada
+ * campo abaixo diz explicitamente ONDE o valor entra, porque trocar um pelo outro
+ * não dá erro de compilação e nem sempre dá erro de runtime.
+ */
+export interface ContaDedicadaCorpX {
+  /**
+   * O id que endereça o EXTRATO: `corpx_transactions.corpx_account_id`. É este,
+   * e somente este, que vai em `GET /api/corpx/transactions?accountId=`.
+   *
+   * ⚠️ NÃO é o UUID do mirror, NÃO é o CNPJ, NÃO é o alias. Ver
+   * `IDS_DE_EXTRATO_PERMITIDOS` para o porquê de a troca ser silenciosa.
+   */
+  idExtrato: string;
+  /**
+   * Alias da conta no header `x-corpx-account-context` do SALDO
+   * (`GET /api/corpx-v2/balance`). É outro vocabulário: o saldo não conhece o
+   * `idExtrato`, e o extrato não conhece o alias.
+   */
+  aliasSaldo: string;
+  /**
+   * `accountRef` do espelho (`tcr_mirror_accounts`). Guardado para diagnóstico e
+   * para a cerca conseguir dizer QUAL identificador foi passado por engano.
+   * Não endereça nem extrato nem saldo.
+   */
+  accountRefMirror: string;
+  /**
+   * CNPJ da empresa. Guardado para diagnóstico — e porque é o identificador
+   * PERIGOSO: ver `IDS_DE_EXTRATO_PERMITIDOS`.
+   */
+  cnpj: string;
+  /**
+   * Nome do CLIENTE dono do saldo — é ele que o suporte atende.
+   *
+   * ⚠️ NÃO é o titular bancário. Vazio = rótulo neutro; o titular NUNCA entra
+   * aqui, senão a tela sugere que ele é o dono do dinheiro.
+   */
+  nomeExibicao: string;
+  /**
+   * Titular BANCÁRIO da conta. Dado da conta, não dono do saldo.
+   *
+   * Campos vazios = PENDENTE (não medido nesta fase). A tela rotula como
+   * pendente em vez de repetir o nome do cliente aqui: são entidades diferentes,
+   * e fundi-las faz o suporte atribuir o dinheiro à pessoa errada.
+   */
+  titular: { razaoSocial: string; numeroConta: string; agencia: string };
+  /**
+   * Data do vínculo conta→cliente (YYYY-MM-DD). Movimento anterior a ela existiu
+   * na conta mas NÃO é do cliente. Vazio DESLIGA a marcação.
+   */
+  vinculadoEm: string;
+}
+
+/**
+ * 🔴 ALLOWLIST DOS IDS QUE PODEM ENDEREÇAR O EXTRATO — a cerca desta tela.
+ *
+ * PORQUÊ uma allowlist por igualdade, e não uma validação estrutural:
+ *
+ * O backend (`corpx.service.ts`) converte o `accountId` recebido com `BigInt()`.
+ * Dos quatro identificadores desta conta:
+ *  - o UUID `1ac33d8a-…`     → `BigInt()` lança → 400. Falha VISÍVEL, tudo bem.
+ *  - o alias `EDITION`       → `BigInt()` lança → 400. Falha VISÍVEL, tudo bem.
+ *  - o CNPJ `61504259000164` → **`BigInt()` ACEITA**, porque é numérico. Vira
+ *    `corpx_account_id: 61504259000164n`, casa ZERO linha, e a rota devolve 200
+ *    com lista vazia. O operador vê "nenhuma transação" e conclui que a conta
+ *    não movimentou.
+ *
+ * Ou seja: "o identificador é numérico" NÃO é validação — é exatamente o teste
+ * que o caso perigoso passa. Por isso a cerca é igualdade contra uma lista
+ * fechada, e não `typeof`, regex de dígitos, comprimento, `includes` ou
+ * `startsWith` (`'051807'` e `'518070'` são outra conta, ou nenhuma).
+ */
+export const IDS_DE_EXTRATO_PERMITIDOS: readonly string[] = ['51807'];
+
+/** Rótulo de cada identificador conhecido, para a mensagem de erro dizer o que foi passado. */
+export const IDENTIFICADORES_CONHECIDOS_DA_CONTA: ReadonlyArray<{
+  valor: string;
+  rotulo: string;
+  ondeSeUsa: string;
+}> = [
+  { valor: '51807', rotulo: 'id do extrato', ondeSeUsa: 'accountId= do extrato — este é o correto' },
+  {
+    valor: '1ac33d8a-f065-4b12-8ef9-0a878e718b34',
+    rotulo: 'accountRef do espelho (UUID)',
+    ondeSeUsa: 'tcr_mirror_accounts — não endereça o extrato',
+  },
+  {
+    valor: 'EDITION',
+    rotulo: 'alias do saldo',
+    ondeSeUsa: 'header x-corpx-account-context — não endereça o extrato',
+  },
+  {
+    valor: '61504259000164',
+    rotulo: 'CNPJ da empresa',
+    ondeSeUsa: 'cadastro — não endereça o extrato, e por ser numérico devolveria lista VAZIA sem erro',
+  },
+];
+
+/**
+ * Nome do header que endereça a conta no SALDO. Constante documental: quem monta
+ * a requisição de saldo é `consultarSaldoCorpX` (`services/corpx.ts`), que já
+ * envia este header. Fica registrado aqui para o leitor não confundir os dois
+ * vocabulários da mesma conta.
+ */
+export const HEADER_CONTEXTO_DE_CONTA = 'x-corpx-account-context';
+
+/**
+ * Conta dedicada do Edition — cliente TCR 4142.
+ *
+ * `idExtrato` é `51807`: é o valor gravado em `corpx_transactions.corpx_account_id`
+ * para as linhas desta conta. Os outros três campos existem para diagnóstico e
+ * para a cerca conseguir nomear o engano — nenhum deles vai para a query.
+ *
+ * `titular` e `vinculadoEm` estão VAZIOS de propósito: são dados que esta fase não
+ * mediu. Preencher com palpite seria pior do que deixar pendente — o titular
+ * bancário viraria "dono do dinheiro" aos olhos do suporte, e uma data de vínculo
+ * errada marcaria movimento do cliente como alheio (ou o contrário).
+ */
+export const CONTA_DEDICADA_CORPX: ContaDedicadaCorpX = {
+  idExtrato: '51807',
+  aliasSaldo: 'EDITION',
+  accountRefMirror: '1ac33d8a-f065-4b12-8ef9-0a878e718b34',
+  cnpj: '61504259000164',
+  nomeExibicao: 'EDITION LIMITED',
+  titular: { razaoSocial: '', numeroConta: '', agencia: '' },
+  vinculadoEm: '',
+};
+
+/** Erro de configuração ausente. Existe para o chamador não confundir com erro de rede. */
+export class ContaNaoConfiguradaError extends Error {
+  constructor(oQueFalta = 'A conta desta tela ainda não foi configurada.') {
+    super(`${oQueFalta} Fale com o suporte técnico para liberá-la.`);
+    this.name = 'ContaNaoConfiguradaError';
+    // Sem isto, `instanceof` quebra quando o TS compila para ES5.
+    Object.setPrototypeOf(this, ContaNaoConfiguradaError.prototype);
+  }
+}
+
+/**
+ * Erro de identificador errado — a cerca desta tela.
+ *
+ * Lança em vez de degradar: uma consulta com o identificador errado devolveria
+ * 400 (barulho) ou 200-com-lista-vazia (silêncio). É o segundo que precisa ser
+ * travado aqui, porque na tela ele é indistinguível de "conta sem movimento".
+ */
+export class IdentificadorDeExtratoInvalidoError extends Error {
+  readonly identificadorRecebido: string;
+
+  constructor(valor: string) {
+    const recebido = (valor ?? '').trim();
+    const conhecido = IDENTIFICADORES_CONHECIDOS_DA_CONTA.find(
+      (i) => i.valor.trim().toUpperCase() === recebido.toUpperCase(),
+    );
+    // O painel é interno, então a mensagem pode nomear o identificador para o
+    // operador entender o que houve. Nenhum segredo, tabela, env ou stack sai daqui.
+    const explicacao = conhecido
+      ? `O valor informado é o ${conhecido.rotulo} desta conta (${conhecido.ondeSeUsa}).`
+      : 'O valor informado não é um identificador de extrato reconhecido para esta conta.';
+    super(
+      `Extrato não consultado: o identificador da conta está errado. ${explicacao} ` +
+        'A consulta foi interrompida de propósito — com este valor o extrato voltaria vazio, ' +
+        'como se a conta não tivesse movimento. Fale com o suporte técnico.',
+    );
+    this.name = 'IdentificadorDeExtratoInvalidoError';
+    this.identificadorRecebido = recebido;
+    Object.setPrototypeOf(this, IdentificadorDeExtratoInvalidoError.prototype);
+  }
+}
+
+/**
+ * A CERCA. Devolve o id normalizado ou lança.
+ *
+ * Igualdade normalizada contra a allowlist — nunca substring, prefixo ou teste
+ * de formato.
+ */
+export function garantirIdentificadorDeExtrato(valor: string): string {
+  const id = (valor ?? '').trim();
+  if (!id) {
+    throw new ContaNaoConfiguradaError('A conta desta tela está sem identificador de extrato.');
+  }
+  if (!IDS_DE_EXTRATO_PERMITIDOS.includes(id)) {
+    throw new IdentificadorDeExtratoInvalidoError(id);
+  }
+  return id;
+}
+
+/**
+ * Alias do saldo, ou lança.
+ *
+ * PORQUÊ lançar em vez de seguir sem alias: `consultarSaldoCorpX` monta o header
+ * `x-corpx-account-context` com o que receber. Um alias vazio viraria um header
+ * vazio, e a rota responderia no contexto padrão do backend — ou seja, o saldo de
+ * OUTRA conta exibido sob o nome deste cliente.
+ */
+export function garantirAliasDeSaldo(conta: ContaDedicadaCorpX): string {
+  const alias = (conta?.aliasSaldo ?? '').trim();
+  if (!alias) {
+    throw new ContaNaoConfiguradaError('A conta desta tela está sem o identificador de saldo.');
+  }
+  return alias;
+}
+
+export function contaEstaConfigurada(conta: ContaDedicadaCorpX): boolean {
+  return (conta?.idExtrato ?? '').trim().length > 0;
+}
+
+/**
+ * Rótulo da tela. Identifica o CLIENTE.
+ *
+ * Nunca cai no titular bancário: ele não é o dono do saldo, e exibi-lo como
+ * título da tela faria o suporte atribuir o dinheiro à pessoa errada.
+ */
+export function rotuloConta(conta: ContaDedicadaCorpX): string {
+  const nome = (conta?.nomeExibicao ?? '').trim();
+  if (nome) return nome;
+  return contaEstaConfigurada(conta) ? 'Conta dedicada (cliente não identificado)' : 'Conta não configurada';
+}
+
+/** O titular bancário foi medido? Vazio = pendente, e a tela diz isso em vez de inventar. */
+export function titularEstaPendente(conta: ContaDedicadaCorpX): boolean {
+  return !(conta?.titular?.razaoSocial ?? '').trim();
+}
+
+/**
+ * A transação é anterior ao vínculo conta→cliente?
+ *
+ * Compara só a parte YYYY-MM-DD, em texto. PORQUÊ não fazer aritmética de data:
+ * o backend grava datas com deslocamentos manuais de fuso e o front trata o
+ * sufixo 'Z' como hora local. Comparar instantes daria uma precisão que o dado
+ * não tem.
+ *
+ * `vinculadoEm` vazio devolve sempre `false` — a marca fica DESLIGADA enquanto a
+ * data não for medida. Chutar a data marcaria movimento do cliente como alheio.
+ *
+ * O próprio dia do vínculo conta como NÃO anterior: é a fronteira ambígua, e
+ * marcar a favor do cliente evita acusar de alheio o que talvez seja dele.
+ */
+export function ehAnteriorAoVinculo(dataISO: string, vinculadoEm: string): boolean {
+  const corte = (vinculadoEm ?? '').trim();
+  const data = (dataISO ?? '').trim();
+  if (corte.length < 10 || data.length < 10) return false;
+  return data.slice(0, 10) < corte.slice(0, 10);
+}
+
+/**
+ * Filtros que a TELA oferece. Nomes do vocabulário da tela, traduzidos para o
+ * contrato da rota em `montarRequisicaoExtrato`.
+ *
+ * ⚠️ `accountId` está aqui só para espelhar o contrato da rota — ele é ACEITO E
+ * IGNORADO. Esta tela consulta UMA conta, e quem decide qual é a configuração.
+ */
+export interface FiltrosExtrato {
+  accountId?: string | number;
+  transactionType?: 'C' | 'D';
+  startDate?: string;
+  endDate?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  exactAmount?: number;
+  endToEnd?: string;
+  search?: string;
+  pixStatus?: string;
+  pixType?: string;
+  source?: string;
+  payerDocument?: string;
+  beneficiaryDocument?: string;
+  limit?: number;
+  offset?: number;
+  order?: 'asc' | 'desc';
+}
+
+/**
+ * Parâmetros que saem daqui para `GET /api/corpx/transactions`.
+ *
+ * Espelha `CorpXTransactionsParams` (`@/types/corpx`) sem importar o tipo — este
+ * arquivo não importa nada de propósito. `accountId` é OBRIGATÓRIO aqui, ao
+ * contrário do tipo da rota: numa tela de conta dedicada, requisição sem conta
+ * não é um caso válido.
+ */
+export interface ParametrosExtratoCorpX {
+  accountId: string;
+  transactionType?: 'C' | 'D';
+  startDate?: string;
+  endDate?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  exactAmount?: number;
+  endToEnd?: string;
+  search?: string;
+  pixStatus?: string;
+  pixType?: string;
+  source?: string;
+  payerDocument?: string;
+  beneficiaryDocument?: string;
+  limit?: number;
+  offset?: number;
+  order?: 'asc' | 'desc';
+}
+
+export interface RequisicaoExtrato {
+  params: ParametrosExtratoCorpX;
+}
+
+/** Teto de registros da rota `GET /api/corpx/transactions`. */
+export const LIMITE_MAXIMO_EXTRATO = 2000;
+
+/**
+ * Monta os parâmetros de `GET /api/corpx/transactions`.
+ *
+ * REGRA DE DINHEIRO — duas invariantes:
+ *
+ * 1. `accountId` é SEMPRE preenchido, e sempre pela conta configurada. Nunca
+ *    condicional a input: sem ele a rota responde no escopo que ela mesma
+ *    escolher, e o extrato de outra conta apareceria sob o nome deste cliente.
+ *    Por isso `filtros.accountId` é SOBRESCRITO, não mesclado — e o objeto é
+ *    montado campo a campo, nunca com `...filtros`, que deixaria uma chave
+ *    `accountId` do chamador vencer a da conta.
+ *
+ * 2. O id passa pela CERCA antes de virar consulta. Se a conta tiver sido
+ *    configurada com outro dos seus quatro identificadores, esta função LANÇA.
+ *    Não existe caminho em que ela devolva parâmetros que o backend responderia
+ *    com 200 e lista vazia.
+ */
+export function montarRequisicaoExtrato(
+  conta: ContaDedicadaCorpX,
+  filtros: FiltrosExtrato,
+): RequisicaoExtrato {
+  if (!contaEstaConfigurada(conta)) {
+    throw new ContaNaoConfiguradaError();
+  }
+
+  // A cerca vem ANTES de montar qualquer coisa: nada de requisição parcial.
+  const accountId = garantirIdentificadorDeExtrato(conta.idExtrato);
+
+  const params: ParametrosExtratoCorpX = { accountId };
+
+  if (filtros?.transactionType) params.transactionType = filtros.transactionType;
+  if (filtros?.startDate) params.startDate = filtros.startDate;
+  if (filtros?.endDate) params.endDate = filtros.endDate;
+  if (filtros?.exactAmount !== undefined) params.exactAmount = filtros.exactAmount;
+  if (filtros?.minAmount !== undefined) params.minAmount = filtros.minAmount;
+  if (filtros?.maxAmount !== undefined) params.maxAmount = filtros.maxAmount;
+  if (filtros?.endToEnd) params.endToEnd = filtros.endToEnd.trim();
+  if (filtros?.search) params.search = filtros.search.trim();
+  if (filtros?.pixStatus) params.pixStatus = filtros.pixStatus;
+  if (filtros?.pixType) params.pixType = filtros.pixType;
+  if (filtros?.source) params.source = filtros.source;
+  if (filtros?.payerDocument) params.payerDocument = filtros.payerDocument;
+  if (filtros?.beneficiaryDocument) params.beneficiaryDocument = filtros.beneficiaryDocument;
+  if (filtros?.order) params.order = filtros.order;
+  if (filtros?.limit !== undefined) {
+    params.limit = Math.min(Math.max(1, Math.trunc(filtros.limit)), LIMITE_MAXIMO_EXTRATO);
+  }
+  if (filtros?.offset !== undefined) params.offset = Math.max(0, Math.trunc(filtros.offset));
+
+  return { params };
+}
+
+/**
+ * Saldo da conta dedicada, como união discriminada.
+ *
+ * PORQUÊ não `number`: falha de saldo tem que ser um ESTADO, não um zero.
+ * `consultarSaldoCorpX` (`services/corpx.ts`) NUNCA lança — em qualquer falha ela
+ * devolve `{ erro: true, saldo: 0, saldoDisponivel: 0, ... }`. Ler esse objeto sem
+ * olhar o `erro` renderiza "R$ 0,00" como se fosse saldo real. Numa tela de
+ * dinheiro, número errado é pior do que falha visível.
+ */
+export type ResultadoSaldo =
+  | { status: 'indisponivel'; motivo: string }
+  | { status: 'ok'; disponivelCentavos: number; bloqueadoCentavos: number; totalCentavos: number };
+
+/**
+ * Constrói o estado de indisponibilidade. Existe para o chamador não ter como
+ * inventar um `{ status: 'ok', ...: 0 }` no catch.
+ */
+export function obterSaldoIndisponivel(motivo: string): ResultadoSaldo {
+  return {
+    status: 'indisponivel',
+    motivo: (motivo ?? '').trim() || 'Não foi possível obter o saldo desta conta.',
+  };
+}
+
+/**
+ * Traduz a resposta de `consultarSaldoCorpX` para o estado da tela.
+ *
+ * É AQUI que o zero armado é desarmado. Três caminhos viram indisponibilidade:
+ *  - `null` (a consulta foi abortada);
+ *  - `erro === true` (o catch da função devolveu o objeto todo zerado);
+ *  - campo numérico ausente/NaN (resposta em formato inesperado).
+ * Só um payload com números de verdade vira `status: 'ok'`.
+ *
+ * Recebe `unknown` de propósito: o tipo não importa a origem, e assim continua
+ * verificável isolado.
+ */
+export function interpretarSaldoCorpX(resposta: unknown): ResultadoSaldo {
+  if (resposta === null || resposta === undefined) {
+    return obterSaldoIndisponivel('A consulta de saldo não foi concluída.');
+  }
+
+  const r = resposta as {
+    erro?: boolean;
+    saldo?: unknown;
+    saldoDisponivel?: unknown;
+    saldoBloqueado?: unknown;
+  };
+
+  if (r.erro === true) {
+    // Os zeros que vêm junto são placeholder do catch, não saldo. Nunca exibi-los.
+    return obterSaldoIndisponivel('Não foi possível obter o saldo desta conta.');
+  }
+
+  const emCentavos = (v: unknown): number | null => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+    return Math.round(v * 100);
+  };
+
+  const disponivel = emCentavos(r.saldoDisponivel);
+  const bloqueado = emCentavos(r.saldoBloqueado);
+  const total = emCentavos(r.saldo);
+
+  if (disponivel === null || bloqueado === null || total === null) {
+    return obterSaldoIndisponivel('O saldo veio em um formato que a tela não reconhece.');
+  }
+
+  return {
+    status: 'ok',
+    disponivelCentavos: disponivel,
+    bloqueadoCentavos: bloqueado,
+    totalCentavos: total,
+  };
+}
+
+/** Campos da transação usados para identificar a compensação. */
+export interface TransacaoParaCompensacao {
+  /** `id` da linha em `corpx_transactions`. */
+  id: number | string;
+  /** Identificador da transação na CorpX (`nrMovimento`, quando houver). */
+  transactionId: string;
+  /** `end_to_end_id`; string vazia quando o banco gravou NULL. */
+  endToEndId: string;
+}
+
+export interface IdentificacaoCompensacao {
+  /** Vai no campo `id` do MovimentoExtrato. */
+  id: string;
+  /** Vai no campo `code` — vira `id_transacao` na compensação. */
+  code: string;
+  /** Libera Devolver/Bloquear PIX no modal. */
+  permitirAcoesPix: boolean;
+}
+
+/**
+ * Identificação da compensação.
+ *
+ * Devolver/bloquear PIX só fazem sentido com E2E REAL. Sem ele, qualquer outro
+ * identificador colocado em `code` seria postado ao PIX como se fosse um E2E — e
+ * o PIX não o reconhece. Por isso `code` fica vazio e as ações ficam bloqueadas,
+ * em vez de mandar um id qualquer e deixar o provider decidir.
+ */
+export function montarIdentificacaoCompensacao(
+  tx: TransacaoParaCompensacao,
+): IdentificacaoCompensacao {
+  const e2e = (tx?.endToEndId ?? '').trim();
+  const transactionId = (tx?.transactionId ?? '').trim();
+
+  return {
+    id: transactionId || String(tx?.id ?? ''),
+    code: e2e,
+    permitirAcoesPix: !!e2e,
+  };
+}

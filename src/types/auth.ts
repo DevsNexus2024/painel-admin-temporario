@@ -291,6 +291,7 @@ export const ROUTE_PERMISSIONS: Record<string, RoutePermissions> = {
   '/grupo-tcr/tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user', 'otc_user'] },
   '/brasilcash-tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
   '/brasilcash-conta-dedicada': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
+  '/corpx-conta-dedicada': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
   '/ntx-tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
   '/brasilcash-otc': { allowedRoles: ['super_admin', 'admin', 'otc_user'] },
   '/belmontx-tcr': { allowedRoles: ['super_admin', 'admin', 'tcr_user'] },
