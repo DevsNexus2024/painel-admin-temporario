@@ -40,6 +40,7 @@ import {
   titularEstaPendente,
   ehAnteriorAoVinculo,
   montarIdentificacaoCompensacao,
+  normalizarLinha,
   type ContaDedicadaCorpX,
 } from './corpx-conta-dedicada-config';
 
@@ -318,6 +319,121 @@ ok('com E2E, ações PIX liberadas', comE2E.permitirAcoesPix === true);
 const semE2E = montarIdentificacaoCompensacao({ id: 11, transactionId: 'tx-def', endToEndId: '' });
 ok('sem E2E, ações PIX bloqueadas', semE2E.permitirAcoesPix === false);
 ok('sem E2E, o code não vira um id que o PIX não reconhece', semE2E.code === '');
+
+// ---------------------------------------------------------------------------
+console.log('\n== 9. CONTRATO DA ROTA — o extrato real, campo a campo ==\n');
+
+/**
+ * 🔴 FIXTURE COM O FORMATO REAL DA RESPOSTA de GET /api/corpx/transactions.
+ *
+ * Não é inventado: os nomes vêm do modelo Prisma `CorpXTransaction`
+ * (BaaS-W3Build/prisma/schema.prisma:931-970), que `listTransactions`
+ * (corpx.service.ts:1315-1343) devolve com `...rest` — ou seja, os campos do
+ * modelo, mais `transactionDatetimeUtc`, `transactionDatetime`
+ * (America/Sao_Paulo), `transactionDate`, `createdAt`, `updatedAt` e
+ * `corpxAccount`.
+ *
+ * O campo do E2E chama-se `endToEnd`. NÃO existe `endToEndId` na resposta — esse
+ * é o nome do molde BrasilCash, e era o que a tela lia. O tipo compartilhado
+ * `CorpXTransactionItem` (src/types/corpx.ts:54) também declara `endToEndId`, e
+ * como a interface tem `[key: string]: any` (linha 64) o TypeScript aceita a
+ * leitura errada em silêncio — por isso o `tsc` ficava verde com a tela quebrada.
+ */
+const RESPOSTA_REAL_DA_ROTA = {
+  id: 123,
+  corpx_account_id: 51807,
+  nrMovimento: '73356f12-d70a-452a-983e-9db121979d29',
+  endToEnd: 'E18236120202509052003s01c86b276a',
+  transactionDatetime: '2025-09-05T15:03:15-03:00',
+  transactionDatetimeUtc: '2025-09-05T18:03:15.000Z',
+  transactionDate: '2025-09-05',
+  description: 'TRANS RECEBIDA PIX - Diogo Palomares Rufino',
+  amount: '10.00000000',
+  transactionType: 'C',
+  balanceAfter: '44532.85000000',
+  payerDocument: '07037637920',
+  payerName: 'Diogo Palomares Rufino',
+  beneficiaryDocument: '61504259000164',
+  beneficiaryName: 'EDITION LIMITED',
+  source: 'STATEMENT',
+  pixStatus: null,
+  pixType: null,
+};
+
+const linha = normalizarLinha(RESPOSTA_REAL_DA_ROTA as never);
+
+// (a) o E2E é extraído do campo do CONTRATO
+ok(
+  'extrai o E2E do campo `endToEnd` do contrato',
+  linha.endToEndId === 'E18236120202509052003s01c86b276a',
+  `endToEndId=${JSON.stringify(linha.endToEndId)}`,
+);
+
+// (b) a condição que dispara o lookup do usuário (`if (tx.endToEndId)`) fica verdadeira
+ok(
+  'a condição que dispara verificarTransacaoTCR fica VERDADEIRA',
+  !!linha.endToEndId,
+  linha.endToEndId ? 'lookup do id_usuario acontece' : 'lookup NUNCA acontece — modal abre sem usuário',
+);
+
+// (c) as ações de PIX ficam liberadas
+const idComE2eReal = montarIdentificacaoCompensacao({
+  id: linha.id,
+  transactionId: linha.transactionId,
+  endToEndId: linha.endToEndId,
+});
+ok(
+  'permitirAcoesPix fica VERDADEIRO (a seção "Ações sobre este PIX" renderiza)',
+  idComE2eReal.permitirAcoesPix === true,
+  `permitirAcoesPix=${idComE2eReal.permitirAcoesPix}`,
+);
+ok(
+  'o code da compensação é o E2E real, não vazio',
+  idComE2eReal.code === 'E18236120202509052003s01c86b276a',
+  `code=${JSON.stringify(idComE2eReal.code)}`,
+);
+
+// Os demais campos do contrato que a tela lê
+ok('nrMovimento vira transactionId', linha.transactionId === '73356f12-d70a-452a-983e-9db121979d29');
+ok('transactionType C vira direcao C', linha.direcao === 'C');
+ok('amount string vira número', linha.amount === 10, `amount=${linha.amount}`);
+ok('payerName vira contraparte na ENTRADA', linha.contraparteNome === 'Diogo Palomares Rufino');
+ok('payerDocument vira documento da contraparte na ENTRADA', linha.contraparteDocumento === '07037637920');
+ok('transactionDatetime vira a data da linha', linha.createdAt === '2025-09-05T15:03:15-03:00');
+ok('source é lido', linha.source === 'STATEMENT');
+ok('pixStatus null não vira a string "null"', linha.status === '', `status=${JSON.stringify(linha.status)}`);
+
+// Saída (débito): a contraparte é o beneficiário.
+const linhaDebito = normalizarLinha({ ...RESPOSTA_REAL_DA_ROTA, transactionType: 'D' } as never);
+ok('na SAÍDA a contraparte é o beneficiário', linhaDebito.contraparteNome === 'EDITION LIMITED');
+ok('na SAÍDA o documento é o do beneficiário', linhaDebito.contraparteDocumento === '61504259000164');
+
+// Tolerância ao nome do molde: se algum caminho ainda entregar `endToEndId`, a
+// linha continua funcionando. Aceitar o contrato NÃO pode quebrar o legado.
+const linhaMolde = normalizarLinha({
+  id: 9,
+  nrMovimento: 'nr-9',
+  endToEndId: 'E00000000202509052003s01c86b276a',
+  transactionType: 'C',
+  amount: '5.00',
+} as never);
+ok(
+  'ainda aceita `endToEndId` (nome do molde) quando `endToEnd` não vier',
+  linhaMolde.endToEndId === 'E00000000202509052003s01c86b276a',
+  `endToEndId=${JSON.stringify(linhaMolde.endToEndId)}`,
+);
+
+// Sem E2E nenhum: continua vazio, e as ações de PIX seguem bloqueadas.
+const linhaSemE2E = normalizarLinha({ id: 7, nrMovimento: 'nr-7', transactionType: 'C', amount: '1.00' } as never);
+ok('sem E2E em nenhum nome, fica vazio', linhaSemE2E.endToEndId === '');
+ok(
+  'sem E2E, as ações de PIX seguem bloqueadas',
+  montarIdentificacaoCompensacao({
+    id: linhaSemE2E.id,
+    transactionId: linhaSemE2E.transactionId,
+    endToEndId: linhaSemE2E.endToEndId,
+  }).permitirAcoesPix === false,
+);
 
 // ---------------------------------------------------------------------------
 console.log(`\n===== ${passes} PASS · ${falhas} FAIL =====\n`);

@@ -443,6 +443,105 @@ export function interpretarSaldoCorpX(resposta: unknown): ResultadoSaldo {
   };
 }
 
+/**
+ * Linha do extrato já normalizada para a tabela.
+ *
+ * PORQUÊ mora aqui e não dentro do componente: `normalizarLinha` é a tradução do
+ * CONTRATO da rota para o que a tela exibe. Errar um nome de campo aqui não dá
+ * erro de compilação — `CorpXTransactionItem` (`src/types/corpx.ts:64`) tem
+ * `[key: string]: any`, então QUALQUER nome é aceito e devolve `undefined`. Foi
+ * exatamente assim que o E2E sumiu da tela em produção. Uma regra que falha em
+ * silêncio precisa ser verificável isolada, e neste módulo ela é.
+ */
+export interface LinhaExtrato {
+  id: string;
+  createdAt: string;
+  amount: number;
+  /** 'C' = entrada na conta do cliente; 'D' = saída. */
+  direcao: 'C' | 'D';
+  contraparteNome: string;
+  contraparteDocumento: string;
+  endToEndId: string;
+  transactionId: string;
+  descricao: string;
+  status: string;
+  pixType: string;
+  source: string;
+  original: TransacaoBrutaCorpX;
+}
+
+/**
+ * A linha COMO A ROTA DEVOLVE. Estrutural, sem importar o tipo compartilhado —
+ * este módulo não importa nada de propósito.
+ *
+ * Os nomes vêm do modelo Prisma `CorpXTransaction`, que `listTransactions`
+ * devolve com `...rest`. Note `endToEnd` — sem sufixo `Id`.
+ */
+export interface TransacaoBrutaCorpX {
+  id?: number | string;
+  nrMovimento?: string;
+  /** Nome do CONTRATO. */
+  endToEnd?: string;
+  /** Nome do molde BrasilCash. Tolerado na leitura, não é o do contrato. */
+  endToEndId?: string;
+  transactionDatetime?: string;
+  transactionDatetimeUtc?: string;
+  transactionDate?: string;
+  description?: string;
+  amount?: string | number;
+  transactionType?: string;
+  payerName?: string;
+  payerDocument?: string;
+  beneficiaryName?: string;
+  beneficiaryDocument?: string;
+  source?: string;
+  pixStatus?: string | null;
+  pixType?: string | null;
+  corpx_account_id?: number | string | null;
+  [chave: string]: unknown;
+}
+
+/** `amount` chega como string da rota; valor não-numérico vira 0. */
+export function paraNumero(valor: unknown): number {
+  const n = typeof valor === 'number' ? valor : parseFloat(String(valor ?? '').replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Traduz a linha da rota para a linha da tabela. */
+export function normalizarLinha(tx: TransacaoBrutaCorpX): LinhaExtrato {
+  const direcao: 'C' | 'D' = tx.transactionType === 'D' ? 'D' : 'C';
+  // Numa entrada, a contraparte é quem pagou; numa saída, quem recebeu.
+  const contraparteNome = (direcao === 'C' ? tx.payerName : tx.beneficiaryName) || '';
+  const contraparteDocumento = (direcao === 'C' ? tx.payerDocument : tx.beneficiaryDocument) || '';
+
+  // 🔴 O CONTRATO CHAMA ESTE CAMPO DE `endToEnd`, SEM SUFIXO.
+  // `endToEndId` é o nome do molde BrasilCash. Ler só o nome do molde deixou a
+  // tela sem E2E em produção: coluna com "-", lookup do id_usuario nunca
+  // disparado, e a seção "Ações sobre este PIX" sem renderizar — tudo em
+  // silêncio, porque `[key: string]: any` no tipo compartilhado aceita qualquer
+  // nome e devolve `undefined`.
+  //
+  // `||` e não `??`: um E2E vazio é o mesmo caso que E2E ausente, e deve cair
+  // para a alternativa em vez de parar num `''`.
+  const endToEnd = String(tx.endToEnd || tx.endToEndId || '');
+
+  return {
+    id: String(tx.id ?? tx.nrMovimento ?? endToEnd ?? ''),
+    createdAt: String(tx.transactionDatetime ?? tx.transactionDatetimeUtc ?? tx.transactionDate ?? ''),
+    amount: Math.abs(paraNumero(tx.amount)),
+    direcao,
+    contraparteNome,
+    contraparteDocumento,
+    endToEndId: endToEnd,
+    transactionId: String(tx.nrMovimento ?? ''),
+    descricao: String(tx.description ?? ''),
+    status: String(tx.pixStatus ?? ''),
+    pixType: String(tx.pixType ?? ''),
+    source: String(tx.source ?? ''),
+    original: tx,
+  };
+}
+
 /** Campos da transação usados para identificar a compensação. */
 export interface TransacaoParaCompensacao {
   /** `id` da linha em `corpx_transactions`. */

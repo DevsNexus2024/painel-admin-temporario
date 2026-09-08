@@ -39,58 +39,13 @@ import {
   ehAnteriorAoVinculo,
   montarIdentificacaoCompensacao,
   buscarTransacoesContaDedicada,
+  normalizarLinha,
   LIMITE_MAXIMO_EXTRATO,
   type FiltrosExtrato,
+  type LinhaExtrato,
 } from "@/services/corpx-conta-dedicada";
 
 const CONTA = CONTA_DEDICADA_CORPX;
-
-/** Linha do extrato já normalizada para a tabela. */
-interface LinhaExtrato {
-  id: string;
-  createdAt: string;
-  amount: number;
-  /** 'C' = entrada na conta do cliente; 'D' = saída. */
-  direcao: 'C' | 'D';
-  contraparteNome: string;
-  contraparteDocumento: string;
-  endToEndId: string;
-  transactionId: string;
-  descricao: string;
-  status: string;
-  pixType: string;
-  source: string;
-  original: CorpXTransactionItem;
-}
-
-/** `amount` chega como string da rota; valor não-numérico vira 0 e é sinalizado na linha. */
-function paraNumero(valor: unknown): number {
-  const n = typeof valor === 'number' ? valor : parseFloat(String(valor ?? '').replace(',', '.'));
-  return Number.isFinite(n) ? n : 0;
-}
-
-function normalizarLinha(tx: CorpXTransactionItem): LinhaExtrato {
-  const direcao: 'C' | 'D' = tx.transactionType === 'D' ? 'D' : 'C';
-  // Numa entrada, a contraparte é quem pagou; numa saída, quem recebeu.
-  const contraparteNome = (direcao === 'C' ? tx.payerName : tx.beneficiaryName) || '';
-  const contraparteDocumento = (direcao === 'C' ? tx.payerDocument : tx.beneficiaryDocument) || '';
-
-  return {
-    id: String(tx.id ?? tx.nrMovimento ?? tx.endToEndId ?? ''),
-    createdAt: String(tx.transactionDatetime ?? tx.transactionDatetimeUtc ?? tx.transactionDate ?? ''),
-    amount: Math.abs(paraNumero(tx.amount)),
-    direcao,
-    contraparteNome,
-    contraparteDocumento,
-    endToEndId: String(tx.endToEndId ?? ''),
-    transactionId: String(tx.nrMovimento ?? ''),
-    descricao: String(tx.description ?? ''),
-    status: String(tx.pixStatus ?? ''),
-    pixType: String(tx.pixType ?? ''),
-    source: String(tx.source ?? ''),
-    original: tx,
-  };
-}
 
 function formatarBRL(valor: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
