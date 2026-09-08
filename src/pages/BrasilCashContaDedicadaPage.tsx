@@ -10,10 +10,12 @@ import ExtractTabBrasilCashContaDedicada from "@/components/ExtractTabBrasilCash
  *
  * Diferenças deliberadas em relação à tela TCR, todas por segurança de dinheiro:
  *  - sem aba "Ações PIX": esta tela é de leitura (extrato) + compensação;
- *  - sem "Sincronizar": o backend não endereça esta conta no sync (ver comentário
- *    em ExtractTabBrasilCashContaDedicada);
+ *  - "Sincronizar Extrato" existe, mas com o alvo FIXO na conta desta tela: o
+ *    operador escolhe o período, nunca a conta (ver `handleSincronizar` em
+ *    ExtractTabBrasilCashContaDedicada);
  *  - sem MoneyRainEffect/WebSocket: o socket disponível é da TCR;
- *  - saldo em falha visível: não há caminho para endereçá-lo hoje.
+ *  - saldo endereçado pelo `x-account-id` da conta (a conta decide a credencial
+ *    no backend); em falha, a tela mostra a falha — nunca R$ 0,00.
  */
 export default function BrasilCashContaDedicadaPage() {
   return (

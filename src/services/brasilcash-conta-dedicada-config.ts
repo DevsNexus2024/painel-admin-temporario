@@ -175,35 +175,196 @@ export function montarRequisicaoExtrato(
 }
 
 /**
- * Saldo da conta dedicada.
+ * Saldo da conta dedicada — `GET /api/brasilcash/account/me/balance`.
  *
- * NÃO HÁ CAMINHO hoje — medido no backend em 2026-08-27, os três eixos estão fechados:
- *  - `x-otc-id` com valor novo → o switch de credenciais é fechado
- *    (DEFAULT/7802755/1715917/TTF/RXP) e lança;
- *  - `x-otc-id: BCTCR:<slot>` → barrado pelo regex do header (o ':' não passa);
- *  - `X-Account-Id` → o serviço HTTP de BaaS APAGA o header justamente no caminho
- *    que precisaria dele, e a checagem de identidade é pulada quando o header
- *    existe. Resultado: devolveria o saldo da conta-mãe (TCR) em silêncio.
+ * CAMINHO (backend desde 2026-09-04, `brasilcash-account.controller.ts`,
+ * `enderecar()`): a rota recebe o `x-account-id` e resolve a credencial POR
+ * DENTRO — conta vinculada de credencial própria (tcr_mirror_accounts, OWN) é
+ * lida com a chave sintética `BCTCR:<account_ref>`, sem X-Account-Id, e a
+ * resposta é conferida contra a conta pedida. Qualquer `x-otc-id` é ignorado
+ * nesse caso; por isso ele NÃO é enviado aqui — não há como o header apontar
+ * para outra conta.
  *
- * Por isso esta função devolve indisponibilidade em vez de um número. É o ponto
- * de integração para quando houver caminho: trocar o corpo daqui e o card passa
- * a exibir valor. Nunca devolver 0 — zero é um número, e número errado em tela
- * de dinheiro é pior do que falha visível.
+ * O que continua verdade: nunca devolver 0 no lugar de falha. Zero é um número,
+ * e número errado em tela de dinheiro é pior do que falha visível. Por isso a
+ * interpretação da resposta (`interpretarSaldoBrasilCash`) só produz `ok` com
+ * inteiros vindos do provider; qualquer outra coisa é indisponibilidade.
  */
 export type ResultadoSaldo =
   | { status: 'indisponivel'; motivo: string }
   | { status: 'ok'; disponivelCentavos: number; bloqueadoCentavos: number; futuroCentavos: number };
 
-export function obterSaldoContaDedicada(conta: ContaDedicada): ResultadoSaldo {
-  if (!contaEstaConfigurada(conta)) {
-    return {
-      status: 'indisponivel',
-      motivo: 'A conta desta tela ainda não foi configurada.',
-    };
-  }
+export function obterSaldoIndisponivel(motivo: string): ResultadoSaldo {
+  const texto = (motivo ?? '').trim();
   return {
     status: 'indisponivel',
-    motivo: 'Não foi possível obter o saldo desta conta.',
+    motivo: texto || 'Não foi possível obter o saldo desta conta.',
+  };
+}
+
+export interface RequisicaoSaldo {
+  headers: Record<string, string>;
+}
+
+/**
+ * Headers de `GET /api/brasilcash/account/me/balance`. Só `x-account-id`: a
+ * conta decide a credencial no backend. Lança se a conta não estiver
+ * configurada — sem `x-account-id` a rota devolve o saldo da conta DEFAULT (TCR).
+ */
+export function montarRequisicaoSaldo(conta: ContaDedicada): RequisicaoSaldo {
+  if (!contaEstaConfigurada(conta)) {
+    throw new ContaNaoConfiguradaError();
+  }
+  return { headers: { 'x-account-id': conta.referenciaConta.trim() } };
+}
+
+/**
+ * Interpreta a resposta do saldo. A rota devolve `{ available, blocked, future }`
+ * em CENTAVOS (int64, cada um "pode ser null" pela doc do provider).
+ *
+ * REGRA: `available` nulo ou não inteiro = indisponível (não há saldo a exibir).
+ * `blocked`/`future` nulos viram 0 — são parcelas, e "sem bloqueio" é um zero
+ * legítimo; mas um valor presente e não inteiro também derruba o resultado,
+ * porque um número quebrado ao lado de um certo passa por saldo real.
+ */
+export function interpretarSaldoBrasilCash(resposta: unknown): ResultadoSaldo {
+  if (!resposta || typeof resposta !== 'object') {
+    return obterSaldoIndisponivel('O serviço não devolveu o saldo desta conta.');
+  }
+  const r = resposta as Record<string, unknown>;
+  const disponivel = r.available;
+  if (typeof disponivel !== 'number' || !Number.isInteger(disponivel)) {
+    return obterSaldoIndisponivel('O serviço não devolveu o saldo disponível desta conta.');
+  }
+  const parcela = (v: unknown): number | null => {
+    if (v === null || v === undefined) return 0;
+    return typeof v === 'number' && Number.isInteger(v) ? v : null;
+  };
+  const bloqueado = parcela(r.blocked);
+  const futuro = parcela(r.future);
+  if (bloqueado === null || futuro === null) {
+    return obterSaldoIndisponivel('O serviço devolveu um saldo em formato inesperado.');
+  }
+  return {
+    status: 'ok',
+    disponivelCentavos: disponivel,
+    bloqueadoCentavos: bloqueado,
+    futuroCentavos: futuro,
+  };
+}
+
+// ─── Sincronização do extrato ────────────────────────────────────────────────
+
+/** Período que a TELA oferece, em ISO `YYYY-MM-DD`. */
+export interface PeriodoSync {
+  startDate: string;
+  endDate: string;
+}
+
+export class PeriodoDeSyncInvalidoError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PeriodoDeSyncInvalidoError';
+    Object.setPrototypeOf(this, PeriodoDeSyncInvalidoError.prototype);
+  }
+}
+
+/** Corpo de `POST /api/brasilcash/transactions/sync`. Espelha `SyncStatementDto`. */
+export interface CorpoSyncBrasilCash {
+  startDate: string;
+  endDate: string;
+}
+
+export interface RequisicaoSync {
+  body: CorpoSyncBrasilCash;
+  headers: Record<string, string>;
+}
+
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Monta `POST /api/brasilcash/transactions/sync` para a conta desta tela.
+ *
+ * REGRA DE DINHEIRO — o sync ESCREVE (`brasilcash_transactions`), então o alvo
+ * não pode ser escolhido pelo operador:
+ *
+ * 1. A conta vai SEMPRE em `x-account-id`, lida da config. A assinatura não
+ *    aceita conta: o operador escolhe o PERÍODO, nunca a CONTA.
+ * 2. `x-otc-id` NÃO é enviado. No backend a conta vinculada decide a credencial
+ *    (`BCTCR:<account_ref>`) e a guarda de extrato cruzado recusa qualquer
+ *    credencial que leia outra conta — mandar o header só abriria margem para
+ *    apontar a credencial errada.
+ * 3. A cerca de conta roda ANTES da validação de janela: conta não configurada
+ *    não vira requisição, nem parcial.
+ */
+export function montarRequisicaoSync(conta: ContaDedicada, periodo: PeriodoSync): RequisicaoSync {
+  if (!contaEstaConfigurada(conta)) {
+    throw new ContaNaoConfiguradaError();
+  }
+
+  const startDate = (periodo?.startDate ?? '').trim();
+  const endDate = (periodo?.endDate ?? '').trim();
+
+  if (!startDate || !endDate) {
+    throw new PeriodoDeSyncInvalidoError('Informe a data inicial e a data final do período que deseja sincronizar.');
+  }
+  if (!DATA_ISO.test(startDate) || !DATA_ISO.test(endDate)) {
+    throw new PeriodoDeSyncInvalidoError('As datas do período precisam ser dias válidos do calendário.');
+  }
+  // Comparação textual: em ISO `YYYY-MM-DD` a ordem alfabética é a cronológica,
+  // e assim a regra não depende de fuso — o mesmo motivo de `ehAnteriorAoVinculo`.
+  if (startDate > endDate) {
+    throw new PeriodoDeSyncInvalidoError('A data inicial não pode ser posterior à data final.');
+  }
+
+  return {
+    body: { startDate, endDate },
+    headers: { 'x-account-id': conta.referenciaConta.trim() },
+  };
+}
+
+/**
+ * Traduz o erro do sync para uma frase de operador. O detalhe técnico fica no
+ * console; a tela recebe a frase — sem corpo de resposta, status ou tabela.
+ */
+export function traduzirErroDeSync(erro: unknown): string {
+  if (erro instanceof PeriodoDeSyncInvalidoError || erro instanceof ContaNaoConfiguradaError) {
+    return erro.message;
+  }
+
+  const bruto = erro instanceof Error ? erro.message : String(erro ?? '');
+
+  if (/sess(ã|a)o expirou|token/i.test(bruto)) {
+    return 'Sua sessão expirou. Entre novamente para sincronizar o extrato.';
+  }
+
+  const status = Number(/status:\s*(\d{3})/.exec(bruto)?.[1] ?? 0);
+  if (status === 400 || status === 422) {
+    return 'O período informado não foi aceito pelo serviço. Revise as datas e tente novamente.';
+  }
+  if (status === 401) return 'Sua sessão expirou. Entre novamente para sincronizar o extrato.';
+  if (status === 403) return 'Você não tem permissão para sincronizar o extrato desta conta.';
+  if (status === 404) return 'O serviço de sincronização não foi encontrado. Fale com o suporte técnico.';
+  if (status === 409) {
+    return 'Esta conta ainda não está pronta para sincronizar. Fale com o suporte técnico.';
+  }
+  if (status === 429) {
+    return 'Muitas sincronizações seguidas. Aguarde alguns instantes e tente novamente.';
+  }
+  if (status >= 500) {
+    return 'O serviço de sincronização está indisponível no momento. Tente novamente em instantes.';
+  }
+  return 'Não foi possível sincronizar o extrato desta conta. Tente novamente em alguns instantes.';
+}
+
+/** Resultado de `POST /api/brasilcash/transactions/sync` (só o que a tela usa). */
+export interface ResultadoSync {
+  success: boolean;
+  statistics?: {
+    created?: number;
+    skipped?: number;
+    feeTransactions?: number;
+    errors?: number;
   };
 }
 

@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshCcw, Loader2, CheckCircle, AlertCircle, FileText, Banknote, Lock, ArrowDownCircle, ArrowUpCircle, AlertTriangle } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   CONTA_DEDICADA_BRASILCASH,
   contaEstaConfigurada,
@@ -18,10 +18,12 @@ const CONTA = CONTA_DEDICADA_BRASILCASH;
  * PORQUÊ não reusa `TopBarBrasilCashTcr`: aquele componente escreve o saldo
  * recebido pelo WebSocket da TCR (`newBalance`) por cima do estado. Numa conta de
  * cliente isso exibiria o saldo da TCR sob o nome do cliente — exatamente o que
- * esta tela não pode fazer. Aqui não há WebSocket e não há caminho de saldo.
+ * esta tela não pode fazer. Aqui não há WebSocket: o saldo vem de
+ * `GET /api/brasilcash/account/me/balance` endereçado pelo `x-account-id` da
+ * conta desta tela (a conta decide a credencial no backend).
  *
- * PORQUÊ o saldo é uma união discriminada e não `number`: enquanto não houver
- * como endereçar o saldo desta conta, NÃO existe número a exibir. Guardar 0 no
+ * PORQUÊ o saldo é uma união discriminada e não `number`: `obterSaldoContaDedicada`
+ * nunca lança — toda falha vira `{ status: 'indisponivel' }`. Guardar 0 no
  * estado — como faz a TopBar da OTC no catch — deixa um zero armado atrás de um
  * `if`; qualquer mudança no render passaria a mostrar "R$ 0,00" como se fosse
  * saldo real. O estado de falha É o estado.
@@ -32,17 +34,25 @@ export default function TopBarBrasilCashContaDedicada() {
     motivo: 'Consultando…',
   });
   const [isLoading, setIsLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const configurada = contaEstaConfigurada(CONTA);
 
-  const consultarSaldo = useCallback(() => {
+  const consultarSaldo = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setIsLoading(true);
-    setSaldo(obterSaldoContaDedicada(CONTA));
+    const resultado = await obterSaldoContaDedicada(CONTA, { signal: controller.signal });
+    if (controller.signal.aborted) return;
+    setSaldo(resultado);
     setIsLoading(false);
   }, []);
 
   useEffect(() => {
-    consultarSaldo();
+    void consultarSaldo();
+    return () => abortRef.current?.abort();
   }, [consultarSaldo]);
 
   const formatarBRL = (centavos: number) =>
@@ -142,7 +152,7 @@ export default function TopBarBrasilCashContaDedicada() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={consultarSaldo}
+            onClick={() => void consultarSaldo()}
             disabled={isLoading}
             className="hover:bg-muted rounded-xl"
           >

@@ -7,6 +7,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Search, Download, ArrowUpCircle, ArrowDownCircle, Loader2, FileText, Check, X, RefreshCcw, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Copy, Calendar as CalendarIcon, CheckCircle, Filter, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -22,6 +32,7 @@ import {
   ehAnteriorAoVinculo,
   montarIdentificacaoCompensacao,
   buscarTransacoesContaDedicada,
+  sincronizarExtratoContaDedicada,
   type FiltrosExtrato,
 } from "@/services/brasilcash-conta-dedicada";
 import { TCRVerificacaoService } from "@/services/tcrVerificacao";
@@ -38,6 +49,13 @@ export default function ExtractTabBrasilCashContaDedicada() {
   const [transactions, setTransactions] = useState<BrasilCashTransactionDB[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sincronização — só o PERÍODO é escolhido aqui. A conta é fixa e sai da
+  // config; não há estado nenhum para conta, de propósito.
+  const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStartDate, setSyncStartDate] = useState<Date | null>(null);
+  const [syncEndDate, setSyncEndDate] = useState<Date | null>(null);
   const [recordsPerPage, setRecordsPerPage] = useState(2000); // Usar limite máximo da API
   const [pagination, setPagination] = useState({
     total: 0,
@@ -708,16 +726,73 @@ export default function ExtractTabBrasilCashContaDedicada() {
     setSelectedCompensationRecord(null);
   };
 
-  // NÃO existe "Sincronizar" nesta tela — de propósito.
-  //
-  // `POST /api/brasilcash/transactions/sync` endereça a conta por X-Account-Id.
-  // No backend, `syncStatement` → `listTransactions(query, xAccountId, otcId)`
-  // cai em `useBaaS = xAccountId && otcId === 'DEFAULT'`, e o serviço HTTP de
-  // BaaS APAGA o header X-Account-Id. A chamada volta com o extrato da CONTA-MÃE,
-  // e `processTransaction` grava esses lançamentos atribuídos à conta resolvida
-  // pelo xAccountId — ou seja, transações da TCR entrariam no extrato desta conta.
-  // Na tela /brasilcash-tcr isso não aparece porque lá a conta-mãe É a TCR.
-  // Enquanto o backend não endereçar a conta de verdade, o botão fica fora.
+  /**
+   * "Sincronizar Extrato" — o alvo é FIXO, o operador escolhe só o período.
+   *
+   * HISTÓRICO: o botão ficou fora enquanto `POST /api/brasilcash/transactions/sync`
+   * repassava o `x-otc-id` do chamador como credencial — para esta conta (credencial
+   * própria, chave `BCTCR:<account_ref>` que não cabe no header) o sync caía na
+   * credencial DEFAULT, lia o extrato da CONTA-MÃE e a guarda de extrato cruzado
+   * recusava. Desde 2026-09-08 a rota resolve a credencial pelo VÍNCULO da conta
+   * (`enderecamento.resolver`, a mesma régua de saldo/extrato/PIX-OUT): com o
+   * `x-account-id` desta conta, o extrato lido é o dela.
+   *
+   * O QUE ESTÁ TRAVADO DO LADO DE CÁ: a tela não tem como apontar a sincronização
+   * para outra conta. Não existe campo, seletor ou filtro de conta;
+   * `sincronizarExtratoContaDedicada` não aceita conta na assinatura, e o
+   * `x-account-id` sai de `montarRequisicaoSync`, que o lê da config. `x-otc-id`
+   * não é enviado.
+   *
+   * O backend é idempotente (cria só o que não existe), então repetir um período
+   * não duplica lançamentos.
+   */
+  const handleSincronizar = async () => {
+    if (!syncStartDate || !syncEndDate) {
+      toast.error('Informe o período', {
+        description: 'Escolha a data inicial e a data final para sincronizar.',
+      });
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      // Datas em ISO local (YYYY-MM-DD). `toISOString()` converteria para UTC e
+      // poderia jogar a data para o dia anterior dependendo do fuso.
+      const resposta = await sincronizarExtratoContaDedicada({
+        startDate: format(syncStartDate, 'yyyy-MM-dd'),
+        endDate: format(syncEndDate, 'yyyy-MM-dd'),
+      });
+
+      const st = resposta?.statistics;
+      const criadas = typeof st?.created === 'number' ? st.created : null;
+      const erros = typeof st?.errors === 'number' ? st.errors : 0;
+      const descricao =
+        criadas !== null
+          ? `${criadas} lançamento(s) novo(s), ${st?.skipped ?? 0} já existiam${erros > 0 ? `, ${erros} com erro` : ''}.`
+          : `Período de ${format(syncStartDate, 'dd/MM/yyyy')} a ${format(syncEndDate, 'dd/MM/yyyy')}.`;
+
+      if (erros > 0) {
+        toast.warning('Sincronização concluída com erros', { description: descricao, duration: 8000 });
+      } else {
+        toast.success('Extrato sincronizado', { description: descricao });
+      }
+
+      setIsSyncDialogOpen(false);
+      // Recarrega já com a janela sincronizada, para o operador ver o efeito.
+      setDateFrom(syncStartDate);
+      setDateTo(syncEndDate);
+      void fetchTransactions(syncStartDate, syncEndDate, 1, false);
+    } catch (erro) {
+      // A mensagem já vem traduzida por `traduzirErroDeSync` — sem corpo de
+      // resposta, sem status HTTP, sem nome de tabela.
+      toast.error('Não foi possível sincronizar', {
+        description: erro instanceof Error ? erro.message : 'Tente novamente em alguns instantes.',
+        duration: 6000,
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // 🚀 Navegação de página server-side - permite navegar para qualquer página >= 1
   const handlePageChange = async (newPage: number) => {
@@ -1007,6 +1082,100 @@ export default function ExtractTabBrasilCashContaDedicada() {
             >
               <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
             </Button>
+            {/* Sincronizar Extrato — mesma ergonomia da tela CorpX dedicada: um
+                diálogo que pede só o PERÍODO. Não há campo de conta aqui, de
+                propósito: ver o comentário em `handleSincronizar`. */}
+            <Dialog open={isSyncDialogOpen} onOpenChange={setIsSyncDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" disabled={!contaPronta || loading || isSyncing}>
+                  {isSyncing ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCcw className="h-4 w-4 mr-2" />
+                  )}
+                  {isSyncing ? "Sincronizando..." : "Sincronizar Extrato"}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Sincronizar extrato da conta {rotuloConta(CONTA)}</DialogTitle>
+                  <DialogDescription>
+                    Informe o período que deseja sincronizar. A operação busca o movimento direto na
+                    BrasilCash e atualiza o extrato desta conta — nenhuma outra é afetada. Lançamentos
+                    que já existem não são duplicados.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-card-foreground">Data inicial</label>
+                    <Popover modal>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn("w-full justify-start text-left font-normal", !syncStartDate && "text-muted-foreground")}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {syncStartDate ? format(syncStartDate, "PPP", { locale: ptBR }) : "Selecionar data"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0 z-[100]" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={syncStartDate || undefined}
+                          onSelect={(date) => date && setSyncStartDate(date)}
+                          locale={ptBR}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-card-foreground">Data final</label>
+                    <Popover modal>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn("w-full justify-start text-left font-normal", !syncEndDate && "text-muted-foreground")}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {syncEndDate ? format(syncEndDate, "PPP", { locale: ptBR }) : "Selecionar data"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0 z-[100]" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={syncEndDate || undefined}
+                          onSelect={(date) => date && setSyncEndDate(date)}
+                          locale={ptBR}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline" disabled={isSyncing}>
+                      Cancelar
+                    </Button>
+                  </DialogClose>
+                  <Button onClick={() => void handleSincronizar()} disabled={isSyncing || !syncStartDate || !syncEndDate}>
+                    {isSyncing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Sincronizando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCcw className="h-4 w-4 mr-2" />
+                        Confirmar sincronização
+                      </>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
             <Button
               variant="outline"
               size="sm"
