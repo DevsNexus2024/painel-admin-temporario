@@ -45,14 +45,16 @@ export const CORPX_ACCOUNTS = [
     apiAccountId: 52505,
     corpxAlias: 'TGC',
   },
-  {
-    id: '5',
-    razaoSocial: 'EDITION LIMITED SERVICOS DIGITAIS',
-    cnpj: '61504259000164',
-    available: true,
-    apiAccountId: 51807,
-    corpxAlias: 'EDITION',
-  },
+  // A conta do EDITION LIMITED (id '5') saiu daqui: ela migrou do OTC para o app
+  // TCR e é atendida pela tela dedicada /corpx-conta-dedicada. Esta lista é o
+  // vocabulário da /corpx (OTC) — manter a conta aqui a deixaria no seletor, no
+  // saldo consolidado e no crédito ao OTC, que é justamente a porta antiga.
+  //
+  // Consequência deliberada: `getCorpxAliasByCnpj('61504259000164')` passa a
+  // devolver `undefined`. Todos os consumidores do alias já falham FECHADO
+  // (erro visível) em vez de seguir sem o header `x-corpx-account-context` —
+  // um alias vazio faria a API responder no contexto default, ou seja, o
+  // saldo/extrato de OUTRA conta sob o nome deste cliente.
   {
     id: '6',
     razaoSocial: 'RXP SERVICOS DIGITAIS LTDA',

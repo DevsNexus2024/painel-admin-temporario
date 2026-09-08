@@ -28,10 +28,17 @@ import {
   CONTA_DEDICADA_CORPX,
   IDENTIFICADORES_CONHECIDOS_DA_CONTA,
   HEADER_CONTEXTO_DE_CONTA,
+  IDS_DE_EXTRATO_PERMITIDOS,
+  DOCUMENTOS_DE_SYNC_PERMITIDOS,
   ContaNaoConfiguradaError,
   IdentificadorDeExtratoInvalidoError,
+  DocumentoDeSyncInvalidoError,
+  PeriodoDeSyncInvalidoError,
   contaEstaConfigurada,
   garantirIdentificadorDeExtrato,
+  garantirDocumentoDeSync,
+  montarRequisicaoSync,
+  traduzirErroDeSync,
   garantirAliasDeSaldo,
   montarRequisicaoExtrato,
   interpretarSaldoCorpX,
@@ -434,6 +441,200 @@ ok(
     endToEndId: linhaSemE2E.endToEndId,
   }).permitirAcoesPix === false,
 );
+
+// ---------------------------------------------------------------------------
+console.log('\n== 10. SYNC — o documento do sync NÃO é o id do extrato ==\n');
+
+// 🔴 POR QUE ESTA SEÇÃO EXISTE — os dois vocabulários se cruzam aqui.
+//
+// O extrato é endereçado pelo `idExtrato` (`51807`) e RECUSA o CNPJ (seção 1).
+// O sync (`POST /api/corpx/sync`) é o oposto: o alvo vai no CORPO, como
+// `taxDocument`, e ali o identificador legítimo é o CNPJ. Ou seja, o MESMO valor
+// que a cerca do extrato existe para recusar é o único que o sync aceita.
+//
+// Duas cercas, duas allowlists DISJUNTAS. O que esta seção trava é a troca entre
+// elas: nenhum dos dois identificadores pode atravessar para o outro lado.
+
+// A matriz: cada identificador da conta contra as DUAS cercas.
+// Nenhuma linha tem `true` nas duas colunas — é isso que prova que um não vira o outro.
+const MATRIZ_DAS_DUAS_CERCAS: Array<{
+  rotulo: string;
+  valor: string;
+  aceitoNoExtrato: boolean;
+  aceitoNoSync: boolean;
+}> = [
+  { rotulo: 'id do extrato', valor: '51807', aceitoNoExtrato: true, aceitoNoSync: false },
+  { rotulo: 'CNPJ', valor: '61504259000164', aceitoNoExtrato: false, aceitoNoSync: true },
+  { rotulo: 'accountRef UUID', valor: '1ac33d8a-f065-4b12-8ef9-0a878e718b34', aceitoNoExtrato: false, aceitoNoSync: false },
+  { rotulo: 'alias do saldo', valor: 'EDITION', aceitoNoExtrato: false, aceitoNoSync: false },
+];
+
+for (const caso of MATRIZ_DAS_DUAS_CERCAS) {
+  const erroExtrato = capturar(() => garantirIdentificadorDeExtrato(caso.valor));
+  const erroSync = capturar(() => garantirDocumentoDeSync(caso.valor));
+
+  ok(
+    `EXTRATO ${caso.aceitoNoExtrato ? 'ACEITA' : 'RECUSA'} ${caso.rotulo} (${caso.valor})`,
+    caso.aceitoNoExtrato ? erroExtrato === null : erroExtrato instanceof IdentificadorDeExtratoInvalidoError,
+    erroExtrato ? erroExtrato.name : 'não lançou',
+  );
+  ok(
+    `SYNC    ${caso.aceitoNoSync ? 'ACEITA' : 'RECUSA'} ${caso.rotulo} (${caso.valor})`,
+    caso.aceitoNoSync ? erroSync === null : erroSync instanceof DocumentoDeSyncInvalidoError,
+    erroSync ? erroSync.name : 'não lançou',
+  );
+  ok(
+    `${caso.rotulo} NUNCA é aceito pelas duas cercas ao mesmo tempo`,
+    !(caso.aceitoNoExtrato && caso.aceitoNoSync),
+  );
+}
+
+// As duas asserções que o gate pede, nomeadas: uma não vira a outra.
+console.log('\n-- um identificador não vira o outro --');
+ok(
+  'o CNPJ continua RECUSADO como id de extrato',
+  capturar(() => garantirIdentificadorDeExtrato('61504259000164')) instanceof IdentificadorDeExtratoInvalidoError,
+);
+ok(
+  'o 51807 é RECUSADO como documento de sync',
+  capturar(() => garantirDocumentoDeSync('51807')) instanceof DocumentoDeSyncInvalidoError,
+);
+ok(
+  'as duas allowlists são disjuntas (nenhum valor em comum)',
+  !DOCUMENTOS_DE_SYNC_PERMITIDOS.some((d) => IDS_DE_EXTRATO_PERMITIDOS.includes(d)),
+  `sync=${JSON.stringify(DOCUMENTOS_DE_SYNC_PERMITIDOS)} extrato=${JSON.stringify(IDS_DE_EXTRATO_PERMITIDOS)}`,
+);
+ok(
+  'o campo do sync na config é PRÓPRIO, não o do extrato',
+  CONTA_DEDICADA_CORPX.documentoParaSync === '61504259000164' &&
+    CONTA_DEDICADA_CORPX.documentoParaSync !== CONTA_DEDICADA_CORPX.idExtrato,
+  `documentoParaSync=${CONTA_DEDICADA_CORPX.documentoParaSync} idExtrato=${CONTA_DEDICADA_CORPX.idExtrato}`,
+);
+
+// A cerca do sync é igualdade normalizada — não substring, não "é numérico".
+// `BigInt` aceitaria todos estes; nenhum deles é a conta do Edition.
+console.log('\n-- a cerca do sync é igualdade, não substring nem "é numérico" --');
+for (const quase of [
+  '061504259000164',
+  '6150425900016',
+  '615042590001640',
+  '61504259000165',
+  '11222333000181',
+  '',
+  '   ',
+]) {
+  const erro = capturar(() => garantirDocumentoDeSync(quase));
+  ok(`RECUSA documento de sync ${JSON.stringify(quase)}`, erro !== null, erro ? erro.name : 'NÃO LANÇOU');
+}
+
+// Formatação do próprio CNPJ certo é normalizada para dígitos, não recusada.
+ok(
+  'aceita o CNPJ do Edition formatado (normaliza para dígitos)',
+  garantirDocumentoDeSync('61.504.259/0001-64') === '61504259000164',
+  garantirDocumentoDeSync('61.504.259/0001-64'),
+);
+
+// ---------------------------------------------------------------------------
+console.log('\n== 11. montarRequisicaoSync — o alvo sai da CONFIG, nunca do chamador ==\n');
+
+const PERIODO_OK = { startDate: '2026-09-01', endDate: '2026-09-08' };
+
+const sync = montarRequisicaoSync(CONTA_DEDICADA_CORPX, PERIODO_OK);
+ok('o corpo leva o CNPJ do Edition', sync.body.taxDocument === '61504259000164', `taxDocument=${sync.body.taxDocument}`);
+ok('o corpo NÃO leva o id do extrato', sync.body.taxDocument !== '51807');
+ok('startDate passa', sync.body.startDate === '2026-09-01');
+ok('endDate passa', sync.body.endDate === '2026-09-08');
+ok('dryRun é explicitamente false (nunca undefined)', sync.body.dryRun === false);
+
+// O corpo é montado campo a campo: não existe chave extra vinda do chamador.
+ok(
+  'o corpo tem EXATAMENTE os quatro campos do contrato',
+  JSON.stringify(Object.keys(sync.body).sort()) === JSON.stringify(['dryRun', 'endDate', 'startDate', 'taxDocument']),
+  JSON.stringify(Object.keys(sync.body).sort()),
+);
+
+// 🔴 O caso do gate: qualquer OUTRO documento no montador LANÇA.
+console.log('\n-- qualquer outro documento no montador LANÇA --');
+for (const outro of ['51807', '11222333000181', '14283885000198', 'EDITION', '1ac33d8a-f065-4b12-8ef9-0a878e718b34', '']) {
+  const contaAdulterada: ContaDedicadaCorpX = { ...CONTA_DEDICADA_CORPX, documentoParaSync: outro };
+  const erro = capturar(() => montarRequisicaoSync(contaAdulterada, PERIODO_OK));
+  ok(
+    `conta com documentoParaSync=${JSON.stringify(outro)} LANÇA em vez de sincronizar`,
+    erro !== null,
+    erro ? erro.name : 'NÃO LANÇOU — sincronizaria a conta errada',
+  );
+}
+
+// `14283885000198` é o CNPJ da TTF: uma conta REAL de outro cliente. Se a cerca
+// fosse "é um CNPJ válido" em vez de allowlist, este passaria — e o sync
+// escreveria em `corpx_transactions` de terceiro.
+ok(
+  'o CNPJ de OUTRA conta real (TTF) é recusado pelo montador',
+  capturar(() => montarRequisicaoSync({ ...CONTA_DEDICADA_CORPX, documentoParaSync: '14283885000198' }, PERIODO_OK))
+    instanceof DocumentoDeSyncInvalidoError,
+);
+
+// Validação de janela — falha ANTES de montar corpo nenhum.
+console.log('\n-- validação da janela --');
+ok(
+  'data inicial depois da final LANÇA',
+  capturar(() => montarRequisicaoSync(CONTA_DEDICADA_CORPX, { startDate: '2026-09-08', endDate: '2026-09-01' }))
+    instanceof PeriodoDeSyncInvalidoError,
+);
+ok(
+  'período sem data inicial LANÇA',
+  capturar(() => montarRequisicaoSync(CONTA_DEDICADA_CORPX, { startDate: '', endDate: '2026-09-01' }))
+    instanceof PeriodoDeSyncInvalidoError,
+);
+ok(
+  'período sem data final LANÇA',
+  capturar(() => montarRequisicaoSync(CONTA_DEDICADA_CORPX, { startDate: '2026-09-01', endDate: '' }))
+    instanceof PeriodoDeSyncInvalidoError,
+);
+ok(
+  'data em formato não-ISO LANÇA',
+  capturar(() => montarRequisicaoSync(CONTA_DEDICADA_CORPX, { startDate: '01/09/2026', endDate: '08/09/2026' }))
+    instanceof PeriodoDeSyncInvalidoError,
+);
+ok(
+  'mesmo dia é janela VÁLIDA (sincronizar um dia só)',
+  montarRequisicaoSync(CONTA_DEDICADA_CORPX, { startDate: '2026-09-01', endDate: '2026-09-01' }).body.startDate ===
+    '2026-09-01',
+);
+
+// A cerca do documento vem ANTES da janela: conta errada não chega a validar data.
+ok(
+  'documento errado LANÇA mesmo com janela válida (a cerca vem primeiro)',
+  capturar(() => montarRequisicaoSync({ ...CONTA_DEDICADA_CORPX, documentoParaSync: '51807' }, PERIODO_OK))
+    instanceof DocumentoDeSyncInvalidoError,
+);
+
+// ---------------------------------------------------------------------------
+console.log('\n== 12. MENSAGEM DE ERRO DO SYNC — sem vazar internals ==\n');
+
+const RETORNOS_DO_BACKEND: Array<{ rotulo: string; status: number; esperado: string }> = [
+  { rotulo: '409 (sync já em andamento)', status: 409, esperado: 'andamento' },
+  { rotulo: '429 (throttle)', status: 429, esperado: 'Aguarde' },
+  { rotulo: '400 (validação da rota)', status: 400, esperado: 'período' },
+  { rotulo: '401 (sessão)', status: 401, esperado: 'sessão' },
+  { rotulo: '403 (permissão)', status: 403, esperado: 'permissão' },
+  { rotulo: '500 (indisponível)', status: 500, esperado: 'indisponível' },
+];
+
+for (const caso of RETORNOS_DO_BACKEND) {
+  const msg = traduzirErroDeSync(new Error(`HTTP error! status: ${caso.status} - {"table":"corpx_transactions"}`));
+  ok(`${caso.rotulo} vira frase de operador`, msg.includes(caso.esperado), msg);
+  ok(`${caso.rotulo} NÃO vaza o corpo do backend`, !msg.includes('corpx_transactions') && !msg.includes('status:'), msg);
+}
+
+// A cerca redige a própria mensagem: ela já é para o operador, e explica o engano.
+const msgCerca = traduzirErroDeSync(new DocumentoDeSyncInvalidoError('51807'));
+ok('erro da cerca do sync chega inteiro ao operador', msgCerca.includes('id do extrato'), msgCerca);
+ok('erro da cerca não vaza nome de tabela/env', !/corpx_transactions|process\.env|Bearer/.test(msgCerca), msgCerca);
+
+// Erro desconhecido nunca vira eco do texto cru.
+const msgOpaca = traduzirErroDeSync(new Error('ECONNREFUSED 10.0.0.5:5432 pg_hba.conf'));
+ok('erro desconhecido vira frase genérica', !msgOpaca.includes('pg_hba'), msgOpaca);
 
 // ---------------------------------------------------------------------------
 console.log(`\n===== ${passes} PASS · ${falhas} FAIL =====\n`);

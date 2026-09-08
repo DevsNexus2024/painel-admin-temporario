@@ -62,6 +62,17 @@ export interface ContaDedicadaCorpX {
    * na conta mas NÃO é do cliente. Vazio DESLIGA a marcação.
    */
   vinculadoEm: string;
+  /**
+   * Documento que endereça o SYNC (`POST /api/corpx/sync`), no corpo, como
+   * `taxDocument`. É o CNPJ — e aqui ele é o identificador LEGÍTIMO.
+   *
+   * ⚠️ CAMPO PRÓPRIO, DE PROPÓSITO — não reusa `idExtrato` nem `cnpj`.
+   * O sync e o extrato são vocabulários OPOSTOS sobre a mesma conta: o extrato é
+   * endereçado por `51807` e RECUSA o CNPJ; o sync é endereçado pelo CNPJ e
+   * RECUSA o `51807`. Um campo compartilhado entre os dois seria o caminho para
+   * a troca silenciosa que `DOCUMENTOS_DE_SYNC_PERMITIDOS` existe para travar.
+   */
+  documentoParaSync: string;
 }
 
 /**
@@ -137,7 +148,216 @@ export const CONTA_DEDICADA_CORPX: ContaDedicadaCorpX = {
   nomeExibicao: 'EDITION LIMITED',
   titular: { razaoSocial: '', numeroConta: '', agencia: '' },
   vinculadoEm: '',
+  documentoParaSync: '61504259000164',
 };
+
+/* ===========================================================================
+ * SYNC — `POST /api/corpx/sync`
+ *
+ * 🔴 O VOCABULÁRIO AQUI É O INVERSO DO VOCABULÁRIO DO EXTRATO.
+ *
+ * O extrato é endereçado por `accountId=51807` e a cerca dele RECUSA o CNPJ
+ * (ver `IDS_DE_EXTRATO_PERMITIDOS`). O sync é o contrário: o alvo vai no CORPO,
+ * como `taxDocument`, e ali o CNPJ é o identificador LEGÍTIMO — o `51807` não
+ * significa nada.
+ *
+ * Ou seja: o valor que uma cerca existe para recusar é exatamente o que a outra
+ * exige. Por isso são DUAS allowlists disjuntas, dois erros com nome próprio e
+ * dois campos separados na config (`idExtrato` e `documentoParaSync`). Reusar um
+ * campo para os dois papéis seria construir o caminho da troca silenciosa.
+ *
+ * 🔴 POR QUE A CERCA MORA DO LADO DE CÁ, e não só na tela: `POST /api/corpx/sync`
+ * recebe o alvo no CORPO e — diferente do resto do controller — não passa por
+ * `RbacGuard`. Um alvo escolhido pelo operador (campo livre, seletor, filtro)
+ * viraria upsert em `corpx_transactions` de QUALQUER CNPJ. Nesta tela o alvo é
+ * dado: sai da config, passa pela cerca, e não existe assinatura que aceite um
+ * documento vindo da UI. O furo do endpoint é do backend e continua de pé — o
+ * que está travado aqui é o front deixar de ser gatilho dele.
+ * =========================================================================== */
+
+/**
+ * 🔴 ALLOWLIST DOS DOCUMENTOS QUE PODEM SER ALVO DO SYNC.
+ *
+ * Fechada, por igualdade sobre dígitos normalizados — nunca `includes`,
+ * `startsWith` ou "parece um CNPJ". Um teste de FORMATO aceitaria o CNPJ de
+ * qualquer outro cliente (a suíte prova isso com o CNPJ real da TTF), e o sync
+ * escreveria no extrato de terceiro.
+ */
+export const DOCUMENTOS_DE_SYNC_PERMITIDOS: readonly string[] = ['61504259000164'];
+
+/** Só dígitos. Normalizar na ESCRITA e na LEITURA: `61.504.259/0001-64` é o mesmo documento. */
+function apenasDigitos(valor: string): string {
+  return (valor ?? '').replace(/\D/g, '');
+}
+
+/**
+ * Documento de sync errado — a cerca do sync.
+ *
+ * Erro com NOME PRÓPRIO, separado de `IdentificadorDeExtratoInvalidoError`: quem
+ * trata precisa conseguir dizer QUAL das duas cercas mordeu, senão a mensagem
+ * manda o operador conferir o identificador errado.
+ */
+export class DocumentoDeSyncInvalidoError extends Error {
+  readonly documentoRecebido: string;
+
+  constructor(valor: string) {
+    const recebido = (valor ?? '').trim();
+    const conhecido = IDENTIFICADORES_CONHECIDOS_DA_CONTA.find(
+      (i) => i.valor.trim().toUpperCase() === recebido.toUpperCase(),
+    );
+    const explicacao = conhecido
+      ? `O valor informado é o ${conhecido.rotulo} desta conta, que não endereça a sincronização.`
+      : 'O valor informado não é um documento autorizado para sincronização.';
+    super(
+      `Sincronização não iniciada: o documento da conta está errado. ${explicacao} ` +
+        'A operação foi interrompida de propósito — com este valor a sincronização gravaria ' +
+        'movimento na conta errada. Fale com o suporte técnico.',
+    );
+    this.name = 'DocumentoDeSyncInvalidoError';
+    this.documentoRecebido = recebido;
+    Object.setPrototypeOf(this, DocumentoDeSyncInvalidoError.prototype);
+  }
+}
+
+/** Janela de sincronização inválida. Erro de INPUT do operador — o texto é instrução, não diagnóstico. */
+export class PeriodoDeSyncInvalidoError extends Error {
+  constructor(motivo: string) {
+    super(motivo);
+    this.name = 'PeriodoDeSyncInvalidoError';
+    Object.setPrototypeOf(this, PeriodoDeSyncInvalidoError.prototype);
+  }
+}
+
+/**
+ * A CERCA DO SYNC. Devolve o documento normalizado (só dígitos) ou lança.
+ *
+ * Igualdade normalizada contra a allowlist. `51807` cai aqui: é o id do extrato,
+ * não um documento — e a mensagem diz isso ao operador.
+ */
+export function garantirDocumentoDeSync(valor: string): string {
+  const informado = (valor ?? '').trim();
+
+  // Nada informado = conta sem configuração. Só ESTE caso é "não configurada":
+  // um valor não-numérico (o alias `EDITION`, por exemplo) também normaliza para
+  // string vazia, e reportá-lo como "sem configuração" mandaria o operador
+  // procurar o problema no lugar errado — o problema é que puseram o
+  // identificador ERRADO no campo do sync.
+  if (!informado) {
+    throw new ContaNaoConfiguradaError('A conta desta tela está sem o documento de sincronização.');
+  }
+
+  const documento = apenasDigitos(informado);
+  if (!documento || !DOCUMENTOS_DE_SYNC_PERMITIDOS.includes(documento)) {
+    throw new DocumentoDeSyncInvalidoError(informado);
+  }
+  return documento;
+}
+
+/** Corpo de `POST /api/corpx/sync`. Espelha `CorpXSyncRequest` sem importar o tipo. */
+export interface CorpoSyncCorpX {
+  taxDocument: string;
+  startDate: string;
+  endDate: string;
+  dryRun: boolean;
+}
+
+export interface RequisicaoSync {
+  body: CorpoSyncCorpX;
+}
+
+/** Período que a TELA oferece, em ISO `YYYY-MM-DD`. */
+export interface PeriodoSync {
+  startDate: string;
+  endDate: string;
+}
+
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Monta o corpo de `POST /api/corpx/sync`.
+ *
+ * REGRA DE DINHEIRO — três invariantes:
+ *
+ * 1. `taxDocument` sai SEMPRE da conta configurada. A assinatura não aceita
+ *    documento: não existe como a tela passar um alvo. O operador escolhe o
+ *    PERÍODO, nunca a CONTA.
+ * 2. A cerca roda ANTES da validação de janela e antes de montar qualquer campo.
+ *    Conta errada não chega a virar requisição — nem parcial.
+ * 3. O corpo é montado campo a campo, nunca com espalhamento do chamador, e
+ *    `dryRun` é explicitamente `false` (um `undefined` deixaria o default para o
+ *    backend decidir).
+ */
+export function montarRequisicaoSync(conta: ContaDedicadaCorpX, periodo: PeriodoSync): RequisicaoSync {
+  if (!contaEstaConfigurada(conta)) {
+    throw new ContaNaoConfiguradaError();
+  }
+
+  // A cerca vem primeiro: o alvo é decidido antes de olhar a janela.
+  const taxDocument = garantirDocumentoDeSync(conta.documentoParaSync);
+
+  const startDate = (periodo?.startDate ?? '').trim();
+  const endDate = (periodo?.endDate ?? '').trim();
+
+  if (!startDate || !endDate) {
+    throw new PeriodoDeSyncInvalidoError('Informe a data inicial e a data final do período que deseja sincronizar.');
+  }
+  if (!DATA_ISO.test(startDate) || !DATA_ISO.test(endDate)) {
+    throw new PeriodoDeSyncInvalidoError('As datas do período precisam ser dias válidos do calendário.');
+  }
+  // Comparação textual: em ISO `YYYY-MM-DD` a ordem alfabética é a cronológica,
+  // e assim a regra não depende de fuso — o mesmo motivo de `ehAnteriorAoVinculo`.
+  if (startDate > endDate) {
+    throw new PeriodoDeSyncInvalidoError('A data inicial não pode ser posterior à data final.');
+  }
+
+  return { body: { taxDocument, startDate, endDate, dryRun: false } };
+}
+
+/**
+ * Traduz o erro do sync para uma frase de operador.
+ *
+ * PORQUÊ existe (e por que mora NESTE arquivo, e não no de transporte):
+ * `sincronizarExtratoCorpX` (`services/corpx.ts`) lança
+ * `new Error(parsed?.message || 'HTTP error! status: <N>')` — ou seja, o corpo da
+ * resposta do backend vai direto para a tela se ninguém intervier. Essa regra
+ * precisa ser VERIFICÁVEL, e só é verificável isolada aqui; o detalhe técnico
+ * fica no console, a tela recebe a frase.
+ */
+export function traduzirErroDeSync(erro: unknown): string {
+  // Erros das cercas e da janela já vêm redigidos para o operador.
+  if (
+    erro instanceof DocumentoDeSyncInvalidoError ||
+    erro instanceof PeriodoDeSyncInvalidoError ||
+    erro instanceof ContaNaoConfiguradaError
+  ) {
+    return erro.message;
+  }
+
+  const bruto = erro instanceof Error ? erro.message : String(erro ?? '');
+
+  if (/token de autentica|sess(ã|a)o expirou/i.test(bruto)) {
+    return 'Sua sessão expirou. Entre novamente para sincronizar o extrato.';
+  }
+
+  const status = Number(/status:\s*(\d{3})/.exec(bruto)?.[1] ?? 0);
+  if (status === 400 || status === 422) {
+    return 'O período informado não foi aceito pelo serviço. Revise as datas e tente novamente.';
+  }
+  if (status === 401) return 'Sua sessão expirou. Entre novamente para sincronizar o extrato.';
+  if (status === 403) return 'Você não tem permissão para sincronizar o extrato desta conta.';
+  if (status === 404) return 'O serviço de sincronização não foi encontrado. Fale com o suporte técnico.';
+  if (status === 409) {
+    return 'Já existe uma sincronização em andamento para esta conta. Espere a atual terminar antes de pedir outra.';
+  }
+  if (status === 429) {
+    return 'Muitas sincronizações seguidas. Aguarde alguns instantes e tente novamente.';
+  }
+  if (status >= 500) {
+    return 'O serviço de sincronização está indisponível no momento. Tente novamente em instantes.';
+  }
+
+  return 'Não foi possível sincronizar o extrato desta conta. Tente novamente.';
+}
 
 /** Erro de configuração ausente. Existe para o chamador não confundir com erro de rede. */
 export class ContaNaoConfiguradaError extends Error {
