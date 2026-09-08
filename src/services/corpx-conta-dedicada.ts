@@ -11,13 +11,19 @@
  */
 
 import CorpXService from '@/services/corpx';
-import type { CorpXTransactionsResponse, CorpXTransactionItem } from '@/types/corpx';
+import type { CorpXTransactionsResponse, CorpXTransactionItem, CorpXSyncResponse } from '@/types/corpx';
 import {
   CONTA_DEDICADA_CORPX,
   contaEstaConfigurada,
   garantirAliasDeSaldo,
   garantirIdentificadorDeExtrato,
+  garantirDocumentoDeSync,
   montarRequisicaoExtrato,
+  montarRequisicaoSync,
+  traduzirErroDeSync,
+  DocumentoDeSyncInvalidoError,
+  PeriodoDeSyncInvalidoError,
+  type PeriodoSync,
   interpretarSaldoCorpX,
   obterSaldoIndisponivel,
   rotuloConta,
@@ -127,12 +133,48 @@ export async function obterSaldoContaDedicada(
   }
 }
 
+/**
+ * 🔄 Sincronização do extrato — `POST /api/corpx/sync`
+ *
+ * 🔴 A ASSINATURA É A CERCA. Esta função NÃO recebe documento: o alvo sai de
+ * `montarRequisicaoSync`, que o lê da config e o passa pela allowlist. Não existe
+ * como a tela — nem um operador pelo formulário — apontar a sincronização para
+ * outra conta, porque não há por onde passar um documento.
+ *
+ * PORQUÊ isso importa mais aqui do que no extrato: `POST /api/corpx/sync` recebe
+ * o alvo no CORPO e é o único endpoint do controller sem `RbacGuard`. Ele
+ * ESCREVE (upsert em `corpx_transactions`), enquanto o extrato só lê. Um alvo
+ * escolhível transformaria esta tela no gatilho para gravar movimento na conta
+ * de qualquer CNPJ.
+ *
+ * O operador escolhe o PERÍODO. A CONTA é dada.
+ */
+export async function sincronizarExtratoContaDedicada(
+  periodo: PeriodoSync,
+  conta: ContaDedicadaCorpX = CONTA_DEDICADA_CORPX,
+): Promise<CorpXSyncResponse> {
+  // Lança antes de qualquer I/O: conta errada ou janela inválida não vira request.
+  const { body } = montarRequisicaoSync(conta, periodo);
+
+  try {
+    return await CorpXService.sincronizarExtrato(body);
+  } catch (erro) {
+    console.error('[CORPX-CONTA-DEDICADA] Falha ao sincronizar extrato:', erro);
+    throw new Error(traduzirErroDeSync(erro));
+  }
+}
+
 export {
   CONTA_DEDICADA_CORPX,
   contaEstaConfigurada,
   garantirIdentificadorDeExtrato,
+  garantirDocumentoDeSync,
   garantirAliasDeSaldo,
   montarRequisicaoExtrato,
+  montarRequisicaoSync,
+  traduzirErroDeSync,
+  DocumentoDeSyncInvalidoError,
+  PeriodoDeSyncInvalidoError,
   interpretarSaldoCorpX,
   obterSaldoIndisponivel,
   rotuloConta,
@@ -144,7 +186,7 @@ export {
   IdentificadorDeExtratoInvalidoError,
   LIMITE_MAXIMO_EXTRATO,
 };
-export type { ContaDedicadaCorpX, FiltrosExtrato, ResultadoSaldo, LinhaExtrato, CorpXTransactionItem };
+export type { ContaDedicadaCorpX, FiltrosExtrato, ResultadoSaldo, LinhaExtrato, CorpXTransactionItem, PeriodoSync };
 
 export const CorpXContaDedicadaService = {
   conta: CONTA_DEDICADA_CORPX,
@@ -152,6 +194,7 @@ export const CorpXContaDedicadaService = {
   rotuloConta,
   buscarTransacoes: buscarTransacoesContaDedicada,
   obterSaldo: obterSaldoContaDedicada,
+  sincronizarExtrato: sincronizarExtratoContaDedicada,
 } as const;
 
 export default CorpXContaDedicadaService;

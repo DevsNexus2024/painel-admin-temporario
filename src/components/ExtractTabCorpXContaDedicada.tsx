@@ -7,6 +7,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   Search,
   Download,
   ArrowUpCircle,
@@ -39,6 +49,7 @@ import {
   ehAnteriorAoVinculo,
   montarIdentificacaoCompensacao,
   buscarTransacoesContaDedicada,
+  sincronizarExtratoContaDedicada,
   normalizarLinha,
   LIMITE_MAXIMO_EXTRATO,
   type FiltrosExtrato,
@@ -78,7 +89,8 @@ function badgeDeStatus(status: string): { classe: string; texto: string } {
  *
  * Diferenças deliberadas em relação à /corpx, todas por segurança de dinheiro —
  * ver os comentários no ponto de cada omissão:
- *  - sem "Sincronizar Extrato";
+ *  - "Sincronizar Extrato" existe, mas com o alvo FIXO na conta desta tela: o
+ *    operador escolhe o período, nunca a conta (ver `handleSincronizar`);
  *  - sem crédito ao OTC (a conta saiu do OTC; esta tela é de suporte TCR);
  *  - sem seletor de conta: a conta é fixa e não passa pelo CorpXContext;
  *  - sem WebSocket/MoneyRainEffect: o realtime é escopado na conta selecionada
@@ -111,6 +123,13 @@ export default function ExtractTabCorpXContaDedicada() {
   const [maxAmount, setMaxAmount] = useState<string>("");
   const [specificAmount, setSpecificAmount] = useState<string>("");
   const [endToEndFilter, setEndToEndFilter] = useState<string>("");
+
+  // Sincronização — só o PERÍODO é escolhido aqui. A conta é fixa e sai da
+  // config; não há estado nenhum para documento, de propósito.
+  const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStartDate, setSyncStartDate] = useState<Date | null>(null);
+  const [syncEndDate, setSyncEndDate] = useState<Date | null>(null);
 
   // Compensação (suporte TCR)
   const [compensationModalOpen, setCompensationModalOpen] = useState(false);
@@ -324,17 +343,64 @@ export default function ExtractTabCorpXContaDedicada() {
     compensatedRecords.has(`corpx-conta-dedicada-${tx.id}`);
 
   /**
-   * NÃO existe "Sincronizar Extrato" nesta tela — de propósito, e com prova.
+   * "Sincronizar Extrato" — o alvo é FIXO, o operador escolhe só o período.
    *
-   * `POST /api/corpx/sync` (`corpx.controller.ts:175-176`) é o ÚNICO endpoint do
-   * controller sem `RbacGuard`/`@RequireRoles` — só `HybridAuthGuard`. Pior: o
-   * escopo do que ele sincroniza vem do CORPO da requisição
-   * (`CorpXSyncRequestDto.taxDocument`), não do usuário autenticado. Colocar o
-   * botão nesta tela levaria a chamada para o bundle de um perfil `tcr_user`, e
-   * qualquer usuário autenticado poderia disparar upsert em `corpx_transactions`
-   * para QUALQUER CNPJ. O furo é pré-existente e não é desta fase consertá-lo —
-   * mas armar mais um gatilho para ele, seria.
+   * 🔴 O RISCO QUE ESTE BOTÃO CONVIVE COM: `POST /api/corpx/sync`
+   * (`corpx.controller.ts:175-176`) é o ÚNICO endpoint do controller sem
+   * `RbacGuard`/`@RequireRoles` — só `HybridAuthGuard` — e o escopo do que ele
+   * sincroniza vem do CORPO (`CorpXSyncRequestDto.taxDocument`), não do usuário
+   * autenticado. Esse furo é do backend, é pré-existente e continua de pé.
+   *
+   * O QUE ESTÁ TRAVADO DO LADO DE CÁ: a tela não tem como apontar a
+   * sincronização para outra conta. Não existe campo, seletor ou filtro de
+   * documento; `sincronizarExtratoContaDedicada` não aceita documento na
+   * assinatura, e o `taxDocument` sai de `montarRequisicaoSync`, que o lê da
+   * config e o passa por uma allowlist fechada. Passar qualquer outro documento
+   * LANÇA (ver seções 10-11 do verificador).
+   *
+   * ⚠️ Isso NÃO conserta o endpoint: quem já tem sessão continua podendo chamar
+   * a rota à mão com outro CNPJ. O que o front garante é não ser o gatilho.
    */
+  const handleSincronizar = async () => {
+    if (!syncStartDate || !syncEndDate) {
+      toast.error('Informe o período', {
+        description: 'Escolha a data inicial e a data final para sincronizar.',
+      });
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      // Datas em ISO local (YYYY-MM-DD). `toISOString()` converteria para UTC e
+      // poderia jogar a data para o dia anterior dependendo do fuso.
+      const resposta = await sincronizarExtratoContaDedicada({
+        startDate: format(syncStartDate, 'yyyy-MM-dd'),
+        endDate: format(syncEndDate, 'yyyy-MM-dd'),
+      });
+
+      toast.success('Sincronização iniciada', {
+        description:
+          typeof resposta?.totalSynced === 'number'
+            ? `${resposta.totalSynced} transações sincronizadas.`
+            : `Período de ${format(syncStartDate, 'dd/MM/yyyy')} a ${format(syncEndDate, 'dd/MM/yyyy')}.`,
+      });
+
+      setIsSyncDialogOpen(false);
+      // Recarrega já com a janela sincronizada, para o operador ver o efeito.
+      setDateFrom(syncStartDate);
+      setDateTo(syncEndDate);
+      void fetchTransactions(syncStartDate, syncEndDate, 1, false);
+    } catch (erro) {
+      // A mensagem já vem traduzida por `traduzirErroDeSync` — sem corpo de
+      // resposta, sem status HTTP, sem nome de tabela.
+      toast.error('Não foi possível sincronizar', {
+        description: erro instanceof Error ? erro.message : 'Tente novamente em alguns instantes.',
+        duration: 6000,
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   /**
    * NÃO existe crédito ao OTC nesta tela — nem `CreditExtractToOTCModal` nem
@@ -487,7 +553,100 @@ export default function ExtractTabCorpXContaDedicada() {
             <Download className="h-4 w-4 mr-2" />
             Exportar
           </Button>
-          {/* Sem "Sincronizar Extrato": ver o comentário em handleCompensation. */}
+
+          {/* Sincronizar Extrato — mesma ergonomia da /corpx: um diálogo que pede
+              só o PERÍODO. Não há campo de conta/documento aqui, de propósito:
+              ver o comentário em `handleSincronizar`. */}
+          <Dialog open={isSyncDialogOpen} onOpenChange={setIsSyncDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" disabled={!contaPronta || loading || isSyncing}>
+                {isSyncing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4 mr-2" />
+                )}
+                {isSyncing ? "Sincronizando..." : "Sincronizar Extrato"}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Sincronizar extrato da conta {rotuloConta(CONTA)}</DialogTitle>
+                <DialogDescription>
+                  Informe o período que deseja sincronizar. A operação busca o movimento direto na
+                  CorpX e atualiza o extrato desta conta — nenhuma outra é afetada.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-card-foreground">Data inicial</label>
+                  <Popover modal>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn("w-full justify-start text-left font-normal", !syncStartDate && "text-muted-foreground")}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {syncStartDate ? format(syncStartDate, "PPP", { locale: ptBR }) : "Selecionar data"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0 z-[100]" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={syncStartDate || undefined}
+                        onSelect={(date) => date && setSyncStartDate(date)}
+                        locale={ptBR}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-card-foreground">Data final</label>
+                  <Popover modal>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn("w-full justify-start text-left font-normal", !syncEndDate && "text-muted-foreground")}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {syncEndDate ? format(syncEndDate, "PPP", { locale: ptBR }) : "Selecionar data"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0 z-[100]" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={syncEndDate || undefined}
+                        onSelect={(date) => date && setSyncEndDate(date)}
+                        locale={ptBR}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline" disabled={isSyncing}>
+                    Cancelar
+                  </Button>
+                </DialogClose>
+                <Button onClick={() => void handleSincronizar()} disabled={isSyncing || !syncStartDate || !syncEndDate}>
+                  {isSyncing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Sincronizando...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCcw className="h-4 w-4 mr-2" />
+                      Confirmar sincronização
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
