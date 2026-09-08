@@ -24,12 +24,14 @@ import {
   titularEstaPendente,
   ehAnteriorAoVinculo,
   montarIdentificacaoCompensacao,
+  normalizarLinha,
   ContaNaoConfiguradaError,
   IdentificadorDeExtratoInvalidoError,
   LIMITE_MAXIMO_EXTRATO,
   type ContaDedicadaCorpX,
   type FiltrosExtrato,
   type ResultadoSaldo,
+  type LinhaExtrato,
 } from '@/services/corpx-conta-dedicada-config';
 
 /**
@@ -137,11 +139,12 @@ export {
   titularEstaPendente,
   ehAnteriorAoVinculo,
   montarIdentificacaoCompensacao,
+  normalizarLinha,
   ContaNaoConfiguradaError,
   IdentificadorDeExtratoInvalidoError,
   LIMITE_MAXIMO_EXTRATO,
 };
-export type { ContaDedicadaCorpX, FiltrosExtrato, ResultadoSaldo, CorpXTransactionItem };
+export type { ContaDedicadaCorpX, FiltrosExtrato, ResultadoSaldo, LinhaExtrato, CorpXTransactionItem };
 
 export const CorpXContaDedicadaService = {
   conta: CONTA_DEDICADA_CORPX,
