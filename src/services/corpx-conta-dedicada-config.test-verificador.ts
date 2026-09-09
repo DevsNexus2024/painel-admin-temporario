@@ -326,6 +326,30 @@ ok('com E2E, ações PIX liberadas', comE2E.permitirAcoesPix === true);
 const semE2E = montarIdentificacaoCompensacao({ id: 11, transactionId: 'tx-def', endToEndId: '' });
 ok('sem E2E, ações PIX bloqueadas', semE2E.permitirAcoesPix === false);
 ok('sem E2E, o code não vira um id que o PIX não reconhece', semE2E.code === '');
+ok('transactionId diferente do E2E: o id é o transactionId', comE2E.id === 'tx-abc', `id=${comE2E.id}`);
+
+/**
+ * 🔴 CASO REAL (prod, 2026-09-09): as linhas do webhook CorpX v2 chegam com
+ * `nrMovimento` IGUAL ao E2E (`corpx_transactions.nr_movimento = end_to_end`).
+ * A compensação (`realizarCompensacaoBRBTC`) recusa `id_transacao === id`. Se o
+ * `id` do registro for o `transactionId`, ele É o E2E, a cerca dispara e o
+ * operador vê "EndToEndId (id_transacao) é obrigatório… Não foi possível extrair
+ * do registro" sem nenhuma chamada de API. O `id` tem de cair para a LINHA.
+ */
+const E2E_REAL_V2 = 'E00416968202609091724kC41kSrawUr';
+const nrMovIgualE2E = montarIdentificacaoCompensacao({
+  id: 1545128,
+  transactionId: E2E_REAL_V2,
+  endToEndId: E2E_REAL_V2,
+});
+ok('nrMovimento igual ao E2E: o id vira o id da LINHA', nrMovIgualE2E.id === '1545128', `id=${nrMovIgualE2E.id}`);
+ok('nrMovimento igual ao E2E: o code continua sendo o E2E', nrMovIgualE2E.code === E2E_REAL_V2);
+ok(
+  'nrMovimento igual ao E2E: id ≠ code (a cerca da compensação não dispara)',
+  nrMovIgualE2E.id !== nrMovIgualE2E.code,
+);
+const semNrMov = montarIdentificacaoCompensacao({ id: 12, transactionId: '', endToEndId: E2E_REAL_V2 });
+ok('sem transactionId: o id é o id da linha, nunca o E2E', semNrMov.id === '12', `id=${semNrMov.id}`);
 
 // ---------------------------------------------------------------------------
 console.log('\n== 9. CONTRATO DA ROTA — o extrato real, campo a campo ==\n');

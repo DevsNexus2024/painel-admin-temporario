@@ -795,8 +795,19 @@ export function montarIdentificacaoCompensacao(
   const e2e = (tx?.endToEndId ?? '').trim();
   const transactionId = (tx?.transactionId ?? '').trim();
 
+  // 🔴 `id` NUNCA pode ser o próprio E2E. A compensação
+  // (`compensacao-brbtc.ts`, `realizarCompensacaoBRBTC`) recusa quando
+  // `id_transacao === id` — é a cerca contra "E2E preenchido com o id da linha".
+  // Nas linhas que chegam pelo webhook CorpX v2, `nrMovimento` É o E2E (medido em
+  // prod em 2026-09-09: `corpx_transactions.nr_movimento = end_to_end` para
+  // source CORPX_V2). Usar `transactionId` como `id` nesse caso colidia com o
+  // E2E e a compensação morria ANTES de chamar qualquer API, com "EndToEndId
+  // (id_transacao) é obrigatório… Não foi possível extrair do registro".
+  // Quando o identificador da transação é o E2E, o `id` é o id da LINHA.
+  const idProprio = transactionId && transactionId !== e2e ? transactionId : String(tx?.id ?? '');
+
   return {
-    id: transactionId || String(tx?.id ?? ''),
+    id: idProprio,
     code: e2e,
     permitirAcoesPix: !!e2e,
   };
