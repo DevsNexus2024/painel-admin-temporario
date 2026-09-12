@@ -34,8 +34,11 @@ export default function TopBarCorpX() {
     error: errorSaldo,
     refresh: handleRefresh,
     lastUpdated
-  } = useCorpXSaldo({ 
+  } = useCorpXSaldo({
     cnpj: cnpjNumerico,
+    // Alias da conta selecionada: sub-contas compartilham o CNPJ da mãe, e sem o
+    // alias o saldo exibido seria o da primeira conta desse CNPJ.
+    alias: selectedAccount.corpxAlias,
     autoRefresh: false // Refresh manual via botão
   });
 

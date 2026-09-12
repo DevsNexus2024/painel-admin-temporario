@@ -7,8 +7,14 @@ import { getCorpxAliasByCnpj } from '@/contexts/CorpXContext';
 import type { CorpXSaldoResponse } from '@/types/corpx';
 
 interface UseCorpXSaldoOptions {
-  /** CNPJ da conta (usado para obter alias via CORPX_ACCOUNTS) */
+  /** CNPJ da conta (usado para obter alias via CORPX_ACCOUNTS quando `alias` não vem) */
   cnpj: string;
+  /**
+   * Alias da conta (header X-Corpx-Account-Context). Tem PRIORIDADE sobre o CNPJ:
+   * um CNPJ pode ter mais de uma conta CorpX (RXP mãe e RXP Conta 3), e resolver
+   * pelo CNPJ devolveria sempre a primeira — o saldo da conta errada.
+   */
+  alias?: string;
   autoRefresh?: boolean;
   refreshInterval?: number; // em milissegundos
 }
@@ -21,10 +27,11 @@ interface UseCorpXSaldoReturn {
   lastUpdated: Date | null;
 }
 
-export function useCorpXSaldo({ 
-  cnpj, 
-  autoRefresh = false, 
-  refreshInterval = 30000 
+export function useCorpXSaldo({
+  cnpj,
+  alias: aliasExplicito,
+  autoRefresh = false,
+  refreshInterval = 30000
 }: UseCorpXSaldoOptions): UseCorpXSaldoReturn {
   const [saldo, setSaldo] = useState<CorpXSaldoResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,7 +45,7 @@ export function useCorpXSaldo({
       return;
     }
 
-    const alias = getCorpxAliasByCnpj(cnpjNumerico);
+    const alias = (aliasExplicito || '').trim() || getCorpxAliasByCnpj(cnpjNumerico);
     if (!alias) {
       setError('Conta sem alias CorpX v2 configurado');
       setSaldo(null);
@@ -71,7 +78,7 @@ export function useCorpXSaldo({
     } finally {
       setIsLoading(false);
     }
-  }, [cnpj]);
+  }, [cnpj, aliasExplicito]);
 
   const refresh = useCallback(async () => {
     await fetchSaldo();

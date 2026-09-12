@@ -63,6 +63,19 @@ export const CORPX_ACCOUNTS = [
     apiAccountId: 52255,
     corpxAlias: 'RXP',
   },
+  // Sub-conta CorpX "RXP Conta 3" (OTC, 12/09/2026). MESMO CNPJ da RXP mãe:
+  // por isso a identidade desta linha é o `corpxAlias` (SUB3) e o `apiAccountId`
+  // (corpx_accounts 52508), nunca o CNPJ. `getCorpxAliasByCnpj` continua
+  // devolvendo a RXP mãe para este CNPJ — quem precisa da sub-conta tem de ler
+  // `selectedAccount.corpxAlias` (ver useCorpXSaldo).
+  {
+    id: '7',
+    razaoSocial: 'RXP SERVICOS DIGITAIS LTDA (Conta 3)',
+    cnpj: '24586576000140',
+    available: true,
+    apiAccountId: 52508,
+    corpxAlias: 'SUB3',
+  },
 ];
 
 interface CorpXAccount {
