@@ -218,16 +218,23 @@ export default function ExtractTabCorpX() {
   const normalizeTransactions = React.useCallback(
     (transactions: any[], isAllAccountsParam: boolean, sanitizedCnpjParam: string) => {
       const TCR_DOCUMENT = '53781325000115'; // Documento da TCR sem formatação
+      // Quando a conta SELECIONADA é a própria sub-conta com CNPJ da TCR (SUB2 =
+      // TCR Finance Conta 2), suas transações têm beneficiário = CNPJ da TCR e são
+      // legítimas — o backend já escopou por accountId. Sem isto, o "Filtro 2"
+      // abaixo (que esconde depósitos da TCR mãe do extrato OTC consolidado)
+      // descartaria TODAS as transações da SUB2 → tela vazia.
+      const selectedIsTcrCnpj = !isAllAccountsParam && sanitizedCnpjParam === TCR_DOCUMENT;
       const result: NonNullable<ReturnType<typeof convertCorpXToStandardFormat>>[] = [];
-      
+
       for (let i = 0; i < transactions.length; i++) {
         const tx = convertCorpXToStandardFormat(transactions[i]);
-        
+
         // Filtro 1: tx válido e não deve ser escondido
         if (!tx || shouldHideTransaction(tx)) continue;
-          
-        // Filtro 2: Não é depósito da TCR
-        if (tx.beneficiaryDocument) {
+
+        // Filtro 2: esconder depósitos da TCR mãe — exceto quando a conta selecionada
+        // é a própria sub-conta com CNPJ da TCR (SUB2).
+        if (!selectedIsTcrCnpj && tx.beneficiaryDocument) {
           const beneficiaryDocNormalized = tx.beneficiaryDocument.replace(/\D/g, '');
           if (beneficiaryDocNormalized === TCR_DOCUMENT) continue;
           }
@@ -1934,22 +1941,30 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
     // O payload de tempo real pode não ter beneficiaryDocument diretamente, então verificamos pelo taxDocument da conta
     // TCR tem conta CorpX com taxDocument = 53781325000115
     const tcrDocumentNormalized = '53781325000115'; // Documento da TCR sem formatação
-    
-    // Verificar se a transação é para a conta da TCR
-    const payloadDocDigits = data.taxDocument?.replace(/\D/g, '') || '';
-    if (payloadDocDigits === tcrDocumentNormalized) {
-      // Se for depósito (C) para a conta da TCR, rejeitar
-      if (data.transactionType === 'C') {
-        return false;
+    // Se a conta SELECIONADA é a própria sub-conta com CNPJ da TCR (SUB2 = Conta 2),
+    // suas transações são legítimas — não aplicar o filtro que esconde a TCR mãe,
+    // senão o realtime da SUB2 nunca apareceria.
+    const selectedIsTcrCnpj =
+      selectedAccount.id !== 'ALL' &&
+      selectedAccount.cnpj?.replace(/\D/g, '') === tcrDocumentNormalized;
+
+    if (!selectedIsTcrCnpj) {
+      // Verificar se a transação é para a conta da TCR
+      const payloadDocDigits = data.taxDocument?.replace(/\D/g, '') || '';
+      if (payloadDocDigits === tcrDocumentNormalized) {
+        // Se for depósito (C) para a conta da TCR, rejeitar
+        if (data.transactionType === 'C') {
+          return false;
+        }
       }
-    }
-    
-    // Verificar também se há beneficiaryDocument no payload (pode estar em campos extras)
-    const beneficiaryDoc = (data as any).beneficiaryDocument || (data as any).beneficiary_document || '';
-    if (beneficiaryDoc) {
-      const beneficiaryDocNormalized = beneficiaryDoc.replace(/\D/g, '');
-      if (beneficiaryDocNormalized === tcrDocumentNormalized) {
-        return false;
+
+      // Verificar também se há beneficiaryDocument no payload (pode estar em campos extras)
+      const beneficiaryDoc = (data as any).beneficiaryDocument || (data as any).beneficiary_document || '';
+      if (beneficiaryDoc) {
+        const beneficiaryDocNormalized = beneficiaryDoc.replace(/\D/g, '');
+        if (beneficiaryDocNormalized === tcrDocumentNormalized) {
+          return false;
+        }
       }
     }
     
