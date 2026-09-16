@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import TotpField from "@/components/totp/TotpField";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -55,15 +56,21 @@ function PixNormalComponent() {
   };
 
   const isInterna = formData.tipo === '1';
+  const isQr = formData.tipo === 'qr';
 
   const executarPix = async () => {
-    if (!formData.key || !formData.valor) {
-      toast.error(isInterna ? "CPF/CNPJ do destinatário e valor são obrigatórios" : "Chave PIX e valor são obrigatórios");
+    if (isQr) {
+      if (!formData.key) {
+        toast.error("Cole o código EMV (copia-e-cola) do QR Code");
+        return;
+      }
+    } else if (!formData.key || !formData.valor) {
+      toast.error(isInterna ? "Conta de destino e valor são obrigatórios" : "Chave PIX e valor são obrigatórios");
       return;
     }
 
-    if (isInterna && (!selectedAccount.cnpj || selectedAccount.cnpj === 'ALL')) {
-      toast.error('Selecione uma conta específica para transferência interna');
+    if ((isInterna || isQr) && (!selectedAccount.cnpj || selectedAccount.cnpj === 'ALL')) {
+      toast.error(isQr ? 'Selecione uma conta específica para pagar QR Code' : 'Selecione uma conta específica para transferência interna');
       return;
     }
 
@@ -93,6 +100,24 @@ function PixNormalComponent() {
 
         toast.success("Transferência interna executada com sucesso!", {
           description: result.transferId ? `ID: ${result.transferId}` : undefined,
+          duration: 5000
+        });
+      } else if (isQr) {
+        const alias = selectedAccount.corpxAlias || getCorpxAliasByCnpj(limparFormatacaoDocumento(selectedAccount.cnpj));
+        if (!alias) {
+          toast.error('Conta sem alias configurado para pagar QR Code');
+          return;
+        }
+        const valorQr = formData.valor ? valorNumerico : undefined;
+        const { pagarQrCodeCorpX } = await import('@/services/corpx');
+        const result = await pagarQrCodeCorpX(alias, {
+          emv: formData.key,
+          valor: valorQr,
+          description: formData.description || undefined,
+        });
+
+        toast.success("QR Code pago com sucesso!", {
+          description: result.endToEndId ? `End-to-End: ${result.endToEndId}` : undefined,
           duration: 5000
         });
       } else {
@@ -172,19 +197,48 @@ function PixNormalComponent() {
         <div className="space-y-3">
           <div>
             <Label htmlFor="pix-key">
-              {isInterna ? 'CPF/CNPJ do destinatário' : 'Chave PIX Destinatário'}
+              {isInterna ? 'Conta de destino' : isQr ? 'Código QR (copia-e-cola)' : 'Chave PIX Destinatário'}
             </Label>
-            <Input
-              id="pix-key"
-              value={formData.key}
-              onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
-              placeholder={isInterna ? 'CPF ou CNPJ da conta de destino (ex: 14.283.885/0001-98)' : 'email@exemplo.com, CPF, CNPJ, celular ou chave aleatória'}
-            />
+            {isInterna ? (
+              <Select
+                value={formData.key}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, key: value }))}
+              >
+                <SelectTrigger id="pix-key">
+                  <SelectValue placeholder="Selecione a conta de destino" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CORPX_ACCOUNTS
+                    .filter(acc => acc.id !== 'ALL' && acc.corpxAlias && acc.corpxAlias !== selectedAccount.corpxAlias)
+                    .map(acc => (
+                      <SelectItem key={acc.id} value={acc.corpxAlias!}>
+                        {acc.razaoSocial}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            ) : isQr ? (
+              <Textarea
+                id="pix-key"
+                value={formData.key}
+                onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
+                placeholder="Cole aqui o código EMV do QR Code (00020126...)"
+                rows={4}
+                className="font-mono text-xs"
+              />
+            ) : (
+              <Input
+                id="pix-key"
+                value={formData.key}
+                onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
+                placeholder={'email@exemplo.com, CPF, CNPJ, celular ou chave aleatória'}
+              />
+            )}
           </div>
 
           <div>
             <Label htmlFor="pix-tipo">Tipo de Transferência</Label>
-            <Select value={formData.tipo} onValueChange={(value) => setFormData(prev => ({ ...prev, tipo: value }))}>
+            <Select value={formData.tipo} onValueChange={(value) => setFormData(prev => ({ ...prev, tipo: value, key: '' }))}>
               <SelectTrigger id="pix-tipo">
                 <SelectValue />
               </SelectTrigger>
@@ -193,29 +247,32 @@ function PixNormalComponent() {
                 <SelectItem value="2">PIX</SelectItem>
                 <SelectItem value="3">Copia e Cola</SelectItem>
                 <SelectItem value="5">PIX com Dados</SelectItem>
+                <SelectItem value="qr">Pagar QR Code</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div>
-            <Label htmlFor="pix-valor">Valor</Label>
+            <Label htmlFor="pix-valor">{isQr ? 'Valor (Opcional)' : 'Valor'}</Label>
             <Input
               id="pix-valor"
               value={formData.valor}
               onChange={handleValueChange}
-              placeholder="R$ 0,00"
+              placeholder={isQr ? 'R$ 0,00 — vazio usa o valor do QR' : 'R$ 0,00'}
             />
           </div>
 
-          <div>
-            <Label htmlFor="pix-nome">Nome Destinatário (Opcional)</Label>
-            <Input
-              id="pix-nome"
-              value={formData.nome}
-              onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
-              placeholder="Nome do destinatário"
-            />
-          </div>
+          {!isQr && (
+            <div>
+              <Label htmlFor="pix-nome">Nome Destinatário (Opcional)</Label>
+              <Input
+                id="pix-nome"
+                value={formData.nome}
+                onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+                placeholder="Nome do destinatário"
+              />
+            </div>
+          )}
 
           <div>
             <Label htmlFor="pix-desc">Descrição (Opcional)</Label>
@@ -232,16 +289,16 @@ function PixNormalComponent() {
 
         <Button
           onClick={executarPix}
-          disabled={isLoading || (isInterna && (!selectedAccount.cnpj || selectedAccount.cnpj === 'ALL'))}
+          disabled={isLoading || ((isInterna || isQr) && (!selectedAccount.cnpj || selectedAccount.cnpj === 'ALL'))}
           className="w-full"
         >
           {isLoading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Executando PIX...
+              {isQr ? 'Pagando QR Code...' : 'Executando PIX...'}
             </>
           ) : (
-            'Executar PIX'
+            isQr ? 'Pagar QR Code' : 'Executar PIX'
           )}
         </Button>
       </CardContent>

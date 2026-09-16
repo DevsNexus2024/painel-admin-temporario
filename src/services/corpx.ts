@@ -1430,12 +1430,17 @@ function limparDocumentoCorpX(doc: string): string {
  * Transferência interna entre contas CorpX (CorpX v2)
  * Endpoint: POST /api/corpx-v2/transfers/internal/simple
  * Ref: docs/MIGRACAO-FRONTEND-CORPX-V2.md
- * Backend exige originDocument no body.
+ *
+ * Origem: header X-Corpx-Account-Context (alias da conta selecionada).
+ * Destino: `destinationContext` = alias da conta destino (ex.: SUB2, RXP). Por
+ * quê alias e não CNPJ: um CNPJ pode ter várias contas (sub-contas) e o
+ * by-document da CorpX devolve 409 multiple_destination_accounts — o alias mapeia
+ * para o UUID exato da conta.
  */
 export async function transferenciaInternaCorpX(
   alias: string,
   originDocument: string,
-  destinationDocument: string,
+  destinationContext: string,
   value: number,
   message?: string
 ): Promise<{ transferId?: string; status?: string; value?: number; createdAt?: string; identifier?: string } | null> {
@@ -1446,24 +1451,20 @@ export async function transferenciaInternaCorpX(
       throw new Error('Token de autenticação não encontrado. Faça login novamente.');
     }
 
-    const destination = limparDocumentoCorpX(destinationDocument);
-
-    if (!destination || destination.length < 11) {
-      throw new Error('Documento de destino inválido');
+    const destination = (destinationContext || '').trim();
+    if (!destination) {
+      throw new Error('Selecione a conta de destino');
     }
     if (value <= 0) {
       throw new Error('Valor deve ser maior que zero');
     }
 
     const origin = limparDocumentoCorpX(originDocument);
-    if (!origin || origin.length < 11) {
-      throw new Error('Documento de origem inválido');
-    }
 
     const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
     const body = {
-      originDocument: origin,
-      destinationDocument: destination,
+      ...(origin && { originDocument: origin }),
+      destinationContext: destination,
       value,
       ...(message && { message }),
       identifier: `int-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
@@ -1492,6 +1493,68 @@ export async function transferenciaInternaCorpX(
     console.error('[CORPX-TRANSF-INTERNA] Erro:', error);
     throw error;
   }
+}
+
+/**
+ * Pagar QR Code (EMV copia-e-cola) — CorpX v2
+ * Endpoint: POST /api/corpx-v2/pix/out/qr-code
+ * Header X-Corpx-Account-Context = alias da conta que paga (debita).
+ *
+ * `amount` vai em BRL (reais), só quando o operador preenche (QR dinâmico sem
+ * valor embutido). NÃO multiplicar por 100 — o CorpX v2 recebe reais.
+ * O destino do QR é validado pelo PixOutAllowedGuard (allowlist por conta/global).
+ */
+export async function pagarQrCodeCorpX(
+  alias: string,
+  dados: { emv: string; valor?: number; description?: string }
+): Promise<{ endToEndId: string; paymentId?: string; status?: string }> {
+  const { TOKEN_STORAGE, API_CONFIG } = await import('@/config/api');
+  const userToken = TOKEN_STORAGE.get();
+  if (!userToken) {
+    throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+  }
+  if (!alias) {
+    throw new Error('Selecione uma conta específica para pagar QR Code');
+  }
+
+  const emv = (dados.emv || '').trim();
+  if (!emv) {
+    throw new Error('Cole o código EMV (copia-e-cola) do QR Code.');
+  }
+
+  const body: { emv: string; amount?: number; description?: string } = { emv };
+  if (typeof dados.valor === 'number' && dados.valor > 0) body.amount = dados.valor;
+  if (dados.description?.trim()) body.description = dados.description.trim();
+
+  const baseUrl = API_CONFIG.CORPX_V2_BASE_URL || API_CONFIG.BASE_URL;
+  const response = await fetchWithTotp(`${baseUrl}/api/corpx-v2/pix/out/qr-code`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${userToken}`,
+      'X-Corpx-Account-Context': alias,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const responseData = await response.json().catch(() => ({} as any));
+  const raw = responseData?.data ?? responseData;
+
+  if (!response.ok) {
+    const msg =
+      responseData?.message ||
+      responseData?.error?.message ||
+      raw?.message ||
+      `Erro HTTP ${response.status}`;
+    throw new Error(msg);
+  }
+
+  return {
+    endToEndId: raw?.endToEndId ?? raw?.endtoend ?? raw?.paymentId ?? raw?.id ?? '',
+    paymentId: raw?.paymentId,
+    status: raw?.status,
+  };
 }
 
 /**
