@@ -76,6 +76,19 @@ export const CORPX_ACCOUNTS = [
     apiAccountId: 52508,
     corpxAlias: 'SUB3',
   },
+  // Sub-conta CorpX "TCR Finance Conta 2" (OTC, 16/09/2026). MESMO CNPJ da TCR
+  // mãe (53781325000115): a identidade desta linha é o `corpxAlias` (SUB2) e o
+  // `apiAccountId` (corpx_accounts 52507), nunca o CNPJ. `getCorpxAliasByCnpj`
+  // continua devolvendo o alias TCR mãe para este CNPJ (curto-circuito na linha
+  // do TCR_CNPJ) — quem precisa da sub-conta tem de ler `selectedAccount.corpxAlias`.
+  {
+    id: '8',
+    razaoSocial: 'TCR FINANCE LTDA (Conta 2)',
+    cnpj: '53781325000115',
+    available: true,
+    apiAccountId: 52507,
+    corpxAlias: 'SUB2',
+  },
 ];
 
 interface CorpXAccount {
