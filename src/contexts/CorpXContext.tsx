@@ -89,6 +89,20 @@ export const CORPX_ACCOUNTS = [
     apiAccountId: 52507,
     corpxAlias: 'SUB2',
   },
+  // Conta principal da TCR Finance (Conta 1 / mãe). Fica FORA do fluxo OTC, mas é
+  // exposta aqui para: (a) ser destino de transferência interna no painel (ex.:
+  // mover saldo da SUB2/RXP para a Conta 1) e (b) ver o extrato/saldo dela.
+  // MESMO CNPJ da SUB2 (53781325000115): identidade é o `corpxAlias` (TCR) e o
+  // `apiAccountId` (corpx_accounts 51771). `getCorpxAliasByCnpj` já devolve 'TCR'
+  // para este CNPJ (curto-circuito no TCR_CNPJ), que é exatamente esta conta.
+  {
+    id: '9',
+    razaoSocial: 'TCR FINANCE LTDA (Conta 1)',
+    cnpj: '53781325000115',
+    available: true,
+    apiAccountId: 51771,
+    corpxAlias: 'TCR',
+  },
 ];
 
 interface CorpXAccount {
