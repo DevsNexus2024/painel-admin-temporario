@@ -1575,7 +1575,7 @@ function AccountSelector() {
               </div>
             </SelectTrigger>
             <SelectContent>
-              {CORPX_ACCOUNTS.map((account) => (
+              {CORPX_ACCOUNTS.filter((account) => !account.transferOnly).map((account) => (
                 <SelectItem key={account.id} value={account.id} disabled={!account.available}>
                   <div className="flex items-center gap-3 w-full">
                     <div className={`p-1.5 rounded-lg ${

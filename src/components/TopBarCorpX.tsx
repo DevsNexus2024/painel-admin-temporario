@@ -59,7 +59,7 @@ export default function TopBarCorpX() {
 
   const accountsForConsolidation = useMemo(
     () =>
-      CORPX_ACCOUNTS.filter((acc) => acc.id !== 'ALL' && acc.available)
+      CORPX_ACCOUNTS.filter((acc) => acc.id !== 'ALL' && acc.available && !acc.transferOnly)
         .map((acc) => ({ ...acc, cnpjNumerico: (acc.cnpj || '').replace(/\D/g, '') }))
         .filter((acc) => acc.cnpjNumerico.length === 14),
     []

@@ -30,7 +30,7 @@ export default function ExtractTabCorpX() {
   const accountNameByDocument = useMemo(() => {
     const map: Record<string, string> = {};
     CORPX_ACCOUNTS.forEach((account) => {
-      if (account.id === 'ALL') return;
+      if (account.id === 'ALL' || account.transferOnly) return;
       const sanitized = account.cnpj.replace(/\D/g, '');
       map[sanitized] = account.razaoSocial;
     });

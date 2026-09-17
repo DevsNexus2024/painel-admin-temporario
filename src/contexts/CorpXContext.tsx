@@ -102,6 +102,7 @@ export const CORPX_ACCOUNTS = [
     available: true,
     apiAccountId: 51771,
     corpxAlias: 'TCR',
+    transferOnly: true,
   },
 ];
 
@@ -112,6 +113,7 @@ interface CorpXAccount {
   available: boolean;
   apiAccountId?: number;
   corpxAlias?: string; // Alias para header X-Corpx-Account-Context (CorpX v2)
+  transferOnly?: boolean; // Só destino de transferência interna — NÃO aparece no seletor/saldo/extrato
 }
 
 interface CorpXContextType {
