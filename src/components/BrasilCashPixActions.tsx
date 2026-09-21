@@ -139,7 +139,7 @@ type QrPayData = z.infer<typeof qrPaySchema>;
 // Conta BrasilCash da tela TCR. Enviada como X-Account-Id / x-otc-id para que o
 // guard de pix-out enxergue a permissão por conta (BRASILCASH_ACCOUNT) e o backend
 // selecione as credenciais corretas. Mesmos valores usados na transferência P2P.
-const TCR_ACCOUNT_ID = '1be0c9de-e87b-4535-b3bb-d0d61515ed9e';
+const TCR_ACCOUNT_ID = 'becd8daf-a64c-4795-a84a-cfcf097307cf';
 const TCR_OTC_ID = 'DEFAULT';
 
 interface BrasilCashPixActionsProps {

@@ -7,7 +7,9 @@
 const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
 
 // Constante para conta TCR BrasilCash
-const TCR_ACCOUNT_ID = '1be0c9de-e87b-4535-b3bb-d0d61515ed9e';
+// Conta principal renumerada 7466786→13700 na plataforma nova; account_id atual
+// = becd8daf (o antigo 1be0c9de não existe mais em brasilcash_accounts).
+const TCR_ACCOUNT_ID = 'becd8daf-a64c-4795-a84a-cfcf097307cf';
 
 // ===================================
 // TYPES

@@ -223,9 +223,9 @@ export const CORPX_TARIFA_CNPJ = '36741675000139';
 // ===== CONTAS BRASILCASH =====
 
 export const BRASILCASH_ACCOUNTS = [
-  { name: 'TCR Finance LTDA', accountId: '1be0c9de-e87b-4535-b3bb-d0d61515ed9e', otcId: 'DEFAULT' },
-  { name: 'TTF SERVIÇOS DIGITAIS LTDA', accountId: '12fb5af7-3b2b-48fc-ac70-631200793887', otcId: '73015092' },
-  { name: 'RXP SERVIÇOS DIGITAIS LTDA', accountId: 'b8156e91-063c-4011-991a-8bf6ef869ff6', otcId: '24389222' },
-  { name: 'Conta 78027552', accountId: '1fad5c73-c2e9-43c0-9eb0-565105208576', otcId: '78027552' },
-  { name: 'Conta 17159172', accountId: 'e8e5502e-208f-4fae-bf45-a7cbd18bf41e', otcId: '17159172' },
+  { name: 'TCR Finance LTDA', accountId: 'becd8daf-a64c-4795-a84a-cfcf097307cf', otcId: 'DEFAULT' },
+  { name: 'TTF SERVIÇOS DIGITAIS LTDA', accountId: 'f1ce13e7-5437-4934-a772-101e2ff8801a', otcId: '73015092' },
+  { name: 'RXP SERVIÇOS DIGITAIS LTDA', accountId: 'cd75766a-8f15-4361-8ea6-de79bc321c93', otcId: '24389222' },
+  { name: 'Conta 78027552', accountId: 'e7013aeb-a2e8-4be5-8b36-a511551b7839', otcId: '78027552' },
+  { name: 'Conta 17159172', accountId: '509f3c07-ca94-4fd0-ab53-5d690500f635', otcId: '17159172' },
 ] as const;
