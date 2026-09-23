@@ -393,6 +393,8 @@ export interface IdentificacaoCompensacao {
   code: string;
   /** Transferência interna BrasilCash sem E2E. */
   transferenciaInternaSemE2E: boolean;
+  /** TED recebida: nunca tem E2E (o BACEN só emite para PIX). */
+  tedSemE2E: boolean;
   /** Libera Devolver/Bloquear PIX no modal. */
   permitirAcoesPix: boolean;
 }
@@ -418,13 +420,24 @@ export function montarIdentificacaoCompensacao(
 ): IdentificacaoCompensacao {
   const e2e = (tx.endToEndId ?? '').trim();
   const pixId = (tx.transactionId ?? '').trim();
+  const metodo = String(tx.method ?? '').trim().toUpperCase();
 
-  const transferenciaInternaSemE2E = !e2e && tx.method === 'P2P' && !!pixId;
+  const transferenciaInternaSemE2E = !e2e && metodo === 'P2P' && !!pixId;
+
+  // TED recebida (a BrasilCash passou a receber em 23/09/2026) NUNCA tem E2E: o BACEN só emite
+  // endToEndId para PIX. Sem este caso, `code` saía vazio e `id` ficava com o pix_id, então
+  // `extrairEndToEnd` caía no último fallback (o próprio `id`) e a cerca `id_transacao === id`
+  // matava a compensação antes de chamar a API — com a mensagem enganosa de que o E2E não pôde
+  // ser extraído. Mesmo tratamento da P2P: o identificador é o pix_id, único por lançamento.
+  const tedSemE2E = !e2e && metodo === 'TED' && !!pixId;
+
+  const semE2ePorNatureza = transferenciaInternaSemE2E || tedSemE2E;
 
   return {
-    id: transferenciaInternaSemE2E ? String(tx.id) : tx.transactionId,
-    code: e2e || (transferenciaInternaSemE2E ? pixId : ''),
+    id: semE2ePorNatureza ? String(tx.id) : tx.transactionId,
+    code: e2e || (semE2ePorNatureza ? pixId : ''),
     transferenciaInternaSemE2E,
+    tedSemE2E,
     permitirAcoesPix: !!e2e,
   };
 }

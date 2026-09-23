@@ -642,6 +642,14 @@ export default function ExtractTabBrasilCashContaDedicada() {
       });
     }
 
+    // TED nunca tem E2E — o BACEN só emite para PIX. Mesmo tratamento da P2P.
+    if (identificacao.tedSemE2E) {
+      toast.info('TED recebida detectada', {
+        description: 'TED não tem E2E: a compensação usará o ID da transação BrasilCash como referência',
+        duration: 3000
+      });
+    }
+
     // ✅ Converter para formato MovimentoExtrato esperado pelo modal (IGUAL CorpX TCR)
     let extractRecord: any = {
       id: identificacao.id,
