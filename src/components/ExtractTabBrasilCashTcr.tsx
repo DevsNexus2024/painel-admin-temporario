@@ -607,9 +607,24 @@ export default function ExtractTabBrasilCashTcr() {
     // do CorpX para "transferência entre contas": usa o pix_id (transactionId, único por perna)
     // como id_transacao da compensação. O `id` do registro vira o id da linha para que a
     // validação do serviço (id_transacao !== id) continue barrando só registro sem identificador.
+    // `method` é o tipo cru da API (brasilcash-realtime.ts: `method: tx.type`). Comparar sem
+    // caixa: a BrasilCash já trocou o caixa de campo nosso sem avisar (o `flow` do extrato
+    // virou "IN"/"OUT" em 11/09/2026).
+    const metodoTransacao = String(transaction.method ?? '').trim().toUpperCase();
+
     const isInternalTransferWithoutE2E =
-      !transaction.endToEndId && transaction.method === 'P2P' && !!transaction.transactionId;
-    const idTransacaoCompensacao = transaction.endToEndId || (isInternalTransferWithoutE2E ? transaction.transactionId : '');
+      !transaction.endToEndId && metodoTransacao === 'P2P' && !!transaction.transactionId;
+
+    // ✅ TED recebida (a BrasilCash passou a receber em 23/09/2026) NUNCA tem E2E: o BACEN só
+    // emite endToEndId para PIX. Sem este caso, `code` saía vazio e `id` ficava com o pix_id,
+    // então `extrairEndToEnd` caía no último fallback (o próprio `id`) e a cerca
+    // `id_transacao === id` barrava a compensação antes de chamar a API — com a mensagem
+    // enganosa de que o E2E não pôde ser extraído. Mesmo tratamento da P2P.
+    const isTedWithoutE2E =
+      !transaction.endToEndId && metodoTransacao === 'TED' && !!transaction.transactionId;
+
+    const semE2EPorNatureza = isInternalTransferWithoutE2E || isTedWithoutE2E;
+    const idTransacaoCompensacao = transaction.endToEndId || (semE2EPorNatureza ? transaction.transactionId : '');
 
     if (isInternalTransferWithoutE2E) {
       toast.info('Transferência interna (P2P) detectada', {
@@ -618,9 +633,16 @@ export default function ExtractTabBrasilCashTcr() {
       });
     }
 
+    if (isTedWithoutE2E) {
+      toast.info('TED recebida detectada', {
+        description: 'TED não tem E2E: a compensação usará o ID da transação BrasilCash como referência',
+        duration: 3000
+      });
+    }
+
     // ✅ Converter para formato MovimentoExtrato esperado pelo modal (IGUAL CorpX TCR)
     let extractRecord: any = {
-      id: isInternalTransferWithoutE2E ? String(transaction.id) : transaction.transactionId,
+      id: semE2EPorNatureza ? String(transaction.id) : transaction.transactionId,
       dateTime: transaction.createdAt,
       value: parseFloat(transaction.amount),
       type: transaction.type === 'FUNDING' ? 'CRÉDITO' : 'DÉBITO',
