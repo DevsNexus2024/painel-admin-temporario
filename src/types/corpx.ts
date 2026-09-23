@@ -111,6 +111,9 @@ export interface CorpXTransactionsParams {
 
 export interface CorpXSyncRequest {
   taxDocument: string;
+  // Linha de corpx_accounts. Necessário quando o CNPJ tem sub-contas (TCR Conta 2,
+  // RXP Conta 3): só o CNPJ faz o backend sincronizar a primeira conta dele.
+  accountId?: number;
   startDate: string;
   endDate: string;
   dryRun?: boolean;

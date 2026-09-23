@@ -882,6 +882,7 @@ const totalRecords = pagination.total ?? filteredAndSortedTransactions.length;
 
       const response = await CorpXService.sincronizarExtrato({
         taxDocument,
+        accountId: selectedAccount.apiAccountId,
         startDate,
         endDate,
         dryRun: false,

@@ -500,6 +500,7 @@ export async function sincronizarExtratoCorpX(params: CorpXSyncRequest): Promise
 
     const payload = {
       taxDocument: params.taxDocument,
+      ...(params.accountId ? { accountId: params.accountId } : {}),
       startDate: params.startDate,
       endDate: params.endDate,
       dryRun: params.dryRun ?? false,
