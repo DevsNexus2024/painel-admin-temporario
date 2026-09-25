@@ -42,13 +42,15 @@ import { useBrasilCashOtc } from "@/contexts/BrasilCashOtcContext";
 const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
 
 // Mapeamento de contas de destino para transferência interna P2P
-// value = account_number completo (número + dígito)
+// value = account_number da conta na BrasilCash, exatamente como `GET /v2/account/me` devolve.
+// A plataforma nova (migração de 11/09/2026) renumerou todas as contas: os números antigos
+// (74667862, 78027552, 17159172, 73015092, 24389222) passaram a dar 400 "Conta destino não encontrada".
 const P2P_DESTINATION_ACCOUNTS = [
-  { value: '74667862', label: 'TCR-APP', document: '53781325000115', description: 'Transferência para TCR Finance LTDA', sourceOtcId: null as string | null },
-  { value: '78027552', label: 'BrasilCash OTC 7802755', document: null as string | null, description: 'Transferência para OTC 7802755', sourceOtcId: '7802755' },
-  { value: '17159172', label: 'BrasilCash OTC 1715917', document: null as string | null, description: 'Transferência para OTC 1715917', sourceOtcId: '1715917' },
-  { value: '73015092', label: 'BrasilCash OTC TTF', document: '14283885000198', description: 'Transferência para TTF SERVIÇOS DIGITAIS LTDA', sourceOtcId: 'TTF' },
-  { value: '24389222', label: 'RXP SERVIÇOS DIGITAIS LTDA', document: '24586576000140', description: 'Transferência para RXP SERVIÇOS DIGITAIS LTDA', sourceOtcId: 'RXP' },
+  { value: '13700', label: 'TCR-APP', document: '53781325000115', description: 'Transferência para TCR Finance LTDA', sourceOtcId: null as string | null },
+  { value: '3208', label: 'BrasilCash OTC 7802755', document: '53781325000115' as string | null, description: 'Transferência para OTC 7802755', sourceOtcId: '7802755' },
+  { value: '13602', label: 'BrasilCash OTC 1715917', document: '53781325000115' as string | null, description: 'Transferência para OTC 1715917', sourceOtcId: '1715917' },
+  { value: '7106', label: 'BrasilCash OTC TTF', document: '14283885000198', description: 'Transferência para TTF SERVIÇOS DIGITAIS LTDA', sourceOtcId: 'TTF' },
+  { value: '18809', label: 'RXP SERVIÇOS DIGITAIS LTDA', document: '24586576000140', description: 'Transferência para RXP SERVIÇOS DIGITAIS LTDA', sourceOtcId: 'RXP' },
 ];
 
 // Schemas de validação

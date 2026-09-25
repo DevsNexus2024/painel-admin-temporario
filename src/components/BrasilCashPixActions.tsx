@@ -52,11 +52,14 @@ import { sendPixBrasilCash } from "@/services/brasilcash-pix-send";
 const API_BASE_URL = 'https://api-bank-v2.gruponexus.com.br';
 
 // Contas de destino para transferência interna P2P (TCR como origem)
+// value = account_number da conta na BrasilCash, exatamente como `GET /v2/account/me` devolve.
+// A plataforma nova (migração de 11/09/2026) renumerou todas as contas: os números antigos
+// (78027552, 17159172, 73015092, 24389222) passaram a dar 400 "Conta destino não encontrada".
 const P2P_DESTINATION_ACCOUNTS_TCR = [
-  { value: '78027552', label: 'BrasilCash OTC 7802755', document: null as string | null, description: 'Transferência para OTC 7802755' },
-  { value: '17159172', label: 'BrasilCash OTC 1715917', document: null as string | null, description: 'Transferência para OTC 1715917' },
-  { value: '73015092', label: 'BrasilCash OTC TTF', document: '14283885000198', description: 'Transferência para TTF SERVIÇOS DIGITAIS LTDA' },
-  { value: '24389222', label: 'RXP SERVIÇOS DIGITAIS LTDA', document: '24586576000140', description: 'Transferência para RXP SERVIÇOS DIGITAIS LTDA' },
+  { value: '3208', label: 'BrasilCash OTC 7802755', document: '53781325000115' as string | null, description: 'Transferência para OTC 7802755' },
+  { value: '13602', label: 'BrasilCash OTC 1715917', document: '53781325000115' as string | null, description: 'Transferência para OTC 1715917' },
+  { value: '7106', label: 'BrasilCash OTC TTF', document: '14283885000198', description: 'Transferência para TTF SERVIÇOS DIGITAIS LTDA' },
+  { value: '18809', label: 'RXP SERVIÇOS DIGITAIS LTDA', document: '24586576000140', description: 'Transferência para RXP SERVIÇOS DIGITAIS LTDA' },
 ];
 
 // Schemas de validação
